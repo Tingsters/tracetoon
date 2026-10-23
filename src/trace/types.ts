@@ -24,6 +24,8 @@ export type TraceRecord =
       text: string;
       /** Written by a parent agent to a subagent, not typed by the user. */
       delegated?: boolean;
+      /** Typed while rejecting a tool call: steers the current turn, doesn't start a new one. */
+      feedback?: boolean;
     })
   | (Base & { kind: 'assistant'; text: string })
   | (Base & { kind: 'plan'; markdown: string; approved?: boolean })

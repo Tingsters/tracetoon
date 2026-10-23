@@ -7,8 +7,6 @@ description covering the plan, the decisions, what was tested, and how much was
 AI-assisted. It adds a four-panel comic of the story, starring a recurring cast.
 You see the exact text and comic and approve them before anything is posted.
 
-<p align="center"><img src="docs/sample-comic.png" alt="A four-panel comic: Sam asks Kit the fox whether other tools could reuse Showtail's log readers; Kit moves the code in three careful steps; Glitch the bug gloats that the edits were made in the shell; Kit replies that the commit SHAs remember everything and Sam cheers that all tests pass." width="640"></p>
-
 - **Install after the fact.** Write your code first with any supported agent,
   then add Tracetoon. It reads logs that already exist: no hooks, no background
   capture, no history database.
@@ -52,6 +50,28 @@ Restart your agent, then in any repo with your work on a branch, ask:
 Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
 again. Downloads are checked against the release's SHA-256 checksums.
 
+### Tracetoon is the default for PRs, and easy to turn off
+
+The installer adds a small hook to each agent. When an agent tries to open a PR
+with `gh pr create` (or rewrite one with `gh pr edit --title/--body`), the hook
+stops it and points it to Tracetoon, so you always get a preview first. It only
+touches its own entries in each agent's config, backs up each file before the
+first change, and lists every file it changed. Skip it with
+`TRACETOON_NO_HOOK=1`. Codex asks you to trust a new hook once (`/hooks`), and
+the Antigravity IDE picks it up after a restart.
+
+Turn it off at whichever level you need. Any "off" wins:
+
+| Scope | Off | On again |
+|---|---|---|
+| One command | `TRACETOON=0 gh pr create ...` | (just once) |
+| You, everywhere | `tracetoon off` | `tracetoon on` |
+| This repo, for everyone | `tracetoon off --repo` (writes `.github/tracetoon.json`; commit it) | `tracetoon on --repo` |
+| This repo, just you | `tracetoon off --local` (git config) | `tracetoon on --local` |
+| CI | off automatically when `CI=true` | `TRACETOON=1` |
+
+`tracetoon status` shows whether it's on here and which setting decided.
+
 <details>
 <summary>Other ways to install</summary>
 
@@ -86,7 +106,7 @@ again. Downloads are checked against the release's SHA-256 checksums.
 4. **`tracetoon comic art` / `comic render`** draw the panels and add speech
    bubbles. Art comes from your agent's own image tool (Codex, Antigravity),
    Gemini or OpenAI if you have a key and agree, or the built-in artist (no key
-   needed; that's what drew the comic above).
+   needed).
 5. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text in an existing PR is kept), scans it for leaks and
    prints an approval code.
@@ -94,9 +114,10 @@ again. Downloads are checked against the release's SHA-256 checksums.
    `tracetoon-assets` branch (or as a GitHub attachment for private repos) and
    creates or updates the PR with `gh`.
 
-Other commands: `scan`, `expand`, `preview`, `series`,
-`export --agent-trace` ([Agent Trace](https://agent-trace.dev) line attribution),
-`doctor --probe`, `config`. Every command takes `--json`.
+Other commands: `status`, `on`/`off`, `hook install`/`uninstall`, `scan`,
+`expand`, `preview`, `series`, `export --agent-trace`
+([Agent Trace](https://agent-trace.dev) line attribution), `doctor --probe`,
+`config`. Every command takes `--json`.
 
 If the repo already records provenance with [Entire](https://entire.io)
 checkpoints or git-ai notes, the digest says so. Run files live in
@@ -116,6 +137,7 @@ the binary included are attached to each release.
 
 | Key | Default | Meaning |
 |---|---|---|
+| `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
 | `theme` | `pets` | Comic theme for a new series: `pets`, `mecha` or `scifi` |
 | `comic` | `true` | Make a comic at all |
 | `yolo` | `false` | Allow `publish --yolo` to skip the preview when all checks pass |

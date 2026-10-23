@@ -12,6 +12,9 @@ describe('doctor', () => {
     expect(
       describeRuntime('/home/u/.cache/tracetoon/1.0.0/tracetoon-linux-arm64', '1.3.14'),
     ).toBe('prebuilt binary');
+    expect(
+      describeRuntime('C:/x/AppData/Local/tracetoon/bin/tracetoon.exe', '1.3.14'),
+    ).toBe('prebuilt binary');
     expect(describeRuntime('/usr/local/bin/bun', '1.3.14')).toBe('bun 1.3.14');
     expect(describeRuntime('/usr/bin/node', null)).toMatch(/^node v/);
   });

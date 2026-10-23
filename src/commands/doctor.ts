@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { hostHome } from '@showtail/agent-traces/paths/hostHome';
+import { hookStatus } from '../hook/install.ts';
+import { switchState } from '../hook/switches.ts';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
@@ -46,7 +48,8 @@ export function describeRuntime(
   bunVersion: string | null = (globalThis as { Bun?: { version: string } }).Bun
     ?.version ?? null,
 ): string {
-  if (/[\\/]tracetoon-[a-z]+-[a-z0-9]+(\.exe)?$/i.test(execPath))
+  // The installed binary (bin/tracetoon[.exe]) or a release binary (tracetoon-<os>-<arch>).
+  if (/[\\/]tracetoon(-[a-z]+-[a-z0-9]+)?(\.exe)?$/i.test(execPath))
     return 'prebuilt binary';
   return bunVersion ? `bun ${bunVersion}` : `node ${process.version}`;
 }
@@ -113,6 +116,8 @@ export function doctor(
     repo: top.ok ? top.stdout.trim() : null,
     agents: [...agents, ...planned],
     installs,
+    switch: switchState(cwd),
+    prHook: hookStatus().filter((h) => h.present),
     ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
     imageProviders: {
       gemini: !!process.env.GEMINI_API_KEY,
@@ -152,6 +157,15 @@ export function doctor(
             : '';
         return `  ${i.agent.padEnd(14)} ${i.version ?? 'unknown version'}${stale}`;
       }),
+      `tracetoon here: ${report.switch.enabled ? 'on' : 'off'} (${report.switch.why})`,
+      `PR hook: ${
+        report.prHook
+          .map(
+            (h) => `${h.label} ${h.installed ? (h.problem ? 'inactive' : 'yes') : 'no'}`,
+          )
+          .join(', ') || 'no agents found'
+      }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
+      ...report.prHook.filter((h) => h.problem).map((h) => `  ${h.label}: ${h.problem}`),
     );
     lines.push(
       `image providers: ${['gemini', 'openai'].filter((p) => report.imageProviders[p as 'gemini']).join(', ') || 'none (built-in comic art will be used)'}`,

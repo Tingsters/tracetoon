@@ -17,7 +17,9 @@ $name = "tracetoon-windows-$arch.exe"
 $cacheRoot = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME '.cache' }
 $cache = Join-Path (Join-Path (Join-Path $cacheRoot 'tracetoon') 'cache') $ver
 
-foreach ($c in @((Join-Path $here $name), (Join-Path $cache $name))) {
+# Where the installer puts the binary (a fixed path, so hooks survive updates).
+$installed = Join-Path (Join-Path (Join-Path $cacheRoot 'tracetoon') 'bin') 'tracetoon.exe'
+foreach ($c in @((Join-Path $here $name), $installed, (Join-Path $cache $name))) {
   if (Test-Path $c) { & $c @args; exit $LASTEXITCODE }
 }
 

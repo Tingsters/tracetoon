@@ -89,12 +89,7 @@ export function renderPreviewHtml(input: {
     approval.policy === 'prohibited'
       ? '<p class="warn">This repository appears to prohibit AI-assisted contributions.</p>'
       : '';
-  const sessions = digest.sessions
-    .map(
-      (s) =>
-        `<li>${esc(s.agent)} | ${esc(s.title ?? s.ref)} | ${s.band} (${s.score})</li>`,
-    )
-    .join('');
+  const evidence = evidenceHtml(digest);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} | Tracetoon preview</title>
@@ -111,6 +106,8 @@ pre,code{background:var(--code);border-radius:6px;font-size:85%}pre{padding:12px
 table{border-collapse:collapse}td,th{border:1px solid var(--border);padding:6px 12px}
 a{color:var(--accent)}.warn{color:var(--warn)}.ok{color:var(--ok)}
 aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px}
+.evidence{color:var(--fg)}.evidence h2{font-size:16px;margin:16px 0 4px}.evidence h3{font-size:14px;margin:12px 0 4px}
+.evidence ul{margin:4px 0;padding-left:20px}.evidence li{margin:2px 0}.evidence .n{color:var(--muted)}
 .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;color:var(--fg)}
 </style></head><body><main>
 <h1 class="title">${esc(title)}</h1>
@@ -118,10 +115,44 @@ aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var
 <div class="card">${html}</div>
 <aside>
 ${findings}${policy}
-<p>Sessions used:</p><ul>${sessions || '<li>none</li>'}</ul>
+${evidence}
 <p>Approval code: <span class="code">${esc(approval.code)}</span></p>
 <p>Nothing has been posted. Tell your agent to publish with this code once you're happy.</p>
 </aside>
 </main></body></html>
 `;
+}
+
+/**
+ * What the digest actually says, next to the description, so every claim in the
+ * text can be checked against the evidence at a glance.
+ */
+function evidenceHtml(d: TraceDigest): string {
+  const li = (items: string[], empty = 'none') =>
+    `<ul>${items.length ? items.map((i) => `<li>${i}</li>`).join('') : `<li class="n">${empty}</li>`}</ul>`;
+  const s = d.stats;
+  const facts = [
+    `${s.filesChanged} file(s) changed, +${s.added} / -${s.removed} lines`,
+    `${s.agentMatchedPct}% of added lines match agent edits; ${s.unmatchedPct}% match none`,
+    `${s.commitsMadeInSessions} of ${s.commits} commit(s) made during agent sessions`,
+    ...d.notes.map(esc),
+  ];
+  const sessions = d.sessions.map((x) => {
+    const tests = x.commands.filter((c) => c.isTest);
+    return `<h3>${esc(x.agent)}: ${esc(x.title ?? x.ref)} <span class="n">(${x.band}, score ${x.score}${x.models.length ? `, ${esc(x.models.join(', '))}` : ''})</span></h3>
+<p class="n">${esc(x.reasons.join('; '))}</p>
+<b>Prompts</b>${li(x.prompts.map((p) => esc(p.text)))}
+${x.plans.length ? `<b>Plans</b>${li(x.plans.map((p) => `${p.approved ? 'approved' : 'not approved'}: ${esc(p.excerpt.split('\n')[0] ?? '')}`))}` : ''}
+${x.decisions.length ? `<b>Decisions</b>${li(x.decisions.map((p) => esc(p.text)))}` : ''}
+<b>Tests</b>${li(
+      tests.map((c) => `${esc(c.cmd)}: ${c.count} run(s), ${c.failures} failed`),
+      'no test runs recorded',
+    )}
+<b>Milestones</b>${li(x.milestones.map(esc))}`;
+  });
+  return `<details class="evidence" open><summary><b>Evidence from the agent logs</b></summary>
+<h2>Facts</h2>${li(facts)}
+<h2>Sessions</h2>${sessions.join('') || '<p class="n">No agent sessions matched.</p>'}
+<h2>Disclosure</h2>${li(d.disclosure.suggestedTrailers.map(esc), 'no AI trailer suggested')}
+</details>`;
 }

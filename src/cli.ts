@@ -19,6 +19,13 @@ import {
 } from './commands/comic.ts';
 import { exportCmd } from './commands/export.ts';
 import { seriesShowCmd } from './commands/series.ts';
+import {
+  hookInstallCmd,
+  hookUninstallCmd,
+  setEnabledCmd,
+  statusCmd,
+} from './commands/switch.ts';
+import { runPrHook, type HookAgent } from './hook/prHook.ts';
 import { TOOL_VERSION } from './version.ts';
 
 const list = (v: string) =>
@@ -145,6 +152,42 @@ program
   .option('--base <ref>', 'base branch')
   .option('--offline', 'do not ask GitHub for an existing PR')
   .action((o) => exportCmd(cwd, { ...g(), ...o }));
+
+program
+  .command('status')
+  .description(
+    'is Tracetoon on here, which setting decided, and which agents have the PR hook',
+  )
+  .action(() => statusCmd(cwd, g()));
+for (const [name, on] of [
+  ['on', true],
+  ['off', false],
+] as const) {
+  program
+    .command(name)
+    .description(`turn Tracetoon ${name} for your PRs (default: everywhere for you)`)
+    .option('--repo', 'for everyone in this repo (.github/tracetoon.json)')
+    .option('--local', 'for this repo on this machine only (git config)')
+    .action((o) => setEnabledCmd(cwd, on, { ...g(), ...o }));
+}
+
+const hook = program
+  .command('hook')
+  .description('the agent hook that routes PRs through Tracetoon');
+hook
+  .command('pre-pr')
+  .description('called by agents before shell commands; blocks direct gh pr create/edit')
+  .requiredOption('--agent <agent>', 'claude, codex or antigravity')
+  .action(async (o) => runPrHook(o.agent as HookAgent));
+hook
+  .command('install')
+  .description('register the PR hook with Claude Code, Codex and Antigravity')
+  .option('--program <path>', 'program the hook should run (default: this one)')
+  .action((o) => hookInstallCmd({ ...g(), ...o }));
+hook
+  .command('uninstall')
+  .description('remove the PR hook from every agent')
+  .action(() => hookUninstallCmd(g()));
 
 const config = program.command('config').description('show or change settings');
 config.command('get [key]').action((key?: keyof Config) => {

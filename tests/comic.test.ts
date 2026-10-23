@@ -172,6 +172,7 @@ describe('story', () => {
       linkedPrs: [],
     });
     expect(stacked.saga?.prs.map((p) => p.number)).toEqual([2]);
+    // Sharing a session alone doesn't make a saga (one session often makes many PRs).
     const shared = buildStory({
       truth,
       series: 'ser_1',
@@ -179,8 +180,17 @@ describe('story', () => {
       sessionRefs: ['h:abc'],
       linkedPrs: [],
     });
-    expect(shared.saga?.id).toBe('sg_keep');
-    expect(shared.previously).toEqual(['#5: episode 1']);
+    expect(shared.saga).toBeUndefined();
+    // A linked PR that already has a saga id passes it on.
+    const continued = buildStory({
+      truth,
+      series: 'ser_1',
+      episodes: [ep(5, 1, { meta: { saga: 'sg_keep' } })],
+      sessionRefs: [],
+      linkedPrs: [5],
+    });
+    expect(continued.saga?.id).toBe('sg_keep');
+    expect(continued.previously).toEqual(['#5: episode 1']);
     const linked = buildStory({
       truth,
       series: 'ser_1',

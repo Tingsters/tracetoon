@@ -25,7 +25,12 @@ export interface TimeWindow {
   endMs: number;
 }
 
-/** Commits bound the window: 8h before the first, 30m after the last (or now). */
+/**
+ * Commits bound the window: 8h before the first, 5m after the last. Work after
+ * the last commit belongs to whatever comes next (git and the agents' logs share
+ * this machine's clock, so a few minutes of slack is enough). Uncommitted
+ * changes aren't part of the PR, so they don't stretch the window.
+ */
 export function windowFor(truth: PrTruth, nowMs = Date.now()): TimeWindow {
   if (truth.commits.length === 0) {
     // Uncommitted work: anything before the base commit is already in it.
@@ -37,7 +42,7 @@ export function windowFor(truth: PrTruth, nowMs = Date.now()): TimeWindow {
   const last = Math.max(...truth.commits.map((c) => c.commitTime));
   return {
     startMs: first - 8 * 3600_000,
-    endMs: truth.dirty ? nowMs : last + 30 * 60_000,
+    endMs: last + 5 * 60_000,
   };
 }
 
@@ -85,9 +90,15 @@ function inWindow(ts: string | undefined, w: TimeWindow): boolean {
   return !Number.isFinite(t) || (t >= w.startMs && t <= w.endMs);
 }
 
-function repoRel(truth: PrTruth, abs: string): string | undefined {
+/**
+ * A file's path inside the repo, or undefined when it's outside every root or in
+ * git's own folder (where Tracetoon's run files live).
+ */
+export function repoRel(truth: Pick<PrTruth, 'roots'>, abs: string): string | undefined {
   const root = rootOf(abs, truth.roots);
-  return root ? relative(root, abs).split(/[\\/]/).join('/') : undefined;
+  if (!root) return undefined;
+  const rel = relative(root, abs).split(/[\\/]/).join('/');
+  return rel === '.git' || rel.startsWith('.git/') ? undefined : rel;
 }
 
 function belongs(r: TraceRecord, truth: PrTruth, w: TimeWindow): boolean {
@@ -106,6 +117,11 @@ function belongs(r: TraceRecord, truth: PrTruth, w: TimeWindow): boolean {
   return false;
 }
 
+/** A user prompt that opens a turn (not a subagent task, not feedback on a rejected tool call). */
+function isTurnStart(r: TraceRecord): boolean {
+  return r.kind === 'prompt' && !r.delegated && !r.feedback;
+}
+
 /** Prompts and replies have no path; keep them when their turn did repo work. */
 function keepConversation(records: TraceRecord[], keepFlags: boolean[]): void {
   let turnStart = -1;
@@ -120,7 +136,7 @@ function keepConversation(records: TraceRecord[], keepFlags: boolean[]): void {
     }
   };
   records.forEach((r, i) => {
-    if (r.kind === 'prompt') {
+    if (isTurnStart(r)) {
       flush(i);
       turnStart = i;
     }
@@ -182,17 +198,89 @@ export function formerRootsOf(
   return [...out];
 }
 
-/** PR commits whose SHA shows up in output of commands the session ran (git commit/push/log). */
-export function commitsMadeBy(kept: TraceRecord[], truth: PrTruth): string[] {
-  const out = kept
-    .filter((r): r is Extract<TraceRecord, { kind: 'command' }> => r.kind === 'command')
-    .map((r) => r.output ?? '')
-    .join('\n')
-    .toLowerCase();
-  if (!out) return [];
-  return truth.commits
-    .map((c) => c.sha)
-    .filter((sha) => new RegExp(`\\b${sha.slice(0, 7).toLowerCase()}`).test(out));
+type CommandRecord = Extract<TraceRecord, { kind: 'command' }>;
+
+/**
+ * When the session made each commit: its SHA in a command's output (git commit,
+ * git log, git push), or its subject in the message of a `git commit` command
+ * (quiet commits print no SHA). Returns SHA -> time of the first such command.
+ */
+export function commitMoments(
+  records: TraceRecord[],
+  commits: { sha: string; subject: string }[],
+): Map<string, string | undefined> {
+  const found = new Map<string, string | undefined>();
+  const commands = records.filter((r): r is CommandRecord => r.kind === 'command');
+  for (const c of commits) {
+    const sha = new RegExp(`\\b${c.sha.slice(0, 7).toLowerCase()}`);
+    const subject =
+      c.subject.trim().length >= 12 ? c.subject.trim().toLowerCase() : undefined;
+    for (const r of commands) {
+      const byOutput = r.output ? sha.test(r.output.toLowerCase()) : false;
+      const bySubject =
+        !!subject &&
+        /\bgit\b[^\n]*\bcommit\b/i.test(r.cmd) &&
+        r.cmd.toLowerCase().includes(subject);
+      if (byOutput || bySubject) {
+        found.set(c.sha, r.ts);
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/** PR commits the session made. */
+export function commitsMadeBy(records: TraceRecord[], truth: PrTruth): string[] {
+  return [...commitMoments(records, truth.commits).keys()];
+}
+
+/**
+ * The moment this session last committed work that is already in the base
+ * branch. Anything the session finished before then belongs to earlier PRs.
+ */
+export function earlierWorkCutoff(
+  records: TraceRecord[],
+  truth: PrTruth,
+): number | undefined {
+  const base = truth.baseCommits ?? [];
+  if (!base.length) return undefined;
+  const times = [...commitMoments(records, base).values()]
+    .map((t) => (t ? Date.parse(t) : NaN))
+    .filter(Number.isFinite);
+  return times.length ? Math.max(...times) : undefined;
+}
+
+/**
+ * Drop records from turns that ended before the cutoff. A turn that crosses it
+ * keeps its conversation (the request may have started this PR too) but loses
+ * work done before the cutoff.
+ */
+function dropEarlierWork(records: TraceRecord[], flags: boolean[], cutoff: number): void {
+  const starts = records.map((r, i) => (isTurnStart(r) ? i : -1)).filter((i) => i >= 0);
+  if (!starts.length || starts[0] !== 0) starts.unshift(0);
+  const at = (r: TraceRecord) => (r.ts ? Date.parse(r.ts) : NaN);
+  for (let k = 0; k < starts.length; k++) {
+    const from = starts[k]!;
+    const to = starts[k + 1] ?? records.length;
+    // A turn's work is its edits; commands after them (tests, publishing) don't
+    // make an earlier piece of work part of this PR.
+    const turn = records.slice(from, to);
+    const edits = turn.filter((r) => r.kind === 'edit');
+    const times = (edits.length ? edits : turn).map(at).filter(Number.isFinite);
+    const end = times.length ? Math.max(...times) : NaN;
+    for (let i = from; i < to; i++) {
+      const r = records[i]!;
+      if (r.kind === 'link' || r.kind === 'artifact') continue;
+      if (Number.isFinite(end) && end <= cutoff) flags[i] = false;
+      else if (
+        at(r) <= cutoff &&
+        !['prompt', 'plan', 'decision', 'assistant', 'usage'].includes(r.kind)
+      ) {
+        flags[i] = false;
+      }
+    }
+  }
 }
 
 export function prLineIndex(truth: PrTruth): {
@@ -226,6 +314,8 @@ export function matchSession(
   const flags = records.map((r) => belongs(r, view, w));
   keepConversation(records, flags);
   keepParentFolderPrompts(records, flags, view, w);
+  const cutoff = earlierWorkCutoff(records, truth);
+  if (cutoff !== undefined) dropEarlierWork(records, flags, cutoff);
   // A session's own plan/task/walkthrough files describe the session as a whole:
   // keep them whenever the session did work in this repo.
   if (flags.some((f, i) => f && records[i]!.kind !== 'link')) {
