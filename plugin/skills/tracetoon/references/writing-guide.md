@@ -65,3 +65,22 @@ subagents").
 - If the digest `notes` say the description covers uncommitted changes, say so.
 - Keep it under about 600 words, not counting the collapsed trace.
 - Never include absolute paths, usernames, tokens, or content from other repos.
+
+## Check every claim before rendering
+
+Go through `body.md` sentence by sentence. Each claim must come from one of
+these: the digest, the diff, or something you did and can point to in this
+session. The preview shows the digest's facts in an "Evidence" section, so the
+user can do the same check.
+
+- **Numbers** (lines matched, commits, test counts) are copied from the digest,
+  not estimated.
+- **Tests:** say they passed only if the digest's test runs show it. If a run
+  failed and a later one passed, say that; it's part of the story.
+- **Don't explain gaps you can't see.** If some lines match no agent edit, say
+  so plainly. Don't guess why (for example "mostly formatting") unless the diff
+  shows it.
+- **Plans and decisions:** say a plan was approved only if the digest says
+  so; describe a decision only from its recorded question and answer.
+- **Things that happened outside the logs** (for example, a manual check the
+  user did) need the user's word for it, not yours.

@@ -43,6 +43,8 @@ export interface PrTruth {
   mergeBase: string;
   /** Commit time of the merge base (ms), when it resolves to a commit. */
   mergeBaseTime?: number;
+  /** Recent commits already in the base branch (newest first), to recognize earlier work. */
+  baseCommits?: { sha: string; subject: string }[];
   commits: Commit[];
   files: FileChange[];
   /** True when there were no commits ahead of base and the working tree was used. */
@@ -161,6 +163,16 @@ export function parseUnifiedDiff(diff: string): FileChange[] {
       inHunk = false;
       continue;
     }
+    // Binary files have no hunks; still count them as changed.
+    const bin =
+      /^Binary files (?:a\/(.+?)|\/dev\/null) and (?:b\/(.+?)|\/dev\/null) differ$/.exec(
+        line,
+      );
+    if (bin) {
+      const path = bin[2] ?? bin[1];
+      if (path) files.push({ path, added: [], removed: [], addedAt: [] });
+      continue;
+    }
     if (!inHunk) {
       if (line.startsWith('--- ')) {
         const p = line.slice(4).trim();
@@ -214,26 +226,38 @@ export interface TruthOptions {
   base?: string;
   /** Skip the `gh pr view` lookup (tests, offline). */
   noGh?: boolean;
+  /** Describe this commit or branch instead of the checkout (evaluations, past PRs). */
+  head?: string;
 }
 
 export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
   const toplevel = resolve(must(cwd, ['rev-parse', '--show-toplevel']));
   const gitDir = resolve(toplevel, must(toplevel, ['rev-parse', '--git-dir']));
-  const head = must(toplevel, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const headRef = opts.head ?? 'HEAD';
+  const head = opts.head ?? must(toplevel, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const pr = opts.noGh ? undefined : existingPr(toplevel, head);
   const base = opts.base ?? pr?.baseRefName ?? defaultBase(toplevel);
   const ref = baseRef(toplevel, base);
-  const mergeBase = git(toplevel, ['merge-base', ref, 'HEAD']).stdout.trim() || ref;
+  const mergeBase = git(toplevel, ['merge-base', ref, headRef]).stdout.trim() || ref;
   const mbt = Number(
     git(toplevel, ['show', '-s', '--format=%ct', mergeBase]).stdout.trim(),
   );
   const mergeBaseTime = Number.isFinite(mbt) && mbt > 0 ? mbt * 1000 : undefined;
-  const commits = commitsBetween(toplevel, mergeBase, 'HEAD');
-  const dirty = git(toplevel, ['status', '--porcelain']).stdout.trim().length > 0;
-  const usedWorkingTree = commits.length === 0;
+  const commits = commitsBetween(toplevel, mergeBase, headRef);
+  const baseCommits = git(toplevel, ['log', '-n', '200', '--format=%H%x1f%s', mergeBase])
+    .stdout.split(/\r?\n/)
+    .filter(Boolean)
+    .map((l) => {
+      const [sha, subject] = l.split('\x1f');
+      return { sha: sha!, subject: subject ?? '' };
+    });
+  const dirty = opts.head
+    ? false
+    : git(toplevel, ['status', '--porcelain']).stdout.trim().length > 0;
+  const usedWorkingTree = commits.length === 0 && !opts.head;
   const diffArgs = usedWorkingTree
     ? ['diff', '-U0', '--no-color', '--no-ext-diff', mergeBase]
-    : ['diff', '-U0', '--no-color', '--no-ext-diff', mergeBase, 'HEAD'];
+    : ['diff', '-U0', '--no-color', '--no-ext-diff', mergeBase, headRef];
   let files = parseUnifiedDiff(git(toplevel, diffArgs).stdout);
   if (usedWorkingTree) files = files.concat(untrackedAsAdded(toplevel));
   const roots = [...new Set([toplevel, ...worktreeRoots(toplevel)])];
@@ -247,6 +271,7 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     base,
     mergeBase,
     mergeBaseTime,
+    baseCommits,
     commits,
     files,
     usedWorkingTree,

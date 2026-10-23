@@ -212,6 +212,22 @@ export function parseClaudeLines(
       if (!Array.isArray(msg.content)) continue;
       for (const c of msg.content) {
         if (!isObj(c) || c.type !== 'tool_result') continue;
+        // When the user rejects a tool call and types why, that is them steering
+        // the work: keep it as a prompt.
+        if (c.is_error === true) {
+          const said = /the user said:\s*([\s\S]+)$/i
+            .exec(textOfToolResult(c.content))?.[1]
+            ?.trim();
+          if (said && !isSyntheticPrompt(said)) {
+            into.records.push({
+              kind: 'prompt',
+              text: said,
+              feedback: true,
+              ...base,
+              ...(opts.subagent ? { delegated: true } : {}),
+            });
+          }
+        }
         const id = str(c.tool_use_id);
         const call = id ? pending.get(id) : undefined;
         if (!call) continue;
