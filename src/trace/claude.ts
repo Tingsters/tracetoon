@@ -325,17 +325,21 @@ export const claudeAdapter: TraceAdapter = {
     const dir = claude.claudeProjectsDir();
     return existsSync(dir) ? claudeHome() : undefined;
   },
-  discover({ roots, sinceMs }) {
+  discover({ roots, sinceMs, needles = [] }) {
     const out: SessionRef[] = [];
+    const lowered = needles.map((n) => n.toLowerCase());
     for (const t of claude.findTranscripts()) {
       if (t.mtimeMs < sinceMs) continue;
       let relevant = t.cwd !== undefined && mentionsAnyRoot(JSON.stringify(t.cwd), roots);
       if (!relevant) {
-        // Sessions can start elsewhere and move into the repo: check the whole file
-        // and its subagents for any mention of a repo root.
+        // Sessions can start elsewhere and move into the repo, or work in a worktree
+        // that's gone: check the whole file and its subagents for a repo root or a
+        // PR commit SHA. Correlation decides later whether it really belongs.
         for (const p of [t.path, ...subagentFiles(t.path)]) {
           try {
-            if (mentionsAnyRoot(readFileSync(p, 'utf8'), roots)) {
+            const text = readFileSync(p, 'utf8');
+            const low = lowered.length ? text.toLowerCase() : '';
+            if (mentionsAnyRoot(text, roots) || lowered.some((n) => low.includes(n))) {
               relevant = true;
               break;
             }

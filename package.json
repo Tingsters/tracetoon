@@ -12,7 +12,7 @@
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",
     "format": "bun x prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "bundle": "bun build ./src/cli.ts --target node --outfile skill/tracetoon/dist/tracetoon.mjs",
+    "bundle": "bun build ./src/cli.ts --target node --minify --outfile plugin/skills/tracetoon/dist/tracetoon.mjs",
     "build": "bun build --compile --minify ./src/cli.ts --outfile dist/tracetoon"
   },
   "dependencies": {

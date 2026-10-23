@@ -1,0 +1,11 @@
+{
+  "name": "tracetoon",
+  "owner": { "name": "Tingsters" },
+  "plugins": [
+    {
+      "name": "tracetoon",
+      "source": "./plugin",
+      "description": "Agent-trace PR descriptions with an approval step (comics coming soon)."
+    }
+  ]
+}

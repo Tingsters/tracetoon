@@ -1,0 +1,67 @@
+#!/bin/sh
+# Tracetoon launcher. Finds a way to run Tracetoon without a separate install:
+#   1. $TRACETOON_BIN
+#   2. a binary shipped next to this script, or cached from an earlier download
+#   3. bun or node (22+) running the bundled dist/tracetoon.mjs
+#   4. with TRACETOON_ALLOW_DOWNLOAD=1: download the release binary with gh,
+#      verify its SHA-256 against checksums.txt, cache it
+# Exits 3 when none of these work, so the skill can fall back to manual mode.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+skill=$(dirname -- "$here")
+ver=$(cat "$skill/VERSION" 2>/dev/null || echo 0.0.0)
+
+if [ -n "${TRACETOON_BIN:-}" ]; then exec "$TRACETOON_BIN" "$@"; fi
+
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  MINGW* | MSYS* | CYGWIN*) os=windows ;;
+  *) os=unknown ;;
+esac
+case "$(uname -m)" in
+  arm64 | aarch64) arch=arm64 ;;
+  x86_64 | amd64) arch=x64 ;;
+  *) arch=unknown ;;
+esac
+plat="$os-$arch"
+exe=""
+[ "$os" = windows ] && exe=".exe"
+name="tracetoon-$plat$exe"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/tracetoon/$ver"
+
+for candidate in "$here/$name" "$cache/$name"; do
+  if [ -x "$candidate" ]; then exec "$candidate" "$@"; fi
+done
+
+bundle="$skill/dist/tracetoon.mjs"
+if [ -f "$bundle" ]; then
+  if command -v bun >/dev/null 2>&1; then exec bun "$bundle" "$@"; fi
+  if command -v node >/dev/null 2>&1; then
+    major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+    if [ "$major" -ge 22 ]; then exec node "$bundle" "$@"; fi
+  fi
+fi
+
+if [ "${TRACETOON_ALLOW_DOWNLOAD:-}" = 1 ] && command -v gh >/dev/null 2>&1; then
+  tmp=$(mktemp -d)
+  if gh release download "v$ver" -R Tingsters/tracetoon -p "$name" -D "$tmp" >/dev/null 2>&1; then
+    want=$(grep " $name\$" "$skill/checksums.txt" 2>/dev/null | cut -d' ' -f1 || true)
+    if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$tmp/$name" | cut -d' ' -f1)
+    else got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1); fi
+    if [ -n "$want" ] && [ "$want" = "$got" ]; then
+      mkdir -p "$cache"
+      mv "$tmp/$name" "$cache/$name"
+      chmod +x "$cache/$name"
+      rm -rf "$tmp"
+      exec "$cache/$name" "$@"
+    fi
+    echo "tracetoon: downloaded binary failed its checksum; not running it." >&2
+  fi
+  rm -rf "$tmp"
+fi
+
+echo "tracetoon: no way to run Tracetoon here (no bun, no node 22+, no cached binary)." >&2
+echo "tracetoon: set TRACETOON_ALLOW_DOWNLOAD=1 to fetch the release binary with gh." >&2
+exit 3

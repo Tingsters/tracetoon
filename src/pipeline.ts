@@ -22,7 +22,12 @@ export function scan(cwd: string, opts: TruthOptions = {}): ScanResult {
   const warnings: string[] = [];
   for (const adapter of ADAPTERS) {
     if (!adapter.home()) continue;
-    for (const ref of adapter.discover({ roots: truth.roots, sinceMs: window.startMs })) {
+    const needles = truth.commits.map((c) => c.sha.slice(0, 7));
+    for (const ref of adapter.discover({
+      roots: truth.roots,
+      sinceMs: window.startMs,
+      needles,
+    })) {
       const session = adapter.read(ref);
       warnings.push(...session.warnings);
       matches.push(matchSession(session, truth, window, prLines));

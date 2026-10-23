@@ -49,7 +49,10 @@ export function git(cwd: string, args: string[], input?: string): ExecResult {
 }
 
 export function gh(cwd: string, args: string[]): ExecResult {
-  return run('gh', args, {
+  // Tests point this at a script that stands in for the GitHub CLI.
+  const fake = process.env.TRACETOON_GH_SCRIPT;
+  const [cmd, argv] = fake ? [process.execPath, [fake, ...args]] : ['gh', args];
+  return run(cmd, argv, {
     cwd,
     env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' },
   });

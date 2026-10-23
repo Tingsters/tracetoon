@@ -80,6 +80,11 @@ export interface DiscoverQuery {
   roots: string[];
   /** Ignore logs last written before this time (ms since epoch). */
   sinceMs: number;
+  /**
+   * Extra strings that make a log relevant even if it never names a root: the
+   * PR's short commit SHAs, which find sessions that worked in a deleted worktree.
+   */
+  needles?: string[];
 }
 
 export interface TraceAdapter {

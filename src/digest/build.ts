@@ -87,11 +87,22 @@ export interface TraceDigest {
   truncated: string[];
 }
 
-const TEST_RE =
-  /\b(test|tests|pytest|jest|vitest|mocha|rspec|phpunit|ctest|go test|cargo test|bun test|npm (run )?test|yarn test|pnpm test|tox|nox)\b/i;
+/** Test runners, matched against the program at the start of a command segment. */
+const TEST_RUNNERS = [
+  /^(bun|npm|yarn|pnpm|deno)\s+(run\s+)?test\b/,
+  /^npx\s+(jest|vitest|mocha|playwright\s+test)\b/,
+  /^(python3?\s+-m\s+)?(pytest|unittest|tox|nox)\b/,
+  /^(jest|vitest|mocha|rspec|phpunit|ctest)\b/,
+  /^(go|cargo|dotnet|swift|mix|zig)\s+test\b/,
+  /^(mvn|gradle|\.\/gradlew|gradlew)\b.*\btest\b/,
+  /^make\s+(test|check)\b/,
+];
 
 export function isTestCommand(cmd: string): boolean {
-  return TEST_RE.test(cmd);
+  return cmd
+    .split(/&&|\|\||;|\||\n/)
+    .map((s) => s.trim().replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
+    .some((s) => TEST_RUNNERS.some((re) => re.test(s)));
 }
 
 /** A short grouping key for a shell command: the program and its first argument. */

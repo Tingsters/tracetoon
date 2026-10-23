@@ -143,7 +143,9 @@ function keepParentFolderPrompts(
   });
   for (let i = 0; i < lastKept; i++) {
     const r = records[i]!;
-    if (keepFlags[i] || r.kind !== 'prompt' || r.delegated || !r.cwd) continue;
+    if (keepFlags[i] || !r.cwd) continue;
+    const isUserPrompt = r.kind === 'prompt' && !r.delegated;
+    if (!isUserPrompt && r.kind !== 'plan' && r.kind !== 'decision') continue;
     if (inWindow(r.ts, w) && parents.has(pathKey(r.cwd))) keepFlags[i] = true;
   }
 }
@@ -262,18 +264,19 @@ export function matchSession(
   const times = kept.map((r) => (r.ts ? Date.parse(r.ts) : NaN)).filter(Number.isFinite);
   let timeOverlap = 0;
   if (times.length && truth.commits.length) {
+    // How much of the session's repo work falls in the stretch leading up to the
+    // commits (from 2h before the first to 30m after the last).
     const s0 = Math.min(...times);
     const s1 = Math.max(...times);
     const c0 = Math.min(...truth.commits.map((c) => c.authorTime)) - 2 * 3600_000;
-    const c1 = Math.max(...truth.commits.map((c) => c.commitTime));
+    const c1 = Math.max(...truth.commits.map((c) => c.commitTime)) + 30 * 60_000;
     const inter = Math.max(0, Math.min(s1, c1) - Math.max(s0, c0));
-    const union = Math.max(s1, c1) - Math.min(s0, c0);
-    timeOverlap = union > 0 ? inter / union : 1;
-    if (inter === 0 && s1 <= c1 + 30 * 60_000 && s1 >= c0) timeOverlap = 0.5;
+    timeOverlap = s1 > s0 ? inter / (s1 - s0) : s0 >= c0 && s0 <= c1 ? 1 : 0;
   } else if (times.length) timeOverlap = 1;
 
-  // Damp survival when only a handful of lines matched: one surviving line is weak evidence.
-  const editEvidence = survival * Math.min(1, matchedLines / 5);
+  // One surviving line is weak evidence, unless it is most of a small PR.
+  const coverage = prLines.total ? matchedLines / prLines.total : 0;
+  const editEvidence = survival * Math.min(1, Math.max(matchedLines / 5, coverage));
   const reasons: string[] = [];
   let score: number;
   if (prLink) {
