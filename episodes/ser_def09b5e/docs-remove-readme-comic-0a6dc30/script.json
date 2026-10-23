@@ -1,0 +1,95 @@
+{
+  "v": 1,
+  "title": "Spring Cleaning",
+  "synopsis": "Sam asks Kit to take a stray comic off the README; Kit removes it and finds one last sentence still pointing at it.",
+  "altText": "Panel 1: Sam points at a comic on the README and says it doesn't belong there; Kit agrees. Panel 2: Kit deletes the image and the file. Panel 3: Glitch pops up from a sentence that still says 'the comic above'. Panel 4: Kit fixes the sentence and Sam says the page is clean.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam points at a comic on the README",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "worried"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "That comic doesn't belong in the README."
+        },
+        {
+          "speaker": "kit",
+          "text": "On it!"
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit removes the image and deletes the file",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Image block gone. File deleted."
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch pops out of a leftover sentence",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "center",
+          "expression": "angry"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Ha! 'That's what drew the comic above.' What comic?"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit trims the sentence and Sam is happy",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "One search, one fix."
+        },
+        {
+          "speaker": "sam",
+          "text": "Clean page. Thanks, Kit!"
+        }
+      ]
+    }
+  ]
+}
