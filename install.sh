@@ -4,12 +4,14 @@
 #   curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Gemini CLI) and caches the matching prebuilt binary, so
-# nothing else (Bun, Node) is needed. Re-run to update.
+# Codex, Antigravity, Gemini CLI), caches the matching prebuilt binary so nothing
+# else (Bun, Node) is needed, and adds a small hook to each agent that routes
+# `gh pr create` through Tracetoon. Re-run to update.
 #
 # Options (environment variables):
 #   TRACETOON_VERSION=v1.2.3   install a specific release (default: newest)
-#   TRACETOON_UNINSTALL=1      remove the skill from every agent and the cached binaries
+#   TRACETOON_NO_HOOK=1        skip the PR hook (add it later: tracetoon hook install)
+#   TRACETOON_UNINSTALL=1      remove the skill, the hooks and the cached binaries
 set -eu
 
 REPO="Tingsters/tracetoon"
@@ -68,14 +70,21 @@ exe=""
 bin="tracetoon-$os-$arch$exe"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/tracetoon"
 
+# The binary lives where the launchers look for it. On Windows that is the
+# PowerShell launcher's cache, which the sh launcher checks too.
+if [ "$os" = windows ] && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+  cache_root="$(cygpath -u "$LOCALAPPDATA")/tracetoon/cache"
+fi
+
 if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
+  # Hooks first, while a binary is still around to remove them.
+  for b in "$cache_root"/*/tracetoon-*; do
+    [ -x "$b" ] && "$b" hook uninstall && break
+  done
   targets | while IFS='|' read -r name dir; do
     if [ -d "$dir" ]; then rm -rf "$dir" && say "removed from $name ($dir)"; fi
   done
   rm -rf "$cache_root"
-  if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
-    rm -rf "$(cygpath -u "$LOCALAPPDATA")/tracetoon/cache"
-  fi
   say "Tracetoon uninstalled."
   exit 0
 fi
@@ -107,15 +116,16 @@ unzip_to "$tmp/tracetoon-skill.zip" "$tmp/skill"
 [ -f "$tmp/skill/tracetoon/SKILL.md" ] || die "skill archive is missing SKILL.md"
 chmod +x "$tmp/skill/tracetoon/bin/tracetoon" 2>/dev/null || true
 
-# The binary goes where the launchers look for it. On Windows that is the
-# PowerShell launcher's cache, which the sh launcher checks too.
-if [ "$os" = windows ] && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
-  cache_root="$(cygpath -u "$LOCALAPPDATA")/tracetoon/cache"
-fi
 mkdir -p "$cache_root/$ver"
 cp "$tmp/$bin" "$cache_root/$ver/$bin"
 chmod +x "$cache_root/$ver/$bin"
+"$cache_root/$ver/$bin" --version >/dev/null 2>&1 || die "installed binary does not run"
+# Keep only this version's binary.
+for old in "$cache_root"/*; do
+  [ "$old" = "$cache_root/$ver" ] || rm -rf "$old"
+done
 
+say "Skill:"
 targets | while IFS='|' read -r name dir; do
   rm -rf "$dir"
   mkdir -p "$(dirname "$dir")"
@@ -123,5 +133,10 @@ targets | while IFS='|' read -r name dir; do
   say "  $name: $dir"
 done
 
-"$cache_root/$ver/$bin" --version >/dev/null 2>&1 || die "installed binary does not run"
-say "Done. Restart your agent, then ask it to \"open a PR with Tracetoon\"."
+if [ "${TRACETOON_NO_HOOK:-}" = 1 ]; then
+  say "PR hook: skipped (add it later with: tracetoon hook install)"
+else
+  say "PR hook (routes gh pr create through Tracetoon; turn off with: tracetoon off):"
+  "$cache_root/$ver/$bin" hook install || say "  could not add the PR hook; the skill still works"
+fi
+say "Done. Restart your agent, then ask it to open a PR."

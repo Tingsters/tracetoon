@@ -3,12 +3,14 @@
 #   irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Gemini CLI) and caches the prebuilt binary, so nothing else
-# (Bun, Node) is needed. Re-run to update.
+# Codex, Antigravity, Gemini CLI), caches the prebuilt binary so nothing else
+# (Bun, Node) is needed, and adds a small hook to each agent that routes
+# `gh pr create` through Tracetoon. Re-run to update.
 #
 # Options (environment variables):
 #   $env:TRACETOON_VERSION = 'v1.2.3'   install a specific release (default: newest)
-#   $env:TRACETOON_UNINSTALL = '1'      remove the skill from every agent and the cached binary
+#   $env:TRACETOON_NO_HOOK = '1'        skip the PR hook (add it later: tracetoon hook install)
+#   $env:TRACETOON_UNINSTALL = '1'      remove the skill, the hooks and the cached binary
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repo = 'Tingsters/tracetoon'
@@ -33,6 +35,9 @@ $cacheRoot = Join-Path (Join-Path $env:LOCALAPPDATA 'tracetoon') 'cache'
 $targets = @(Get-Targets)
 
 if ($env:TRACETOON_UNINSTALL -eq '1') {
+  # Hooks first, while a binary is still around to remove them.
+  $old = Get-ChildItem -Path $cacheRoot -Recurse -Filter 'tracetoon-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($old) { & $old.FullName hook uninstall }
   foreach ($t in $targets) {
     if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir; Write-Host "removed from $($t.Name) ($($t.Dir))" }
   }
@@ -78,8 +83,14 @@ try {
 
   $cache = Join-Path $cacheRoot $ver
   New-Item -ItemType Directory -Force -Path $cache | Out-Null
-  Copy-Item -Force (Join-Path $tmp $bin) (Join-Path $cache $bin)
+  $exe = Join-Path $cache $bin
+  Copy-Item -Force (Join-Path $tmp $bin) $exe
+  & $exe --version | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Installed binary does not run.' }
+  # Keep only this version's binary.
+  Get-ChildItem -Path $cacheRoot -Directory | Where-Object { $_.Name -ne $ver } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+  Write-Host 'Skill:'
   foreach ($t in $targets) {
     if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $t.Dir) | Out-Null
@@ -87,9 +98,14 @@ try {
     Write-Host "  $($t.Name): $($t.Dir)"
   }
 
-  & (Join-Path $cache $bin) --version | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'Installed binary does not run.' }
-  Write-Host 'Done. Restart your agent, then ask it to "open a PR with Tracetoon".'
+  if ($env:TRACETOON_NO_HOOK -eq '1') {
+    Write-Host 'PR hook: skipped (add it later with: tracetoon hook install)'
+  } else {
+    Write-Host 'PR hook (routes gh pr create through Tracetoon; turn off with: tracetoon off):'
+    & $exe hook install
+    if ($LASTEXITCODE -ne 0) { Write-Host '  could not add the PR hook; the skill still works' }
+  }
+  Write-Host 'Done. Restart your agent, then ask it to open a PR.'
 }
 finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

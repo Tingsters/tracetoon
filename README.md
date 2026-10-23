@@ -50,6 +50,28 @@ Restart your agent, then in any repo with your work on a branch, ask:
 Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
 again. Downloads are checked against the release's SHA-256 checksums.
 
+### Tracetoon is the default for PRs, and easy to turn off
+
+The installer adds a small hook to each agent. When an agent tries to open a PR
+with `gh pr create` (or rewrite one with `gh pr edit --title/--body`), the hook
+stops it and points it to Tracetoon, so you always get a preview first. It only
+touches its own entries in each agent's config, backs up each file before the
+first change, and lists every file it changed. Skip it with
+`TRACETOON_NO_HOOK=1`. Codex asks you to trust a new hook once (`/hooks`), and
+the Antigravity IDE picks it up after a restart.
+
+Turn it off at whichever level you need. Any "off" wins:
+
+| Scope | Off | On again |
+|---|---|---|
+| One command | `TRACETOON=0 gh pr create ...` | (just once) |
+| You, everywhere | `tracetoon off` | `tracetoon on` |
+| This repo, for everyone | `tracetoon off --repo` (writes `.github/tracetoon.json`; commit it) | `tracetoon on --repo` |
+| This repo, just you | `tracetoon off --local` (git config) | `tracetoon on --local` |
+| CI | off automatically when `CI=true` | `TRACETOON=1` |
+
+`tracetoon status` shows whether it's on here and which setting decided.
+
 <details>
 <summary>Other ways to install</summary>
 
@@ -92,9 +114,10 @@ again. Downloads are checked against the release's SHA-256 checksums.
    `tracetoon-assets` branch (or as a GitHub attachment for private repos) and
    creates or updates the PR with `gh`.
 
-Other commands: `scan`, `expand`, `preview`, `series`,
-`export --agent-trace` ([Agent Trace](https://agent-trace.dev) line attribution),
-`doctor --probe`, `config`. Every command takes `--json`.
+Other commands: `status`, `on`/`off`, `hook install`/`uninstall`, `scan`,
+`expand`, `preview`, `series`, `export --agent-trace`
+([Agent Trace](https://agent-trace.dev) line attribution), `doctor --probe`,
+`config`. Every command takes `--json`.
 
 If the repo already records provenance with [Entire](https://entire.io)
 checkpoints or git-ai notes, the digest says so. Run files live in
@@ -114,6 +137,7 @@ the binary included are attached to each release.
 
 | Key | Default | Meaning |
 |---|---|---|
+| `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
 | `theme` | `pets` | Comic theme for a new series: `pets`, `mecha` or `scifi` |
 | `comic` | `true` | Make a comic at all |
 | `yolo` | `false` | Allow `publish --yolo` to skip the preview when all checks pass |

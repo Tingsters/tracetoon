@@ -24,9 +24,12 @@ export interface Config {
   imageConsent: string[];
   /** Make a comic at all. */
   comic: boolean;
+  /** Use Tracetoon for PRs at all. Off here, or in any other switch, wins. */
+  enabled: boolean;
 }
 
 export const DEFAULTS: Config = {
+  enabled: true,
   yolo: false,
   theme: 'pets',
   promptQuoting: 'paraphrase',

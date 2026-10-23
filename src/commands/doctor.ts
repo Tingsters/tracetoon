@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { hostHome } from '@showtail/agent-traces/paths/hostHome';
+import { hookStatus } from '../hook/install.ts';
+import { switchState } from '../hook/switches.ts';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
@@ -74,6 +76,8 @@ export function doctor(
     ghAttach: atLeast(ghV, '2.99.0'),
     repo: top.ok ? top.stdout.trim() : null,
     agents: [...agents, ...planned],
+    switch: switchState(cwd),
+    prHook: hookStatus().filter((h) => h.present),
     ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
     imageProviders: {
       gemini: !!process.env.GEMINI_API_KEY,
@@ -102,6 +106,13 @@ export function doctor(
         );
       }
     }
+    lines.push(
+      `tracetoon here: ${report.switch.enabled ? 'on' : 'off'} (${report.switch.why})`,
+      `PR hook: ${
+        report.prHook.map((h) => `${h.label} ${h.installed ? 'yes' : 'no'}`).join(', ') ||
+        'no agents found'
+      }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
+    );
     lines.push(
       `image providers: ${['gemini', 'openai'].filter((p) => report.imageProviders[p as 'gemini']).join(', ') || 'none (built-in comic art will be used)'}`,
     );
