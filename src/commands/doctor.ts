@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { hostHome } from '@showtail/agent-traces/paths/hostHome';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
@@ -39,14 +40,50 @@ function probe(limit = 15): Record<string, Record<string, number>> {
   return out;
 }
 
+/** How Tracetoon is running: the prebuilt binary, or the bundle under bun or node. */
+export function describeRuntime(
+  execPath = process.execPath,
+  bunVersion = (globalThis as { Bun?: { version: string } }).Bun?.version,
+): string {
+  if (/[\\/]tracetoon-[a-z]+-[a-z0-9]+(\.exe)?$/i.test(execPath))
+    return 'prebuilt binary';
+  return bunVersion ? `bun ${bunVersion}` : `node ${process.version}`;
+}
+
+/** Where the installer puts the skill for each agent. */
+export function skillInstalls(
+  home = homedir(),
+  env: NodeJS.ProcessEnv = process.env,
+): { agent: string; dir: string; version: string | null }[] {
+  const gemini = env.GEMINI_HOME || join(home, '.gemini');
+  const places = [
+    {
+      agent: 'Claude Code',
+      dir: join(env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'skills', 'tracetoon'),
+    },
+    { agent: 'Codex', dir: join(home, '.agents', 'skills', 'tracetoon') },
+    { agent: 'Antigravity', dir: join(gemini, 'config', 'skills', 'tracetoon') },
+    { agent: 'Gemini CLI', dir: join(gemini, 'skills', 'tracetoon') },
+  ];
+  return places
+    .filter((p) => existsSync(join(p.dir, 'SKILL.md')))
+    .map((p) => {
+      let version: string | null = null;
+      try {
+        version = readFileSync(join(p.dir, 'VERSION'), 'utf8').trim() || null;
+      } catch {
+        /* older installs have no VERSION file */
+      }
+      return { ...p, version };
+    });
+}
+
 export function doctor(
   cwd: string,
   opts: OutOpts & { probe?: boolean; strict?: boolean },
 ): void {
-  const runtime =
-    typeof (globalThis as { Bun?: { version: string } }).Bun !== 'undefined'
-      ? `bun ${(globalThis as unknown as { Bun: { version: string } }).Bun.version}`
-      : `node ${process.version}`;
+  const runtime = describeRuntime();
+  const installs = skillInstalls();
   const gitV = version(git(cwd, ['--version']).stdout);
   const ghOut = gh(cwd, ['--version']);
   const ghV = ghOut.ok ? version(ghOut.stdout) : undefined;
@@ -74,6 +111,7 @@ export function doctor(
     ghAttach: atLeast(ghV, '2.99.0'),
     repo: top.ok ? top.stdout.trim() : null,
     agents: [...agents, ...planned],
+    installs,
     ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
     imageProviders: {
       gemini: !!process.env.GEMINI_API_KEY,
@@ -102,6 +140,18 @@ export function doctor(
         );
       }
     }
+    lines.push(
+      installs.length
+        ? 'skill installed for:'
+        : 'skill not installed for any agent (run the installer)',
+      ...installs.map((i) => {
+        const stale =
+          i.version && i.version !== TOOL_VERSION
+            ? ' (older version: re-run the installer)'
+            : '';
+        return `  ${i.agent.padEnd(14)} ${i.version ?? 'unknown version'}${stale}`;
+      }),
+    );
     lines.push(
       `image providers: ${['gemini', 'openai'].filter((p) => report.imageProviders[p as 'gemini']).join(', ') || 'none (built-in comic art will be used)'}`,
     );
