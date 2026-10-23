@@ -1,0 +1,105 @@
+{
+  "v": 1,
+  "title": "The Silent Gate",
+  "synopsis": "Kit tests the new PR hook in every agent, finds Antigravity silently ignoring it because of another tool's broken block, and makes Tracetoon say so out loud.",
+  "altText": "Panel 1: Kit tests the hook in each agent; Claude's gate works. Panel 2: Kit wonders why Antigravity let a PR command through. Panel 3: Glitch hides in another tool's broken config block, which makes Antigravity ignore the whole file. Panel 4: Kit adds a warning that names the broken block, and Sam is pleased the problem is now visible.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Kit tests the PR hook in each agent",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "excited"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Claude's gate works, Bash and PowerShell!"
+        },
+        {
+          "speaker": "sam",
+          "text": "And the others?"
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit stares at a PR command that got through in Antigravity",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Codex is waiting for trust. Antigravity says nothing at all."
+        },
+        {
+          "speaker": "kit",
+          "text": "Why didn't the hook even run?",
+          "kind": "thought"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch hides in another tool's broken config block",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "center",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "One bad block, and the whole file is ignored!"
+        },
+        {
+          "speaker": "sfx",
+          "kind": "sfx",
+          "text": "SILENCE..."
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit shows Sam the new warning",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Now status names the broken block."
+        },
+        {
+          "speaker": "sam",
+          "text": "No more silent failures!"
+        }
+      ]
+    }
+  ]
+}
