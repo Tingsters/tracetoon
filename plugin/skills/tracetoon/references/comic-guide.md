@@ -69,17 +69,34 @@ Rules (checked by `tracetoon comic check`):
 
 ## Making the art
 
+The art is AI-drawn whenever possible. Each character gets a reference portrait
+(a "character sheet") once per series. Sheets are saved with the series and
+attached to every later panel, so characters look the same in every episode.
+Speech bubbles are always added afterwards by Tracetoon, so the text is exact.
+
 Pick the first option that works:
 
-1. **Your own image tool** (Codex `image_gen`, Antigravity's image generation):
-   run `tracetoon comic prompts`, generate each panel from its prompt, and save
-   it to the path given (`art/panel-N.png`). Square images, no text in them.
-2. **Gemini or OpenAI**, when the user has an API key: `tracetoon comic art`
-   reports whether one is configured. Sending prompts needs the user's OK once;
-   ask them, then run `tracetoon comic art --provider gemini --consent` (or
-   `openai`). Prompts contain only scenes and character descriptions.
-3. **Built-in artist:** `tracetoon comic art` draws any missing panels itself,
-   with no API needed.
+1. **Your own image tool** (Codex's built-in image generation, Antigravity's
+   image generation): run `tracetoon comic prompts`. First draw any character
+   sheets it lists and save each to its path (`art/cast-<id>.png`). Then draw
+   each panel with those sheets (and the listed character references) as
+   reference images, and save it to its path (`art/panel-N.png`). Square images,
+   no text in them.
+2. **`tracetoon comic art`** (any agent, including Claude Code, which has no
+   image tool). It uses an AI image route the user has approved:
+   - the Codex or Antigravity CLI if installed (uses the user's own login, no
+     key needed);
+   - OpenAI or Gemini if `OPENAI_API_KEY` or `GEMINI_API_KEY` is set.
+
+   The first time, it exits with code 4 and says where the prompts would go.
+   Ask the user once, quoting that, and if they agree run
+   `tracetoon comic art --provider <name> --consent`. `tracetoon doctor` lists
+   which routes exist and which are approved. Prompts contain only the comic's
+   scenes and character descriptions, never code or log text. AI art takes a
+   few minutes; let the command finish.
+3. **Built-in artist:** if no route is available or approved, or the image
+   model fails, `tracetoon comic art` draws the panels itself and reports a
+   warning when it fell back.
 
 Then `tracetoon comic render` adds the speech bubbles and writes
 `out/comic.png`. Look at the result if you can view images. If a bubble covers

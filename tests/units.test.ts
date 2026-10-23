@@ -221,3 +221,32 @@ describe('commands that start by changing directory', () => {
       );
   });
 });
+
+describe('image responses', () => {
+  test('finds the image in each API shape', async () => {
+    const { findImageData } = await import('../src/comic/providers.ts');
+    // Gemini Interactions API
+    expect(
+      findImageData({
+        steps: [
+          {
+            type: 'model_output',
+            content: [
+              { type: 'text', text: 'hi' },
+              { type: 'image', data: 'AAA' },
+            ],
+          },
+        ],
+      }),
+    ).toBe('AAA');
+    // Gemini generateContent
+    expect(
+      findImageData({
+        candidates: [{ content: { parts: [{ inlineData: { data: 'BBB' } }] } }],
+      }),
+    ).toBe('BBB');
+    // OpenAI Images API
+    expect(findImageData({ data: [{ b64_json: 'CCC' }] })).toBe('CCC');
+    expect(findImageData({ error: 'no' })).toBeUndefined();
+  });
+});

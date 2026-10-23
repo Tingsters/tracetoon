@@ -8,6 +8,23 @@ import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { emit, type OutOpts } from './output.ts';
+import { PROVIDERS, providerInfo } from '../comic/providers.ts';
+import { loadConfig } from '../config.ts';
+
+/** AI image routes on this machine, and whether the user has approved each. */
+function imageProviders(root: string | undefined) {
+  const approved = loadConfig(root).imageConsent;
+  return PROVIDERS.map((id) => {
+    const info = providerInfo(id);
+    return {
+      id,
+      label: info.label,
+      available: info.available,
+      approved: approved.includes(id),
+      detail: info.detail,
+    };
+  });
+}
 
 function version(out: string): string | undefined {
   return /(\d+\.\d+\.\d+)/.exec(out)?.[1];
@@ -119,10 +136,7 @@ export function doctor(
     switch: switchState(cwd),
     prHook: hookStatus().filter((h) => h.present),
     ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
-    imageProviders: {
-      gemini: !!process.env.GEMINI_API_KEY,
-      openai: !!process.env.OPENAI_API_KEY,
-    },
+    imageProviders: imageProviders(top.ok ? top.stdout.trim() : undefined),
   };
   emit(opts, report, () => {
     const yes = (b: boolean) => (b ? 'yes' : 'no');
@@ -167,8 +181,15 @@ export function doctor(
       }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
       ...report.prHook.filter((h) => h.problem).map((h) => `  ${h.label}: ${h.problem}`),
     );
+    const ready = report.imageProviders.filter((p) => p.available);
     lines.push(
-      `image providers: ${['gemini', 'openai'].filter((p) => report.imageProviders[p as 'gemini']).join(', ') || 'none (built-in comic art will be used)'}`,
+      `comic art: ${
+        ready.length
+          ? ready
+              .map((p) => `${p.id}${p.approved ? ' (approved)' : ' (needs your OK)'}`)
+              .join(', ')
+          : 'built-in artist (for AI art, install Codex or Antigravity, or set OPENAI_API_KEY or GEMINI_API_KEY)'
+      }`,
     );
     if (!ghV) lines.push('Install the GitHub CLI (gh) to create or update PRs.');
     else if (!ghAuth) lines.push('Run `gh auth login` to let Tracetoon post PRs.');
