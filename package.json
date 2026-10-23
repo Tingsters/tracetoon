@@ -1,6 +1,6 @@
 {
   "name": "tracetoon",
-  "version": "1.0.0-rc.6",
+  "version": "1.0.0-rc.7",
   "description": "Write pull request descriptions from the AI agent session logs already on your machine, plus a 4-panel comic.",
   "type": "module",
   "license": "Apache-2.0",
