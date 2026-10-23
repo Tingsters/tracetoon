@@ -1,0 +1,79 @@
+{
+  "v": 2,
+  "title": "Style, Unlocked",
+  "headline": "STYLE, UNLOCKED",
+  "synopsis": "Comics break out of the same 2x2 grid: free formats, 18 art styles, and lettering drawn into the art. Glitch's furry plan gets denied.",
+  "altText": "A black-and-white manga page with red accents. Panel 1: a weary artist stamps identical four-panel grids on a conveyor belt. Panel 2: a young artist fans out style cards labeled NOIR, PIXEL and MANGA. Panel 3: Glitch the beetle tries to stick fox ears on a manga hero; a red stamp reads DENIED. Inset: a phone shows the finished comic.",
+  "format": "custom",
+  "layout": "three numbered panels of different sizes like a manga page (a wide panel on top, two below), plus a small inset in the bottom-right corner that breaks the panel border",
+  "style": "manga-ink",
+  "palette": "bw-accent",
+  "accent": "red",
+  "continuity": {
+    "mode": "new-arc"
+  },
+  "panels": [
+    {
+      "scene": "A weary comic artist in a hoodie stamps identical four-panel grids onto pages on an endless conveyor belt",
+      "characters": [],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Every comic: the same 2x2 grid."
+        }
+      ]
+    },
+    {
+      "scene": "A young artist with fierce eyes fans out a hand of glowing style cards like a card battle",
+      "characters": [],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Now: pick a format, pick a style."
+        },
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "NOIR"
+        },
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "PIXEL"
+        },
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "MANGA"
+        }
+      ]
+    },
+    {
+      "scene": "Glitch, a tiny red beetle, sneaks up to stick fake fox ears on a manga hero; a huge red rubber stamp slams down beside him",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "ANIME + ANIMALS: DENIED"
+        }
+      ]
+    },
+    {
+      "scene": "Small inset: a hand holds a phone showing a finished comic page",
+      "characters": [],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "50 words. Phone-ready."
+        }
+      ]
+    }
+  ]
+}
