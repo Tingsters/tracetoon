@@ -21,8 +21,9 @@ AI-assisted. You see the exact text and approve it before anything is posted.
 | Agent | Status |
 |---|---|
 | Claude Code | supported |
-| Codex | coming in 0.2 |
-| Antigravity (CLI and IDE) | coming in 0.2 |
+| Codex (CLI and app) | supported |
+| Antigravity (CLI and IDE) | supported |
+| Copilot CLI | planned |
 
 ## Use it
 
@@ -49,6 +50,7 @@ Copy `plugin/skills/tracetoon/` to your agent's skills folder:
 
 1. `tracetoon digest` reads the branch from git (base, commits, the exact lines
    added), finds agent sessions that touched this repository, and scores them.
+   Subagents are folded into the session that started them.
    The evidence: edits whose lines are still in the diff, commits made during
    the session, a PR link, the branch, timing and working folder. It writes a
    redacted digest sized for an LLM.
@@ -59,6 +61,9 @@ Copy `plugin/skills/tracetoon/` to your agent's skills folder:
    region; your own text in an existing PR is kept), scans it for leaks and
    prints an approval code.
 5. `tracetoon publish --code <code>` creates or updates the PR with `gh`.
+
+If the repo already records provenance with [Entire](https://entire.io)
+checkpoints or git-ai notes, the digest says so.
 
 Run files live in `.git/tracetoon/runs/`, which git never tracks.
 

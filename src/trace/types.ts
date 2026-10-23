@@ -14,6 +14,8 @@ interface Base {
   ts?: string;
   cwd?: string;
   branch?: string;
+  /** The model in effect when this happened, if the agent records it. */
+  model?: string;
 }
 
 export type TraceRecord =
@@ -23,7 +25,7 @@ export type TraceRecord =
       /** Written by a parent agent to a subagent, not typed by the user. */
       delegated?: boolean;
     })
-  | (Base & { kind: 'assistant'; text: string; model?: string })
+  | (Base & { kind: 'assistant'; text: string })
   | (Base & { kind: 'plan'; markdown: string; approved?: boolean })
   | (Base & { kind: 'decision'; text: string })
   | (Base & {
@@ -49,7 +51,15 @@ export type TraceRecord =
       worktreePath?: string;
       worktreeBranch?: string;
     })
-  | (Base & { kind: 'usage'; model?: string; usage: Usage });
+  | (Base & { kind: 'usage'; usage: Usage })
+  | (Base & {
+      kind: 'artifact';
+      /** e.g. "walkthrough", "task", "implementation_plan". */
+      name: string;
+      markdown: string;
+      /** The agent's own one-line summary of the artifact, when it keeps one. */
+      summary?: string;
+    });
 
 export type RecordKind = TraceRecord['kind'];
 
@@ -73,6 +83,8 @@ export interface TraceSession {
   /** Record types this adapter did not recognize, with counts. */
   unknownTypes: Record<string, number>;
   warnings: string[];
+  /** Set on a subagent's own log: the session that spawned it. */
+  parentSessionId?: string;
 }
 
 export interface DiscoverQuery {
@@ -92,6 +104,8 @@ export interface TraceAdapter {
   label: string;
   /** Where this agent's logs live on this machine, or undefined if absent. */
   home(): string | undefined;
+  /** How many session logs exist on this machine (for `doctor`). */
+  count(): number;
   discover(q: DiscoverQuery): SessionRef[];
   read(ref: SessionRef): TraceSession;
 }

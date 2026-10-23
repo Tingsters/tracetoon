@@ -5,7 +5,7 @@
     {
       "name": "tracetoon",
       "source": "./plugin",
-      "description": "Agent-trace PR descriptions with an approval step (comics coming soon)."
+      "description": "Agent-trace PR descriptions from Claude Code, Codex and Antigravity logs, with an approval step (comics coming soon)."
     }
   ]
 }

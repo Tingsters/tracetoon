@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { claude } from '@showtail/agent-traces';
 import { hostHome } from '@showtail/agent-traces/paths/hostHome';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git } from '../util/exec.ts';
@@ -33,8 +32,7 @@ export function doctor(cwd: string, opts: OutOpts): void {
   const top = git(cwd, ['rev-parse', '--show-toplevel']);
   const agents = ADAPTERS.map((a) => {
     const home = a.home();
-    const sessions =
-      a.id === 'claude-code' && home ? claude.findTranscripts().length : undefined;
+    const sessions = home ? a.count() : undefined;
     return { id: a.id, label: a.label, supported: true, found: !!home, sessions };
   });
   const planned = PLANNED.map((p) => ({

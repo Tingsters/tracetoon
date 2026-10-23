@@ -325,6 +325,7 @@ export const claudeAdapter: TraceAdapter = {
     const dir = claude.claudeProjectsDir();
     return existsSync(dir) ? claudeHome() : undefined;
   },
+  count: () => claude.findTranscripts().length,
   discover({ roots, sinceMs, needles = [] }) {
     const out: SessionRef[] = [];
     const lowered = needles.map((n) => n.toLowerCase());

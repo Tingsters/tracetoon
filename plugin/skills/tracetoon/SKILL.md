@@ -1,6 +1,6 @@
 ---
 name: tracetoon
-description: Write or update a GitHub pull request description from the AI agent session logs already on this machine (Claude Code today; Codex and Antigravity soon), showing how the change was made, with a preview the user approves before anything is posted. Use when the user asks to open, create, write, describe or update a PR, or mentions Tracetoon.
+description: Write or update a GitHub pull request description from the AI agent session logs already on this machine (Claude Code, Codex and Antigravity), showing how the change was made, with a preview the user approves before anything is posted. Use when the user asks to open, create, write, describe or update a PR, or mentions Tracetoon.
 ---
 
 # Tracetoon: PR descriptions from agent traces

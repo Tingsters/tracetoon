@@ -1,10 +1,18 @@
 {
   "name": "tracetoon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Write pull request descriptions from the agent session logs already on your machine, with a preview you approve before anything is posted.",
-  "author": { "name": "Tingsters" },
+  "author": {
+    "name": "Tingsters"
+  },
   "homepage": "https://github.com/Tingsters/tracetoon",
   "repository": "https://github.com/Tingsters/tracetoon",
   "license": "Apache-2.0",
-  "keywords": ["pull-request", "github", "agent-trace", "provenance", "comic"]
+  "keywords": [
+    "pull-request",
+    "github",
+    "agent-trace",
+    "provenance",
+    "comic"
+  ]
 }

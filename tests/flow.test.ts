@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
@@ -9,16 +9,23 @@ const CLI = resolve(import.meta.dir, '../src/cli.ts');
 const FAKE_GH = resolve(import.meta.dir, 'fake-gh.ts');
 
 let claudeHome: string;
+let codexHome: string;
+let geminiHome: string;
 let env: NodeJS.ProcessEnv;
 let ghLog: string;
 
 beforeEach(() => {
   claudeHome = tempDir('tracetoon-claude-');
+  codexHome = tempDir('tracetoon-codex-');
+  geminiHome = tempDir('tracetoon-gemini-');
   const scratch = tempDir('tracetoon-env-');
   ghLog = join(scratch, 'gh.log');
   env = {
     ...process.env,
     CLAUDE_CONFIG_DIR: claudeHome,
+    CODEX_HOME: codexHome,
+    ANTIGRAVITY_HOME: geminiHome,
+    GEMINI_HOME: geminiHome,
     TRACETOON_CONFIG: join(scratch, 'config.json'),
     TRACETOON_GH_SCRIPT: FAKE_GH,
     FAKE_GH_LOG: ghLog,
@@ -42,6 +49,8 @@ function cli(cwd: string, ...args: string[]) {
 
 const GREET =
   'export function greet(name: string): string {\n  return `Hello, ${name}!`;\n}\n';
+
+setDefaultTimeout(60_000);
 
 describe('digest', () => {
   test('matches the session that wrote the code and drops other repos', () => {
@@ -107,6 +116,133 @@ describe('digest', () => {
     const digest = JSON.parse(readFileSync(r.json.digestPath, 'utf8'));
     expect(digest.stats.commitsMadeInSessions).toBe(1);
     expect(digest.sessions[0].prompts[0].text).toBe('implement the answer in a worktree');
+  });
+});
+
+describe('other agents', () => {
+  const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+
+  test('matches a Codex session that worked from the home folder', () => {
+    const repo = makeRepo();
+    const start = Date.now() - 30 * 60_000;
+    const t = (n: number) => new Date(start + n * 1000).toISOString();
+    const dir = join(codexHome, 'sessions', '2026', '10', '23');
+    mkdirSync(dir, { recursive: true });
+    const id = '019ef1c4-1899-7a90-bb9f-b09bca10e91c';
+    writeFileSync(
+      join(dir, `rollout-2026-10-23T10-00-00-${id}.jsonl`),
+      jsonl([
+        {
+          timestamp: t(0),
+          type: 'session_meta',
+          payload: { id, cwd: tempDir('tracetoon-home-') },
+        },
+        { timestamp: t(1), type: 'turn_context', payload: { model: 'gpt-test' } },
+        {
+          timestamp: t(2),
+          type: 'event_msg',
+          payload: {
+            type: 'item_completed',
+            item: {
+              type: 'UserMessage',
+              content: [{ type: 'text', text: 'Add the greeting helper please' }],
+            },
+          },
+        },
+        {
+          timestamp: t(3),
+          type: 'event_msg',
+          payload: {
+            type: 'item_completed',
+            item: {
+              type: 'FileChange',
+              status: 'completed',
+              changes: {
+                [join(repo.root, 'src/greet.ts')]: { type: 'add', content: GREET },
+              },
+            },
+          },
+        },
+      ]),
+    );
+    writeFileSync(
+      join(codexHome, 'session_index.jsonl'),
+      jsonl([{ id, thread_name: 'Greeting helper' }]),
+    );
+    repo.commit('src/greet.ts', GREET, 'feat: greeting');
+    const r = cli(repo.root, 'digest', '--offline');
+    expect(r.code).toBe(0);
+    expect(r.json.sessions).toMatchObject([
+      { agent: 'Codex', title: 'Greeting helper', band: 'included' },
+    ]);
+    const digest = JSON.parse(readFileSync(r.json.digestPath, 'utf8'));
+    expect(digest.stats.agentMatchedPct).toBe(100);
+    expect(digest.disclosure.suggestedTrailers).toEqual(['Assisted-by: Codex:gpt-test']);
+  });
+
+  test('matches an Antigravity conversation and includes its walkthrough', () => {
+    const repo = makeRepo();
+    const start = Date.now() - 30 * 60_000;
+    const t = (n: number) => new Date(start + n * 1000).toISOString();
+    const brain = join(geminiHome, 'antigravity-ide', 'brain', 'conv-1');
+    mkdirSync(join(brain, '.system_generated', 'logs'), { recursive: true });
+    const target = JSON.stringify(join(repo.root, 'src/greet.ts'));
+    writeFileSync(
+      join(brain, '.system_generated', 'logs', 'transcript.jsonl'),
+      jsonl([
+        {
+          step_index: 0,
+          type: 'USER_INPUT',
+          created_at: t(0),
+          content: '<USER_REQUEST>Write a greeting helper</USER_REQUEST>',
+        },
+        {
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: t(1),
+          source: 'MODEL',
+          tool_calls: [
+            {
+              name: 'write_to_file',
+              args: { TargetFile: target, CodeContent: JSON.stringify(GREET) },
+            },
+          ],
+        },
+        { step_index: 2, type: 'CODE_ACTION', status: 'DONE', created_at: t(2) },
+      ]),
+    );
+    writeFileSync(
+      join(brain, 'walkthrough.md'),
+      '# Walkthrough\nAdded greet() and verified it in the browser.\n',
+    );
+    writeFileSync(
+      join(brain, 'walkthrough.md.metadata.json'),
+      JSON.stringify({ summary: 'Added greet()', updatedAt: t(3) }),
+    );
+    repo.commit('src/greet.ts', GREET, 'feat: greeting');
+    const r = cli(repo.root, 'digest', '--offline');
+    expect(r.code).toBe(0);
+    expect(r.json.sessions).toMatchObject([{ agent: 'Antigravity', band: 'included' }]);
+    const digest = JSON.parse(readFileSync(r.json.digestPath, 'utf8'));
+    expect(digest.sessions[0].artifacts).toMatchObject([
+      { name: 'walkthrough', summary: 'Added greet()' },
+    ]);
+    expect(digest.sessions[0].prompts[0].text).toBe('Write a greeting helper');
+  });
+
+  test('reports Entire checkpoints found in commit trailers', () => {
+    const repo = makeRepo();
+    repo.commit(
+      'a.txt',
+      'hello world line\n',
+      'feat: a\n\nEntire-Checkpoint: 01JABCDEFGHJKMNPQRSTVWXYZ0',
+    );
+    const r = cli(repo.root, 'digest', '--offline');
+    const digest = JSON.parse(readFileSync(r.json.digestPath, 'utf8'));
+    expect(digest.interop.entire).toMatchObject({
+      checkpoints: ['01JABCDEFGHJKMNPQRSTVWXYZ0'],
+      commitsWithCheckpoint: 1,
+    });
   });
 });
 

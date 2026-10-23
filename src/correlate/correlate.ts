@@ -27,8 +27,12 @@ export interface TimeWindow {
 
 /** Commits bound the window: 8h before the first, 30m after the last (or now). */
 export function windowFor(truth: PrTruth, nowMs = Date.now()): TimeWindow {
-  if (truth.commits.length === 0)
-    return { startMs: nowMs - 7 * 24 * 3600_000, endMs: nowMs };
+  if (truth.commits.length === 0) {
+    // Uncommitted work: anything before the base commit is already in it.
+    const week = nowMs - 7 * 24 * 3600_000;
+    const base = truth.mergeBaseTime ? truth.mergeBaseTime - 30 * 60_000 : week;
+    return { startMs: Math.max(week, base), endMs: nowMs };
+  }
   const first = Math.min(...truth.commits.map((c) => c.authorTime));
   const last = Math.max(...truth.commits.map((c) => c.commitTime));
   return {
@@ -222,6 +226,13 @@ export function matchSession(
   const flags = records.map((r) => belongs(r, view, w));
   keepConversation(records, flags);
   keepParentFolderPrompts(records, flags, view, w);
+  // A session's own plan/task/walkthrough files describe the session as a whole:
+  // keep them whenever the session did work in this repo.
+  if (flags.some((f, i) => f && records[i]!.kind !== 'link')) {
+    records.forEach((r, i) => {
+      if (r.kind === 'artifact') flags[i] = true;
+    });
+  }
   const kept = records.filter((_, i) => flags[i]);
   const droppedForeign = records.length - kept.length;
 
@@ -274,9 +285,15 @@ export function matchSession(
     timeOverlap = s1 > s0 ? inter / (s1 - s0) : s0 >= c0 && s0 <= c1 ? 1 : 0;
   } else if (times.length) timeOverlap = 1;
 
-  // One surviving line is weak evidence, unless it is most of a small PR.
+  // Two ways edits prove a session belongs: most of what it wrote is in the PR
+  // (survival; one line is weak evidence unless it's most of a small PR), or it
+  // wrote most of what the PR adds (coverage; long sessions whose earlier work
+  // already merged have low survival but high coverage).
   const coverage = prLines.total ? matchedLines / prLines.total : 0;
-  const editEvidence = survival * Math.min(1, Math.max(matchedLines / 5, coverage));
+  const editEvidence = Math.max(
+    survival * Math.min(1, Math.max(matchedLines / 5, coverage)),
+    coverage,
+  );
   const reasons: string[] = [];
   let score: number;
   if (prLink) {
@@ -307,6 +324,12 @@ export function matchSession(
   if (commandsTouchRepo) reasons.push('ran commands against this repository');
   if (timeOverlap > 0)
     reasons.push(`time overlap with commits ${(timeOverlap * 100).toFixed(0)}%`);
+  if (!agentAddedLines && !commitsMade.length && !prLink) {
+    // Looking around a repo (reading, running tools) is not the same as building
+    // the change. Planning-only sessions on the PR branch still reach "ambiguous".
+    score *= 0.6;
+    reasons.push('made no edits or commits here');
+  }
   if (kept.filter((r) => r.kind !== 'link').length === 0) score = 0;
 
   const band: Band =

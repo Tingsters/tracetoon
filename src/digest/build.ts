@@ -15,6 +15,7 @@ import type { PrTruth } from '../git/pr.ts';
 import type { Usage } from '../trace/types.ts';
 import { clip, makeScrubber, type Scrubber } from './sanitize.ts';
 import { TOOL_VERSION } from '../version.ts';
+import { detectInterop, type Interop } from '../git/interop.ts';
 
 export interface DigestSession {
   ref: string;
@@ -34,6 +35,8 @@ export interface DigestSession {
   /** Short SHAs of PR commits made during this session. */
   commitsMade: string[];
   plans: { t?: string; approved?: boolean; excerpt: string }[];
+  /** Documents the agent kept for the session (Antigravity task, plan, walkthrough). */
+  artifacts: { name: string; summary?: string; excerpt: string }[];
   decisions: { t?: string; text: string }[];
   commands: { cmd: string; count: number; failures: number; isTest: boolean }[];
   milestones: string[];
@@ -82,6 +85,8 @@ export interface TraceDigest {
     suggestedTrailers: string[];
     existingTrailers: string[];
   };
+  /** Provenance other tools recorded in the repo (Entire checkpoints, git-ai notes). */
+  interop: Interop;
   privacy: { redactions: number; droppedForeignRecords: number; sessionIdsHashed: true };
   notes: string[];
   truncated: string[];
@@ -143,6 +148,7 @@ function sessionDigest(
   let sawUsage = false;
   const prompts: DigestSession['prompts'] = [];
   const delegations: DigestSession['delegations'] = [];
+  const artifacts: DigestSession['artifacts'] = [];
   const plans: DigestSession['plans'] = [];
   const decisions: DigestSession['decisions'] = [];
   const cmdGroups = new Map<
@@ -155,6 +161,7 @@ function sessionDigest(
   let current: { ledToEdits: boolean } | undefined;
 
   for (const r of recs) {
+    if (r.model && !r.model.startsWith('<')) models.add(r.model);
     switch (r.kind) {
       case 'prompt': {
         if (r.delegated) {
@@ -222,6 +229,13 @@ function sessionDigest(
       case 'link':
         if (r.prNumber) milestones.push(`linked to PR #${r.prNumber}`);
         break;
+      case 'artifact':
+        artifacts.push({
+          name: r.name,
+          summary: r.summary ? clip(scrub.text(r.summary), 300) : undefined,
+          excerpt: clip(scrub.text(r.markdown), 1500),
+        });
+        break;
     }
   }
   if (files.size) milestones.push(`edited ${files.size} file(s)`);
@@ -249,6 +263,7 @@ function sessionDigest(
     delegations: delegations.slice(0, 10),
     commitsMade: m.commitsMade.map((s) => s.slice(0, 12)),
     plans,
+    artifacts,
     decisions,
     commands: [...cmdGroups.entries()]
       .map(([cmd, g]) => ({ cmd, ...g }))
@@ -278,6 +293,10 @@ function fitBudget(d: TraceDigest, budget: number): void {
     [
       'prompts shortened to 200 chars',
       () => shrink((s) => s.prompts.forEach((p) => (p.text = clip(p.text, 200)))),
+    ],
+    [
+      'artifact excerpts shortened to 500 chars',
+      () => shrink((s) => s.artifacts.forEach((a) => (a.excerpt = clip(a.excerpt, 500)))),
     ],
     ['delegations dropped', () => shrink((s) => (s.delegations = []))],
     ['decisions dropped', () => shrink((s) => (s.decisions = []))],
@@ -442,6 +461,7 @@ export function buildDigest(
       suggestedTrailers: [...new Set(suggestedTrailers)],
       existingTrailers,
     },
+    interop: detectInterop(truth),
     privacy: {
       redactions: 0,
       droppedForeignRecords: chosen.reduce((n, m) => n + m.droppedForeign, 0),

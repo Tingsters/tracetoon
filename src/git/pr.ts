@@ -39,6 +39,8 @@ export interface PrTruth {
   head: string;
   base: string;
   mergeBase: string;
+  /** Commit time of the merge base (ms), when it resolves to a commit. */
+  mergeBaseTime?: number;
   commits: Commit[];
   files: FileChange[];
   /** True when there were no commits ahead of base and the working tree was used. */
@@ -211,6 +213,10 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
   const base = opts.base ?? pr?.baseRefName ?? defaultBase(toplevel);
   const ref = baseRef(toplevel, base);
   const mergeBase = git(toplevel, ['merge-base', ref, 'HEAD']).stdout.trim() || ref;
+  const mbt = Number(
+    git(toplevel, ['show', '-s', '--format=%ct', mergeBase]).stdout.trim(),
+  );
+  const mergeBaseTime = Number.isFinite(mbt) && mbt > 0 ? mbt * 1000 : undefined;
   const commits = commitsBetween(toplevel, mergeBase, 'HEAD');
   const dirty = git(toplevel, ['status', '--porcelain']).stdout.trim().length > 0;
   const usedWorkingTree = commits.length === 0;
@@ -229,6 +235,7 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     head,
     base,
     mergeBase,
+    mergeBaseTime,
     commits,
     files,
     usedWorkingTree,

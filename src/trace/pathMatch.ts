@@ -6,7 +6,14 @@ const win = process.platform === 'win32';
 function spellings(root: string): string[] {
   const fwd = root.replace(/\\/g, '/');
   const back = root.replace(/\//g, '\\');
-  const forms = new Set([root, fwd, back, back.replace(/\\/g, '\\\\')]);
+  // native, forward slashes, JSON-escaped once, and twice (Antigravity IDE args)
+  const forms = new Set([
+    root,
+    fwd,
+    back,
+    back.replace(/\\/g, '\\\\'),
+    back.replace(/\\/g, '\\\\\\\\'),
+  ]);
   // Git Bash / MSYS spelling of a Windows drive path: C:\x -> /c/x
   const drive = /^([A-Za-z]):\//.exec(fwd);
   if (drive) forms.add(`/${drive[1]!.toLowerCase()}${fwd.slice(2)}`);

@@ -15,7 +15,8 @@ template's closest section, or add the sections below after it.
 What changed and why, in 2–4 sentences. Take the "why" from the user's prompts.
 
 ## How it was built
-The process, from the digest: the plan (and whether it was approved), key
+The process, from the digest: the plan (and whether it was approved), an
+Antigravity walkthrough if there is one (`artifacts`), key
 decisions the user made, approaches that were tried and dropped
 (`discardedEdits`, milestones), and how the agent verified the work.
 
@@ -32,6 +33,8 @@ passing. Say plainly if nothing was tested.
   `stats.commitsMadeInSessions` of `stats.commits` commits were made during
   agent sessions.
 - Suggested trailer: one line from `disclosure.suggestedTrailers`.
+- If `interop.entire` is present, say the full checkpoints are available in
+  Entire; if `interop.gitAi` is present, mention the git-ai notes.
 
 <details>
 <summary>Agent trace</summary>
