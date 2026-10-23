@@ -1,0 +1,105 @@
+{
+  "v": 1,
+  "title": "Time Travel",
+  "synopsis": "Merging main into an old branch tricked the earlier-work cutoff into erasing the branch's own edits; Kit makes the cutoff only look at work from before the branch.",
+  "altText": "Panel 1: Sam merges main into PR #1 and Tracetoon now says only 4% of it was the agent's. Panel 2: Kit sees that later PRs from main pushed the cutoff past PR #1's edits. Panel 3: Glitch rides a time machine labeled 'merge main'. Panel 4: Kit only counts base work from before the branch began; Sam cheers at the restored numbers.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam is surprised by a 4% match after merging main into PR #1",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "surprised"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "worried"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "Four percent? It was seventy-five!"
+        },
+        {
+          "speaker": "kit",
+          "text": "We only merged main in..."
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit traces the cutoff",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Main now held later PRs, made after this branch's work."
+        },
+        {
+          "speaker": "kit",
+          "text": "So the cutoff jumped past our own edits.",
+          "kind": "thought"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch rides a time machine labeled merge main",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "center",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Future commits erase the past!"
+        },
+        {
+          "speaker": "sfx",
+          "kind": "sfx",
+          "text": "WHOOSH!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit shows the fix and Sam cheers",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Only work from before the branch counts now."
+        },
+        {
+          "speaker": "sam",
+          "text": "And PR #1 is back to normal!"
+        }
+      ]
+    }
+  ]
+}
