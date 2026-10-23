@@ -216,7 +216,10 @@ export function commitMoments(
     const subject =
       c.subject.trim().length >= 12 ? c.subject.trim().toLowerCase() : undefined;
     for (const r of commands) {
-      const byOutput = r.output ? sha.test(r.output.toLowerCase()) : false;
+      // Only a command that creates commits can have made this one: a SHA in
+      // `git log` or `git show` output only means the session looked at it.
+      const byOutput =
+        !!r.output && makesCommit(r.cmd) && sha.test(r.output.toLowerCase());
       const bySubject =
         !!subject &&
         /\bgit\b[^\n]*\bcommit\b/i.test(r.cmd) &&
@@ -228,6 +231,14 @@ export function commitMoments(
     }
   }
   return found;
+}
+
+const COMMIT_MAKER =
+  /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:commit|merge|cherry-pick|revert|am|rebase|pull)\b/;
+
+/** Does any part of this (possibly chained) command create commits? */
+function makesCommit(cmd: string): boolean {
+  return cmd.split(/&&|\|\||;|\||\n/).some((part) => COMMIT_MAKER.test(part));
 }
 
 /** PR commits the session made. */
@@ -262,17 +273,25 @@ export function earlierWorkCutoff(
  * keeps its conversation (the request may have started this PR too) but loses
  * work done before the cutoff.
  */
-function dropEarlierWork(records: TraceRecord[], flags: boolean[], cutoff: number): void {
+function dropEarlierWork(
+  records: TraceRecord[],
+  flags: boolean[],
+  cutoff: number,
+  truth: Pick<PrTruth, 'roots'>,
+): void {
   const starts = records.map((r, i) => (isTurnStart(r) ? i : -1)).filter((i) => i >= 0);
   if (!starts.length || starts[0] !== 0) starts.unshift(0);
   const at = (r: TraceRecord) => (r.ts ? Date.parse(r.ts) : NaN);
   for (let k = 0; k < starts.length; k++) {
     const from = starts[k]!;
     const to = starts[k + 1] ?? records.length;
-    // A turn's work is its edits; commands after them (tests, publishing) don't
-    // make an earlier piece of work part of this PR.
+    // A turn's work is its edits in this repo; commands after them (tests,
+    // publishing) and edits elsewhere (notes, reports, other repos) don't make
+    // an earlier piece of work part of this PR.
     const turn = records.slice(from, to);
-    const edits = turn.filter((r) => r.kind === 'edit');
+    const edits = turn.filter(
+      (r) => r.kind === 'edit' && repoRel(truth, r.file) !== undefined,
+    );
     const times = (edits.length ? edits : turn).map(at).filter(Number.isFinite);
     const end = times.length ? Math.max(...times) : NaN;
     for (let i = from; i < to; i++) {
@@ -321,7 +340,7 @@ export function matchSession(
   keepConversation(records, flags);
   keepParentFolderPrompts(records, flags, view, w);
   const cutoff = earlierWorkCutoff(records, truth);
-  if (cutoff !== undefined) dropEarlierWork(records, flags, cutoff);
+  if (cutoff !== undefined) dropEarlierWork(records, flags, cutoff, view);
   // A session's own plan/task/walkthrough files describe the session as a whole:
   // keep them whenever the session did work in this repo.
   if (flags.some((f, i) => f && records[i]!.kind !== 'link')) {

@@ -85,8 +85,9 @@ const CASES: Case[] = [
   {
     name: 'PR #1 after merging main into it',
     repo: join(dev, 'tracetoon'),
-    base: 'main',
-    head: 'feat/doctor-install-info',
+    // Pinned to PR #1's merge commit: main before the merge, and the branch tip.
+    base: 'c62818f^1',
+    head: 'c62818f^2',
     expect: (d) => [
       hasPrompt(d, 'create a new pr for tracetoon with it'),
       atLeast('agent-matched lines %', d.stats.agentMatchedPct, 60),
@@ -168,8 +169,10 @@ const CASES: Case[] = [
     ],
   },
   {
-    name: 'vexaim-cli uncommitted work (Codex)',
+    name: 'vexaim-cli Codex work (committed later as 0723dbf)',
     repo: join(dev, 'vexaim-cli'),
+    base: '0723dbf^',
+    head: '0723dbf',
     expect: (d) => [
       {
         what: 'a Codex session included',
