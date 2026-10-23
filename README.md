@@ -30,28 +30,46 @@ You see the exact text and comic and approve them before anything is posted.
 | Antigravity (CLI and IDE) | supported |
 | Copilot CLI | planned |
 
-## Use it
+## Install
 
-### Claude Code
+One command installs Tracetoon for every agent on your machine (Claude Code,
+Codex, Antigravity, Gemini CLI), with a prebuilt binary, so nothing else is
+needed:
 
-```text
-/plugin marketplace add Tingsters/tracetoon
-/plugin install tracetoon@tracetoon
+```sh
+# macOS, Linux, Git Bash
+curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
 ```
 
-Then ask: *"Open a PR for this branch with Tracetoon."*
+```powershell
+# Windows PowerShell
+irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
+```
 
-### Codex, Antigravity, Gemini CLI and other Agent Skills hosts
+Restart your agent, then in any repo with your work on a branch, ask:
+*"Open a PR for this branch with Tracetoon."*
 
-Copy `plugin/skills/tracetoon/` (or unzip `tracetoon-skill.zip` from a
-[release](https://github.com/Tingsters/tracetoon/releases)) into your agent's
-skills folder:
+Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
+again. Downloads are checked against the release's SHA-256 checksums.
+
+<details>
+<summary>Other ways to install</summary>
+
+- **Claude Code plugin:** `/plugin marketplace add Tingsters/tracetoon`, then
+  `/plugin install tracetoon@tracetoon`.
+- **By hand:** unzip `tracetoon-skill.zip` (or a per-platform
+  `tracetoon-skill-<os>-<arch>.zip`, which includes the binary) from a
+  [release](https://github.com/Tingsters/tracetoon/releases) into your agent's
+  skills folder:
 
 | Agent | Folder |
 |---|---|
+| Claude Code | `~/.claude/skills/tracetoon` |
 | Codex | `~/.agents/skills/tracetoon` (or `.agents/skills/` in a repo) |
-| Antigravity | `~/.gemini/antigravity/skills/tracetoon` |
+| Antigravity | `~/.gemini/config/skills/tracetoon` (or `.agents/skills/` in a repo) |
 | Gemini CLI | `~/.gemini/skills/tracetoon` |
+
+</details>
 
 ## How it works
 

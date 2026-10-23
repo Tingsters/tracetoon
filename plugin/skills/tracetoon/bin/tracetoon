@@ -34,7 +34,11 @@ exe=""
 name="tracetoon-$plat$exe"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/tracetoon/$ver"
 
-for candidate in "$here/$name" "$cache/$name"; do
+win_cache=""
+if [ "$os" = windows ] && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+  win_cache="$(cygpath -u "$LOCALAPPDATA")/tracetoon/cache/$ver/$name"
+fi
+for candidate in "$here/$name" "$cache/$name" $win_cache; do
   if [ -x "$candidate" ]; then exec "$candidate" "$@"; fi
 done
 
