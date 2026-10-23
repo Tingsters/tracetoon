@@ -1,0 +1,105 @@
+{
+  "v": 1,
+  "title": "The Gatekeeper",
+  "synopsis": "Kit installs a friendly gatekeeper in every agent so PRs go through Tracetoon by default, with an off switch at every level.",
+  "altText": "Panel 1: Sam asks why Tracetoon only runs when an agent remembers it. Panel 2: Kit studies how other tools do it and plans a hook for every agent. Panel 3: Glitch tries to sneak a direct gh pr create past, and the hook stops him. Panel 4: Kit shows Sam the switches, and Sam is pleased it can be turned off anywhere.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam asks why Tracetoon only works when an agent remembers it",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "thinking"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "Shouldn't installing it make it the default?"
+        },
+        {
+          "speaker": "kit",
+          "text": "Right now, agents can just skip it."
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit researches how other tools hook into agents",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Entire, git-ai, Husky, pre-commit: they all use hooks and kill switches."
+        },
+        {
+          "speaker": "kit",
+          "text": "A hook for every agent, then.",
+          "kind": "thought"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch tries to sneak a direct gh pr create past the hook",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "center",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Just a quick gh pr create..."
+        },
+        {
+          "speaker": "sfx",
+          "kind": "sfx",
+          "text": "DENIED!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit shows Sam the switches",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "On by default. Off per command, repo or you."
+        },
+        {
+          "speaker": "sam",
+          "text": "Any off wins. Perfect."
+        }
+      ]
+    }
+  ]
+}
