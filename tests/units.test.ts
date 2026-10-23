@@ -206,3 +206,18 @@ describe('commit detection', () => {
     expect(commitMoments(made as never, [commit]).size).toBe(1);
   });
 });
+
+describe('commands that start by changing directory', () => {
+  test('are judged by the directory they move to', async () => {
+    const { leadingCd } = await import('../src/trace/pathMatch.ts');
+    const { resolve } = await import('node:path');
+    const here = resolve('/work/tracetoon');
+    expect(leadingCd('cd ../Showtail && bun test', here)).toBe(resolve('/work/Showtail'));
+    expect(leadingCd('Set-Location "../x y"; ls', here)).toBe(resolve('/work/x y'));
+    expect(leadingCd('bun test', here)).toBeUndefined();
+    if (process.platform === 'win32')
+      expect(leadingCd('cd /c/Users/me/repo && git status', here)).toBe(
+        resolve('C:/Users/me/repo'),
+      );
+  });
+});

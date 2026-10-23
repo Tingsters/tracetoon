@@ -12,7 +12,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { isPathUnder, pathKey } from '@showtail/agent-traces/paths/pathUtil';
 import type { PrTruth } from '../git/pr.ts';
-import { mentionsAnyRoot, rootOf, underAnyRoot } from '../trace/pathMatch.ts';
+import { leadingCd, mentionsAnyRoot, rootOf, underAnyRoot } from '../trace/pathMatch.ts';
 import type { TraceRecord, TraceSession } from '../trace/types.ts';
 
 export const INCLUDE_AT = 0.5;
@@ -107,6 +107,10 @@ function belongs(r: TraceRecord, truth: PrTruth, w: TimeWindow): boolean {
     return underAnyRoot(r.worktreePath, truth.roots);
   }
   if (!inWindow(r.ts, w)) return false;
+  if (r.kind === 'command') {
+    const dir = leadingCd(r.cmd, r.cwd);
+    if (dir) return underAnyRoot(dir, truth.roots) || mentionsAnyRoot(r.cmd, truth.roots);
+  }
   if (underAnyRoot(r.cwd, truth.roots)) return true;
   if (r.branch && r.branch === truth.head && truth.head !== 'HEAD') {
     // Same branch name in an unrelated repo is possible; require no conflicting cwd.
