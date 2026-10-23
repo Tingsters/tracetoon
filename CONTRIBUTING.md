@@ -9,6 +9,9 @@ bun install
 bun test
 ```
 
+Keep the `Showtail` and `tracetoon` checkouts next to each other. The paths in
+`tsconfig.json` resolve the shared log readers from `../Showtail`.
+
 ## Layout
 
 | Path | What lives there |
