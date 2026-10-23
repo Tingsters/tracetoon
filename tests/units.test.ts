@@ -184,3 +184,40 @@ describe('test detection', () => {
     expect(isTestCommand('grep -rn foo tests/')).toBe(false);
   });
 });
+
+describe('commit detection', () => {
+  const commit = { sha: '0723dbf0c0ffee11', subject: 'Add fast contact play' };
+  const cmd = (c: string, output: string) =>
+    ({ kind: 'command', ts: '2026-10-23T21:00:00Z', cmd: c, output }) as const;
+
+  test('a SHA shown by git log is not a commit the session made', async () => {
+    const { commitMoments } = await import('../src/correlate/correlate.ts');
+    const looked = [
+      cmd('git -C ../repo log --oneline -3', '0723dbf Add fast contact play'),
+    ];
+    expect(commitMoments(looked as never, [commit]).size).toBe(0);
+  });
+
+  test('a SHA printed by git commit, even in a chain, is', async () => {
+    const { commitMoments } = await import('../src/correlate/correlate.ts');
+    const made = [
+      cmd('bun test && git commit -qm "x" && git log --oneline -1', '0723dbf x'),
+    ];
+    expect(commitMoments(made as never, [commit]).size).toBe(1);
+  });
+});
+
+describe('commands that start by changing directory', () => {
+  test('are judged by the directory they move to', async () => {
+    const { leadingCd } = await import('../src/trace/pathMatch.ts');
+    const { resolve } = await import('node:path');
+    const here = resolve('/work/tracetoon');
+    expect(leadingCd('cd ../Showtail && bun test', here)).toBe(resolve('/work/Showtail'));
+    expect(leadingCd('Set-Location "../x y"; ls', here)).toBe(resolve('/work/x y'));
+    expect(leadingCd('bun test', here)).toBeUndefined();
+    if (process.platform === 'win32')
+      expect(leadingCd('cd /c/Users/me/repo && git status', here)).toBe(
+        resolve('C:/Users/me/repo'),
+      );
+  });
+});

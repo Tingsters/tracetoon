@@ -138,6 +138,9 @@ describe('earlier work stays out', () => {
       )
       .bash('git commit -q -m "docs: earlier feature"', '')
       .bash('git log --oneline -1', `${earlier.slice(0, 7)} docs: earlier feature`)
+      // A file outside the repo edited after the earlier commit (a report, notes)
+      // must not stretch the earlier turn past the cutoff.
+      .write(join(tempDir('tracetoon-outside-'), 'report.html'), '<p>report</p>\n')
       .prompt('NEW-REQUEST now build the new thing')
       .write(join(repo.root, 'src/new.ts'), 'export const brandNewThing = 42;\n')
       .bash('git commit -q -m "feat: the new thing"', '')

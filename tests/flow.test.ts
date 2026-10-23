@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
 
@@ -282,6 +283,17 @@ describe('render and publish', () => {
     expect(finalBody).toContain('<!-- tracetoon:start -->');
     expect(finalBody).toContain('@​octocat');
     expect(existsSync(join(runDir, 'preview.html'))).toBe(true);
+    // A clickable absolute file:/// link, in both render and preview output.
+    const url = pathToFileURL(join(runDir, 'preview.html')).href;
+    expect(r.json.previewUrl).toBe(url);
+    const shown = cli(repo.root, 'preview');
+    expect(shown.json.previewUrl).toBe(url);
+    const text = spawnSync(process.execPath, [CLI, 'preview'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    });
+    expect(text.stdout).toContain(`Preview (Ctrl+click to open): ${url}`);
 
     expect(cli(repo.root, 'publish').code).toBe(1);
     expect(cli(repo.root, 'publish', '--code', 'deadbeef').code).toBe(1);
