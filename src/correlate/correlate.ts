@@ -245,9 +245,15 @@ export function earlierWorkCutoff(
 ): number | undefined {
   const base = truth.baseCommits ?? [];
   if (!base.length) return undefined;
+  // Only base commits made before this PR's own work began count. Work merged
+  // into the base later (another PR, then `git merge main` into this branch)
+  // must not push the cutoff past this PR's edits.
+  const firstOwn = truth.commits.length
+    ? Math.min(...truth.commits.map((c) => c.authorTime))
+    : Number.POSITIVE_INFINITY;
   const times = [...commitMoments(records, base).values()]
     .map((t) => (t ? Date.parse(t) : NaN))
-    .filter(Number.isFinite);
+    .filter((t) => Number.isFinite(t) && t < firstOwn);
   return times.length ? Math.max(...times) : undefined;
 }
 

@@ -128,6 +128,7 @@ export function commitsBetween(cwd: string, from: string, to: string): Commit[] 
   const r = git(cwd, [
     'log',
     '--reverse',
+    '--no-merges', // merging the base in isn't part of the PR's own work
     '--format=%H%x1f%s%x1f%at%x1f%ct%x1f%(trailers:unfold,only)%x1e',
     `${from}..${to}`,
   ]);

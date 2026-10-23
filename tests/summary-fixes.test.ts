@@ -1,7 +1,7 @@
 // Regression tests for problems found by evaluating digests against real work.
 import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { commandKey, testOutputFailed, testSegment } from '../src/digest/build.ts';
 import { parseUnifiedDiff } from '../src/git/pr.ts';
@@ -157,5 +157,69 @@ describe('earlier work stays out', () => {
     expect(s.filesEdited).toEqual(['src/new.ts']);
     expect(s.discardedEdits).toBe(0);
     expect(d.stats.commitsMadeInSessions).toBe(1); // quiet commit found by its subject
+  });
+});
+
+describe('branches that merged the base in later', () => {
+  test("later work merged into the base doesn't push out this PR's own edits", () => {
+    const claudeHome = tempDir('tracetoon-claude-');
+    const env = {
+      ...process.env,
+      CLAUDE_CONFIG_DIR: claudeHome,
+      CODEX_HOME: tempDir('tracetoon-codex-'),
+      ANTIGRAVITY_HOME: tempDir('tracetoon-gemini-'),
+      GEMINI_HOME: tempDir('tracetoon-gemini-'),
+      TRACETOON_CONFIG: join(tempDir('tracetoon-cfg-'), 'c.json'),
+    };
+    const repo = makeRepo();
+    const start = Date.now() - 20 * 60_000;
+    const at = (s: number) => new Date(start + s * 1000).toISOString();
+    const commitAt = (file: string, content: string, msg: string, s: number) => {
+      mkdirSync(join(repo.root, file, '..'), { recursive: true });
+      writeFileSync(join(repo.root, file), content);
+      git(repo.root, ['add', '.']);
+      git(repo.root, ['commit', '-q', '-m', msg], undefined, {
+        GIT_AUTHOR_DATE: at(s),
+        GIT_COMMITTER_DATE: at(s),
+      });
+      return git(repo.root, ['rev-parse', 'HEAD']).stdout.trim();
+    };
+    mkdirSync(join(repo.root, 'src'), { recursive: true });
+    // This PR's own work comes first (log seconds 0-2, commit at 3)...
+    commitAt('src/own.ts', 'export const ownFeatureValue = 7;\n', 'feat: own feature', 3);
+    // ...then the same session does other work that lands on main (commit at 7)...
+    git(repo.root, ['checkout', '-q', 'main']);
+    const other = commitAt(
+      'src/other.ts',
+      'export const otherWorkValue = 9;\n',
+      'feat: other work',
+      7,
+    );
+    // ...and main is merged back into this branch.
+    git(repo.root, ['checkout', '-q', 'feature']);
+    git(repo.root, ['merge', '-q', '--no-edit', 'main']);
+    new ClaudeLog(repo.root, 'feature', start)
+      .prompt('OWN-REQUEST build my feature')
+      .write(join(repo.root, 'src/own.ts'), 'export const ownFeatureValue = 7;\n')
+      .bash('git commit -q -m "feat: own feature"', '')
+      .prompt('OTHER-REQUEST do the other thing')
+      .write(join(repo.root, 'src/other.ts'), 'export const otherWorkValue = 9;\n')
+      .bash('git log --oneline -1', `${other.slice(0, 7)} feat: other work`)
+      .save(claudeHome, 's1');
+    const r = spawnSync(
+      process.execPath,
+      [CLI, '--json', 'digest', '--offline', '--base', 'main'],
+      {
+        cwd: repo.root,
+        env,
+        encoding: 'utf8',
+      },
+    );
+    const d = JSON.parse(readFileSync(JSON.parse(r.stdout).digestPath, 'utf8'));
+    expect(d.stats.commits).toBe(1); // the merge commit isn't the PR's own work
+    expect(d.stats.agentMatchedPct).toBe(100);
+    expect(d.sessions[0].prompts.map((p: { text: string }) => p.text)).toContain(
+      'OWN-REQUEST build my feature',
+    );
   });
 });
