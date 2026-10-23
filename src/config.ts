@@ -1,3 +1,4 @@
+import type { Theme } from './comic/types.ts';
 /**
  * Settings: user-level (`~/.config/tracetoon/config.json`, or
  * `%APPDATA%\tracetoon\config.json` on Windows) overlaid by the repo's
@@ -11,7 +12,7 @@ export interface Config {
   /** Skip the preview step when every safety check passes. Default false. */
   yolo: boolean;
   /** Comic theme for later milestones. */
-  theme: 'pets' | 'mecha' | 'scifi';
+  theme: Theme;
   /** Quote the user's prompts verbatim in the PR ("verbatim") or paraphrase ("paraphrase"). */
   promptQuoting: 'verbatim' | 'paraphrase';
   /** Trailer style to suggest: kernel-style Assisted-by, Co-Authored-By, or none. */
@@ -24,6 +25,10 @@ export interface Config {
   imageConsent: string[];
   /** Make a comic at all. */
   comic: boolean;
+  /** Pin one art style for every comic (a style id), or `auto` to vary. */
+  style: string;
+  /** Allow animal casts in anime/manga styles (off: they read as furry). */
+  allowAnimalAnime: boolean;
   /** Use Tracetoon for PRs at all. Off here, or in any other switch, wins. */
   enabled: boolean;
 }
@@ -38,6 +43,8 @@ export const DEFAULTS: Config = {
   hosting: 'auto',
   imageConsent: [],
   comic: true,
+  style: 'auto',
+  allowAnimalAnime: false,
 };
 
 export function userConfigPath(): string {

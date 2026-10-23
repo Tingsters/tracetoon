@@ -1,7 +1,10 @@
 /**
- * Lays out the 2×2 comic page: four panel images, speech bubbles, a title band
- * and a footer. Art is always made without text; all words are drawn here, so
- * they stay legible whatever made the art.
+ * Lays out comic pages. Two kinds:
+ *  - `composePage`: text-free panel art in a grid, with Tracetoon's bubbles,
+ *    a title band and a footer (v1 4-koma scripts, the built-in artist, and
+ *    pages with overlay lettering);
+ *  - `pageWithFooter`: a whole page the image model drew, lettering included,
+ *    with Tracetoon's exact footer bar underneath.
  */
 import type { ComicScript, Dialogue, Panel, SeriesBible } from './types.ts';
 
@@ -87,14 +90,21 @@ interface Box {
   h: number;
 }
 
+interface Look {
+  caption: string;
+  sfx: string;
+}
+
 function bubble(
   d: Dialogue,
   box: Box,
   lines: string[],
   size: number,
   tailTo?: number,
+  look: Look = { caption: '#FFF3B0', sfx: '#F25F5C' },
 ): string {
-  const kind = d.speaker === 'caption' ? 'caption' : (d.kind ?? 'speech');
+  const kind =
+    d.speaker === 'caption' || d.kind === 'sign' ? 'caption' : (d.kind ?? 'speech');
   const lh = size * 1.18;
   const textX = box.x + box.w / 2;
   const textY = box.y + (box.h - lines.length * lh) / 2 + size * 0.88;
@@ -105,7 +115,7 @@ function bubble(
     )
     .join('');
   if (kind === 'caption') {
-    return `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="#FFF3B0" stroke="${INK}" stroke-width="4"/>${text}`;
+    return `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${look.caption}" stroke="${INK}" stroke-width="4"/>${text}`;
   }
   let tail = '';
   if (tailTo !== undefined) {
@@ -126,15 +136,16 @@ function bubble(
   return kind === 'thought' ? `${shape}${tail}${text}` : `${tail}${shape}${text}`;
 }
 
-function sfx(d: Dialogue, i: number): string {
+function sfx(d: Dialogue, i: number, color = '#F25F5C'): string {
   const x = 400 + (i % 2 ? 120 : -120);
-  return `<text x="${x}" y="360" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="84" fill="#F25F5C" stroke="#FFFFFF" stroke-width="10" paint-order="stroke" transform="rotate(-9 ${x} 360)">${esc(d.text)}</text>`;
+  return `<text x="${x}" y="360" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="84" fill="${color}" stroke="#FFFFFF" stroke-width="10" paint-order="stroke" transform="rotate(-9 ${x} 360)">${esc(d.text)}</text>`;
 }
 
 /** Bubbles for one panel, in the panel's own 800×800 space. */
 export function panelBubbles(
   panel: Panel,
   placed?: ({ x: number; y: number; w?: number } | null)[],
+  look?: Look,
 ): string {
   const size = 30;
   const boxes: Box[] = [];
@@ -156,8 +167,9 @@ export function panelBubbles(
   };
   return panel.dialogue
     .map((d, i) => {
-      if (d.kind === 'sfx') return sfx(d, i);
-      const isCaption = d.speaker === 'caption' || d.kind === 'caption';
+      if (d.kind === 'sfx') return sfx(d, i, look?.sfx);
+      const isCaption =
+        d.speaker === 'caption' || d.kind === 'caption' || d.kind === 'sign';
       const manual = placed?.[i];
       const maxW = manual?.w ? manual.w * SRC - 44 : isCaption ? 520 : 330;
       const lines = wrap(d.text, maxW, size);
@@ -177,7 +189,7 @@ export function panelBubbles(
       }
       const box = { x, y, w, h };
       boxes.push(box);
-      return bubble(d, box, lines, size, isCaption ? undefined : sx);
+      return bubble(d, box, lines, size, isCaption ? undefined : sx, look);
     })
     .join('');
 }
@@ -188,9 +200,87 @@ function dataUri(img: PanelImage): string {
 
 export interface PageInfo {
   episode?: number;
+  /** Footer text, e.g. "acme/widgets #42". "made with Tracetoon" is added. */
+  footer?: string;
 }
 
-/** The full page as SVG. */
+const FOOTER_BAR = 56;
+const ACCENTS: Record<string, string> = {
+  red: '#D7263D',
+  blue: '#1F6FEB',
+  yellow: '#F2B705',
+  orange: '#F26B1D',
+  green: '#2DA44E',
+  pink: '#E83E8C',
+  purple: '#8250DF',
+  teal: '#1A9E9E',
+  cyan: '#12B5CB',
+};
+
+/** Colors for bubbles and lettering that follow the comic's palette. */
+function lookOf(script: ComicScript): { caption: string; sfx: string; paper: string } {
+  const accent = ACCENTS[(script.accent ?? '').toLowerCase()] ?? '#F25F5C';
+  if (script.palette === 'bw-accent')
+    return { caption: '#FFFFFF', sfx: accent, paper: '#FFFFFF' };
+  if (script.palette === 'duotone')
+    return { caption: '#FFFFFF', sfx: accent, paper: '#F7F3EA' };
+  return { caption: '#FFF3B0', sfx: accent, paper: '#FFFDF7' };
+}
+
+/** The branded footer bar: exact text, drawn by Tracetoon, never by the model. */
+function footerBar(y: number, width: number, left: string): string {
+  const ty = y + FOOTER_BAR / 2 + 9;
+  return `<rect x="0" y="${y}" width="${width}" height="${FOOTER_BAR}" fill="#111114"/>
+<text x="28" y="${ty}" font-family="${FONT}" font-weight="700" font-size="26" fill="#FFFFFF">${esc(left)}</text>
+<text x="${width - 28}" y="${ty}" text-anchor="end" font-family="${FONT}" font-weight="700" font-size="24" fill="#C9C9D3">made with Tracetoon</text>`;
+}
+
+/** Width and height of a PNG or JPEG, from its header. */
+export function imageSize(data: Uint8Array): { w: number; h: number } | undefined {
+  const b = Buffer.from(data);
+  if (b.length > 24 && b.readUInt32BE(0) === 0x89504e47)
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) return undefined;
+      const marker = b[i + 1]!;
+      const len = b.readUInt16BE(i + 2);
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker))
+        return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5) };
+      i += 2 + len;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A page the image model drew whole (lettering included), with Tracetoon's
+ * footer bar added underneath.
+ */
+export function pageWithFooter(img: PanelImage, footer: string, aspect = 4 / 3): string {
+  const size = imageSize(img.data);
+  const ratio = size ? size.w / size.h : aspect;
+  const h = Math.round(PAGE_W / ratio);
+  const total = h + FOOTER_BAR;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${total}" viewBox="0 0 ${PAGE_W} ${total}">
+<rect width="${PAGE_W}" height="${total}" fill="#111114"/>
+<image href="${dataUri(img)}" width="${PAGE_W}" height="${h}" preserveAspectRatio="xMidYMid slice"/>
+${footerBar(h, PAGE_W, footer)}
+</svg>`;
+}
+
+/** Columns for a page of n square panels. */
+function columns(n: number): number {
+  if (n <= 3) return n;
+  if (n === 4) return 2;
+  return 3;
+}
+
+/**
+ * The full page as SVG, with Tracetoon's bubbles over text-free art: v1 4-koma
+ * scripts, the built-in artist, and pages drawn with overlay lettering.
+ */
 export function composePage(
   script: ComicScript,
   bible: SeriesBible,
@@ -198,35 +288,44 @@ export function composePage(
   info: PageInfo = {},
   layout?: Layout,
 ): string {
-  const k = CELL / SRC;
+  const n = script.panels.length;
+  const cols = columns(n);
+  const rows = Math.ceil(n / cols);
+  const cell = (PAGE_W - 2 * MARGIN - (cols - 1) * GUTTER) / cols;
+  const k = cell / SRC;
+  const look = lookOf(script);
+  const bodyH = TITLE_H + MARGIN + rows * cell + (rows - 1) * GUTTER + MARGIN;
+  const height = bodyH + (info.footer ? FOOTER_BAR : FOOTER_H + MARGIN);
   const cells = script.panels
     .map((panel, i) => {
-      const px = MARGIN + (i % 2) * (CELL + GUTTER);
-      const py = TITLE_H + MARGIN + Math.floor(i / 2) * (CELL + GUTTER);
+      const row = Math.floor(i / cols);
+      const inRow = Math.min(cols, n - row * cols);
+      const offset = ((cols - inRow) * (cell + GUTTER)) / 2; // center a short last row
+      const px = MARGIN + offset + (i % cols) * (cell + GUTTER);
+      const py = TITLE_H + MARGIN + row * (cell + GUTTER);
       const img = images[i];
       return `<g transform="translate(${px} ${py})">
-<clipPath id="c${i}"><rect width="${CELL}" height="${CELL}" rx="10"/></clipPath>
-<g clip-path="url(#c${i})">${img ? `<image href="${dataUri(img)}" width="${CELL}" height="${CELL}" preserveAspectRatio="xMidYMid slice"/>` : `<rect width="${CELL}" height="${CELL}" fill="#EEE"/>`}
-<g transform="scale(${k})">${panelBubbles(panel, layout?.panels[i])}</g></g>
-<rect width="${CELL}" height="${CELL}" rx="10" fill="none" stroke="${INK}" stroke-width="6"/>
-<circle cx="30" cy="${CELL - 30}" r="18" fill="${INK}"/><text x="30" y="${CELL - 21}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="24" fill="#FFF">${i + 1}</text>
+<clipPath id="c${i}"><rect width="${cell}" height="${cell}" rx="10"/></clipPath>
+<g clip-path="url(#c${i})">${img ? `<image href="${dataUri(img)}" width="${cell}" height="${cell}" preserveAspectRatio="xMidYMid slice"/>` : `<rect width="${cell}" height="${cell}" fill="#EEE"/>`}
+<g transform="scale(${k})">${panelBubbles(panel, layout?.panels[i], look)}</g></g>
+<rect width="${cell}" height="${cell}" rx="10" fill="none" stroke="${INK}" stroke-width="6"/>
+${n > 1 ? `<circle cx="30" cy="${cell - 30}" r="18" fill="${INK}"/><text x="30" y="${cell - 21}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="24" fill="#FFF">${i + 1}</text>` : ''}
 </g>`;
     })
     .join('\n');
+  const cast = bible.cast
+    .filter((c) => script.panels.some((p) => p.characters.some((pc) => pc.cast === c.id)))
+    .map((c) => c.name)
+    .join(', ');
   const ep = info.episode ? `Ep. ${info.episode} · ` : '';
-  const footY = PAGE_H - MARGIN - 12;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${PAGE_H}" viewBox="0 0 ${PAGE_W} ${PAGE_H}">
-<rect width="${PAGE_W}" height="${PAGE_H}" fill="#FFFDF7"/>
-<text x="${PAGE_W / 2}" y="72" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="52" fill="${INK}">${esc(script.title)}</text>
+  const footer = info.footer
+    ? footerBar(bodyH, PAGE_W, info.footer)
+    : `<text x="${MARGIN}" y="${height - MARGIN - 12}" font-family="${FONT}" font-weight="700" font-size="26" fill="#6B6B78">${esc(`${bible.title} · ${ep}${cast}`)}</text>
+<text x="${PAGE_W - MARGIN}" y="${height - MARGIN - 12}" text-anchor="end" font-family="${FONT}" font-size="22" fill="#8A8A96">made with Tracetoon</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${height}" viewBox="0 0 ${PAGE_W} ${height}">
+<rect width="${PAGE_W}" height="${height}" fill="${look.paper}"/>
+<text x="${PAGE_W / 2}" y="72" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="52" fill="${INK}">${esc(script.v === 2 && script.headline ? script.headline : script.title)}</text>
 ${cells}
-<text x="${MARGIN}" y="${footY}" font-family="${FONT}" font-weight="700" font-size="26" fill="#6B6B78">${esc(
-    `${bible.title} · ${ep}${bible.cast
-      .filter((c) =>
-        script.panels.some((p) => p.characters.some((pc) => pc.cast === c.id)),
-      )
-      .map((c) => c.name)
-      .join(', ')}`,
-  )}</text>
-<text x="${PAGE_W - MARGIN}" y="${footY}" text-anchor="end" font-family="${FONT}" font-size="22" fill="#8A8A96">made with Tracetoon</text>
+${footer}
 </svg>`;
 }

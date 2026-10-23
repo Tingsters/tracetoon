@@ -78,8 +78,10 @@ export function renderPreviewHtml(input: {
   body: string;
   approval: Approval;
   digest: TraceDigest;
+  /** The comic as it would look in a social post (image path and caption). */
+  share?: { image: string; caption: string };
 }): string {
-  const { title, body, approval, digest } = input;
+  const { title, body, approval, digest, share } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
   const html = marked.parse(body, { async: false, gfm: true }) as string;
   const findings = approval.findings.length
@@ -109,10 +111,19 @@ aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var
 .evidence{color:var(--fg)}.evidence h2{font-size:16px;margin:16px 0 4px}.evidence h3{font-size:14px;margin:12px 0 4px}
 .evidence ul{margin:4px 0;padding-left:20px}.evidence li{margin:2px 0}.evidence .n{color:var(--muted)}
 .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;color:var(--fg)}
+.social{margin-top:24px}.social h2{font-size:16px;margin:0 0 8px}
+.phone{max-width:380px;border:1px solid var(--border);border-radius:16px;padding:12px;background:var(--code)}
+.phone img{width:100%;border-radius:8px;display:block}.phone p{margin:8px 2px 0;font-size:14px;white-space:pre-wrap}
 </style></head><body><main>
 <h1 class="title">${esc(title)}</h1>
 <div class="meta">${approval.mode === 'edit' ? `Updates PR #${approval.prNumber}` : 'New pull request'} | ${esc(approval.head)} -> ${esc(approval.base)}</div>
 <div class="card">${html}</div>
+${
+  share
+    ? `<section class="social"><h2>On a phone, shared</h2><div class="phone"><img src="${esc(share.image)}" alt="comic at phone size"><p>${esc(share.caption)}</p></div>
+<p class="meta">Can every word be read at this size? Is it funny to someone outside the project? If not, ask your agent to tighten it, or to reroll the style (<code>tracetoon comic reroll</code>).</p></section>`
+    : ''
+}
 <aside>
 ${findings}${policy}
 ${evidence}

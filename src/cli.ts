@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
+import { STYLES, styleById } from './comic/styles.ts';
+import { THEMES, type Theme } from './comic/types.ts';
 import {
   loadConfig,
   setUserConfig,
@@ -13,6 +15,7 @@ import { emit, exitCodeOf, UserError } from './commands/output.ts';
 import { previewCmd, publishCmd, renderCmd } from './commands/publish.ts';
 import {
   comicArtCmd,
+  comicRerollCmd,
   comicCheckCmd,
   comicPromptsCmd,
   comicRenderCmd,
@@ -140,7 +143,24 @@ comic
   )
   .option('--consent', 'the user agreed to send comic prompts to this provider')
   .option('--force', 'redraw panels that already exist')
+  .option(
+    '--lettering <how>',
+    'model (the image model letters the page) or overlay (Tracetoon draws bubbles)',
+  )
   .action((o) => comicArtCmd(cwd, { ...g(), ...o }));
+comic
+  .command('reroll')
+  .description(
+    'redraw the page in a different style (or the one given), keeping the story',
+  )
+  .option('--run <id>', 'run id (default: latest)')
+  .option('--style <id>', 'use this style instead of picking a fresh one')
+  .option('--format <id>', 'also switch to this format')
+  .option(
+    '--palette <name>',
+    'also switch the palette: full-color, bw-accent, duotone, limited',
+  )
+  .action((o) => comicRerollCmd(cwd, { ...g(), ...o }));
 comic
   .command('render')
   .description('lay out panels and speech bubbles into out/comic.png')
@@ -209,6 +229,12 @@ config.command('set <key> <value>').action((key: string, value: string) => {
     throw new UserError(
       `Unknown setting "${key}". Known: ${Object.keys(DEFAULTS).join(', ')}`,
     );
+  if (key === 'style' && value !== 'auto' && !styleById(value))
+    throw new UserError(
+      `Unknown style "${value}". Use auto, or one of: ${STYLES.map((x) => x.id).join(', ')}`,
+    );
+  if (key === 'theme' && !THEMES.includes(value as Theme))
+    throw new UserError(`Unknown theme "${value}". Use one of: ${THEMES.join(', ')}`);
   const c = setUserConfig(key as keyof Config, value);
   emit(g(), c, () => `${key} = ${String(c[key as keyof Config])}`);
 });

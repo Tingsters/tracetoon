@@ -21,6 +21,14 @@ export interface PrMeta {
   saga?: string;
   theme?: string;
   synopsis?: string;
+  /** Art style, format and palette of the comic (to keep later ones varied). */
+  style?: string;
+  format?: string;
+  palette?: string;
+  /** Top-level areas of the repo the PR touched (to suggest related episodes). */
+  areas?: string[];
+  /** standalone, sequel or new-arc. */
+  continuity?: string;
 }
 
 /** JSON that can never end an HTML comment early (no `--`, no `>`). */

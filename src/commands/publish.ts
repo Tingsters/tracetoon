@@ -68,11 +68,26 @@ function loadRun(cwd: string, runId?: string): { run: Run; truth: PrTruth } {
   return { run: findRun(truth.gitDir, runId), truth };
 }
 
+/**
+ * The "previously" line. A page recaps only when the agent made it a sequel; a
+ * 4-koma recaps its saga (stacked or linked PRs). Unrelated PRs never get one.
+ */
+export function previouslyFor(script: ComicScript, story?: Story): string[] {
+  if (!story) return [];
+  if (script.v !== 2) return story.previously;
+  if (script.continuity?.mode !== 'sequel') return [];
+  return (script.continuity.of ?? []).map((n) => {
+    const r = story.related?.find((e) => e.number === n);
+    const saga = story.saga?.prs.find((p) => p.number === n);
+    const synopsis = r?.synopsis ?? saga?.synopsis;
+    return synopsis ? `#${n}: ${synopsis}` : `sequel to #${n}`;
+  });
+}
+
 /** The comic as it appears in the body: image, then a collapsed transcript. */
 function comicBlock(script: ComicScript, bible: SeriesBible, story?: Story): string {
-  const prev = story?.previously.length
-    ? `\n\n<sub>Previously: ${story.previously.join(' · ')}</sub>`
-    : '';
+  const recap = previouslyFor(script, story);
+  const prev = recap.length ? `\n\n<sub>Previously: ${recap.join(' · ')}</sub>` : '';
   const alt = script.altText.replace(/[\[\]\n]/g, ' ').trim();
   return `<p align="center"><img src="${COMIC_SRC}" alt="${alt.replace(/"/g, "'")}" width="760"></p>${prev}
 
@@ -137,6 +152,15 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         }
       : {}),
     ...(script?.synopsis ? { synopsis: script.synopsis.slice(0, 280) } : {}),
+    ...(script?.v === 2
+      ? {
+          style: script.style,
+          format: script.format,
+          palette: script.palette,
+          continuity: script.continuity?.mode ?? 'standalone',
+        }
+      : {}),
+    ...(story?.areas?.length ? { areas: story.areas.slice(0, 12) } : {}),
   };
   const block = managedBlock(content, meta);
   const body = mergeIntoBody(ctx.existingPr?.body, block);
@@ -168,7 +192,18 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     : body;
   writeFileSync(
     join(run.dir, 'preview.html'),
-    renderPreviewHtml({ title, body: previewBody, approval, digest }),
+    renderPreviewHtml({
+      title,
+      body: previewBody,
+      approval,
+      digest,
+      share: comic
+        ? {
+            image: `./out/${comic.path.split(/[\\/]/).pop()}`,
+            caption: shareCaption(script, title, '(link to the PR)'),
+          }
+        : undefined,
+    }),
     'utf8',
   );
   writeJson(run, 'approval.json', approval);
@@ -271,6 +306,26 @@ interface Hosted {
   attach?: string;
   assetsCommit?: string;
   hosting: 'branch' | 'attach' | 'none';
+  /** Where the comic image can be viewed, when it is on the assets branch. */
+  imageUrl?: string;
+}
+
+/**
+ * A ready-to-post caption for social media: the headline, what happened in one
+ * line, and the PR link. Kept under 280 characters.
+ */
+export function shareCaption(
+  script: ComicScript | undefined,
+  title: string,
+  url: string,
+): string {
+  const headline = (script?.v === 2 && script.headline) || script?.title || title;
+  const tail = `\n${url} #tracetoon`;
+  const room = 280 - headline.length - tail.length - 3;
+  let line = (script?.synopsis ?? '').replace(/\s+/g, ' ').trim();
+  if (line.length > room)
+    line = `${line.slice(0, Math.max(0, room - 1)).replace(/\s+\S*$/, '')}…`;
+  return `${headline}${line ? ` — ${line}` : ''}${tail}`;
 }
 
 /** Put the comic somewhere GitHub can show it, and fill in its URL. */
@@ -339,6 +394,7 @@ function hostComic(
     const commit = publishAssets(truth.toplevel, files, `tracetoon: ${folder}`);
     return {
       body: body.replaceAll(COMIC_SRC, assetUrl(web, commit, `${folder}/comic.${ext}`)),
+      imageUrl: assetUrl(web, commit, `${folder}/comic.${ext}`),
       assetsCommit: commit,
       hosting: 'branch',
     };
@@ -464,10 +520,22 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     hosting: hosted.hosting,
     assetsCommit: hosted.assetsCommit,
   });
-  emit(
-    opts,
-    { url, mode: approval.mode, hosting: hosted.hosting },
-    () =>
+  const shareScript = readJson<ComicScript>(run, 'comic.json');
+  const share =
+    hosted.hosting !== 'none'
+      ? {
+          caption: shareCaption(shareScript, approval.title, url),
+          image: hosted.imageUrl ?? null,
+        }
+      : undefined;
+  emit(opts, { url, mode: approval.mode, hosting: hosted.hosting, share }, () =>
+    [
       `Published: ${url}${hosted.hosting !== 'none' ? ` (comic hosted via ${hosted.hosting})` : ''}`,
+      share
+        ? `\nShare it (offer this to the user):\n${share.caption}${share.image ? `\nImage: ${share.image}` : ''}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
   );
 }

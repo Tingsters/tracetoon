@@ -102,13 +102,22 @@ Turn it off at whichever level you need. Any "off" wins:
 2. **`tracetoon context`** reads the PR template, any AI-contribution policy, the
    existing PR, your settings, and the comic series (cast, episode number,
    saga).
-3. **Your agent writes** `body.md` and a four-panel `comic.json` from the digest.
-4. **`tracetoon comic art` / `comic render`** draw the panels and add speech
-   bubbles. The art is AI-drawn when you allow it: your agent's own image tool,
-   the Codex or Antigravity CLI already on your machine (your own login, no
-   key), or OpenAI or Gemini with an API key. Otherwise the built-in artist
-   draws it. Each character gets a reference sheet once per series, so the cast
-   looks the same in every episode.
+3. **Your agent writes** `body.md` and a comic brief (`comic.json`) from the
+   digest. It finds the funny part of how the work went, then picks:
+   - a format: a gag strip, a before/after, a splash page, a mission briefing, a
+     movie poster, an instruction manual and more;
+   - one of 18 art styles that suits the cast and the mood (manga ink with one
+     red accent, noir, silver-age comics, ligne claire, claymation, 16-bit pixel
+     art and more). It's a different style each time, and anime is never paired
+     with animal characters.
+4. **`tracetoon comic art` / `comic render`** draw the whole page, lettering
+   included, with an AI image model you allow: your agent's own image tool, the
+   Codex or Antigravity CLI already on your machine (your own login, no key), or
+   OpenAI or Gemini with an API key. Tracetoon adds a footer bar (`owner/repo
+   #N · made with Tracetoon`). Character sheets keep the cast recognizable, and
+   a comic recaps an earlier one only when it's a real sequel. Without AI, the
+   built-in artist draws it. `tracetoon comic reroll` redraws it in another
+   style.
 5. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text in an existing PR is kept), scans it for leaks and
    prints an approval code.
@@ -140,7 +149,9 @@ the binary included are attached to each release.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
-| `theme` | `pets` | Comic theme for a new series: `pets`, `mecha` or `scifi` |
+| `theme` | `pets` | Cast and setting for a new series: `pets`, `mecha`, `scifi`, `office`, `heist` or `fantasy` |
+| `style` | `auto` | Pin one art style for every comic (see `references/styles.md`), or `auto` to vary |
+| `allowAnimalAnime` | `false` | Allow animal characters in anime/manga styles |
 | `comic` | `true` | Make a comic at all |
 | `yolo` | `false` | Allow `publish --yolo` to skip the preview when all checks pass |
 | `promptQuoting` | `paraphrase` | `verbatim` quotes your prompts in the PR |

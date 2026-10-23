@@ -190,7 +190,19 @@ export function contextCmd(
         `Theme: ${config.theme} | yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting}`,
         `Comic: "${bible.title}" episode ${story.episode}${story.saga ? `, saga with ${story.saga.prs.map((p) => `#${p.number}`).join(', ')}` : ''}`,
         `Cast: ${bible.cast.map((c) => `${c.id} (${c.name}${c.agent ? `, ${c.agent}` : ''})`).join(', ')}`,
-        ...story.previously.map((p) => `Previously: ${p}`),
+        ...story.previously.map((p) => `Saga so far: ${p}`),
+        config.style && config.style !== 'auto'
+          ? `Style: pinned to ${config.style}`
+          : `Recent styles (pick something fresh): ${story.recentStyles?.join(', ') || 'none yet'}`,
+        ...(story.related?.length
+          ? [
+              'Related episodes (make this a sequel only if it really continues one; otherwise standalone):',
+              ...story.related.map(
+                (r) =>
+                  `  #${r.number} ${r.title} (${r.why}${r.style ? `; ${r.style}` : ''})${r.synopsis ? `: ${r.synopsis}` : ''}`,
+              ),
+            ]
+          : ['Related episodes: none, so make it standalone (or a new arc).']),
       ].join('\n'),
   );
 }

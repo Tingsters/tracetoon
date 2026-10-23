@@ -13,6 +13,8 @@ import { buildStory, type EpisodeRef } from '../src/story/story.ts';
 import type { PrTruth } from '../src/git/pr.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
+import { pageScript } from './pageScript.ts';
+import { previouslyFor } from '../src/commands/publish.ts';
 
 setDefaultTimeout(90_000);
 // Set TRACETOON_TEST_CLI to run these against the bundled build instead of the source.
@@ -151,17 +153,63 @@ describe('story', () => {
     },
   });
 
-  test('numbers episodes and recaps the latest ones', () => {
+  test('numbers episodes, but never recaps unrelated ones', () => {
     const s = buildStory({
       truth,
       series: 'ser_1',
-      episodes: [ep(1, 1), ep(2, 2), ep(3, 3), ep(9, 1, { meta: { series: 'other' } })],
+      episodes: [
+        ep(1, 1, { meta: { style: 'noir' } }),
+        ep(2, 2, { meta: { style: 'pixel-16bit', areas: ['docs'] } }),
+        ep(3, 3, { meta: { style: 'manga-ink', areas: ['src/comic', 'tests'] } }),
+        ep(9, 1, { meta: { series: 'other' } }),
+      ],
       sessionRefs: [],
       linkedPrs: [],
     });
     expect(s.episode).toBe(4);
     expect(s.saga).toBeUndefined();
-    expect(s.previously).toEqual(['#2: episode 2', '#3: episode 3']);
+    expect(s.previously).toEqual([]);
+    expect(s.recentStyles).toEqual(['manga-ink', 'pixel-16bit', 'noir']);
+    // Only episodes touching the same areas are suggested, with why.
+    const touching = buildStory({
+      truth: { ...truth, files: [{ path: 'src/comic/x.ts' }] as PrTruth['files'] },
+      series: 'ser_1',
+      episodes: [
+        ep(2, 2, { meta: { areas: ['docs'] } }),
+        ep(3, 3, { meta: { areas: ['src/comic'] } }),
+      ],
+      sessionRefs: [],
+      linkedPrs: [],
+    });
+    expect(touching.related?.map((r) => [r.number, r.why])).toEqual([
+      [3, 'also touched src/comic'],
+    ]);
+    expect(touching.areas).toEqual(['src/comic']);
+  });
+
+  test('a page recaps only when it is a sequel', () => {
+    const bible = defaultBible('ser_1', 'office', ['Claude Code']);
+    const story = {
+      series: 'ser_1',
+      episode: 4,
+      previously: [],
+      related: [
+        {
+          number: 3,
+          title: 'PR 3',
+          synopsis: 'Kit fixed the parser.',
+          why: 'also touched src',
+        },
+      ],
+    };
+    const page = { ...script(bible), v: 2 as const };
+    expect(previouslyFor(page, story)).toEqual([]);
+    expect(
+      previouslyFor({ ...page, continuity: { mode: 'sequel', of: [3, 7] } }, story),
+    ).toEqual(['#3: Kit fixed the parser.', 'sequel to #7']);
+    expect(previouslyFor(script(bible), { ...story, previously: ['#1: saga'] })).toEqual([
+      '#1: saga',
+    ]);
   });
 
   test('detects sagas from stacked branches, shared sessions and links', () => {
@@ -463,6 +511,75 @@ describe('comic end to end', () => {
       readdirSync(join(runDir, 'art')).filter((f) => /^panel-\d\.png$/.test(f)),
     ).toEqual([]);
     expect(cli(repo.root, 'comic', 'art', '--provider', 'dalle').code).toBe(1);
+  });
+
+  test('a page is drawn whole with its lettering, then gets the footer bar', () => {
+    const { repo, runDir } = prepared();
+    const log = join(tempDir('tracetoon-codexlog-'), 'calls.jsonl');
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    env.FAKE_CODEX_LOG = log;
+    const bible = JSON.parse(
+      readFileSync(join(runDir, 'bible.json'), 'utf8'),
+    ) as SeriesBible;
+    writeFileSync(join(runDir, 'comic.json'), JSON.stringify(pageScript(bible)));
+
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(0);
+    expect(art.json.mode).toBe('page');
+    expect(art.json.lettering).toBe('model');
+    expect(existsSync(join(runDir, 'art', 'page.png'))).toBe(true);
+    const calls = readFileSync(log, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    const page = calls.at(-1).prompt as string;
+    expect(page).toContain('A finished comic page');
+    expect(page).toContain('"CLICK HERE, HUMAN"');
+    expect(page).toContain('"file:///preview.html"');
+
+    const out = cli(repo.root, 'comic', 'render');
+    expect(out.code).toBe(0);
+    expect(out.json.mode).toBe('page');
+    expect(out.json.proofread).toEqual([
+      'CLICK HERE, HUMAN',
+      'BEFORE',
+      'Where is this file?',
+      'AFTER',
+      'file:///preview.html',
+    ]);
+    const svg = readFileSync(join(runDir, 'out', 'comic.svg'), 'utf8');
+    expect(svg).toContain('acme/demo · feature');
+    expect(svg).toContain('made with Tracetoon');
+
+    // Overlay lettering: text-free panels, Tracetoon draws the words.
+    const overlay = cli(repo.root, 'comic', 'art', '--lettering', 'overlay', '--force');
+    expect(overlay.json.mode).toBe('panels');
+    expect(overlay.json.panels.map((p: any) => p.source)).toEqual(['codex', 'codex']);
+    expect(existsSync(join(runDir, 'art', 'page.png'))).toBe(false);
+    expect(readFileSync(log, 'utf8').trim().split('\n').at(-1)).toContain(
+      'no text, no letters',
+    );
+    const flat = cli(repo.root, 'comic', 'render');
+    expect(flat.json.mode).toBe('panels');
+
+    // Reroll: same story, a fresh style that suits the (animal) cast.
+    const before = readFileSync(log, 'utf8').trim().split('\n').length;
+    const reroll = cli(repo.root, 'comic', 'reroll');
+    expect(reroll.code).toBe(0);
+    const rerolled = JSON.parse(readFileSync(join(runDir, 'comic.json'), 'utf8'));
+    expect(rerolled.style).not.toBe('sunday-strip');
+    expect(['manga-ink', 'shonen-action', 'mecha-anime', 'chibi-anime']).not.toContain(
+      rerolled.style,
+    );
+    expect(readFileSync(log, 'utf8').trim().split('\n').length).toBeGreaterThan(before);
+    const clash = cli(repo.root, 'comic', 'reroll', '--style', 'manga-ink');
+    expect(clash.code).toBe(1);
+    expect(clash.json.error).toContain('furries');
+    expect(cli(repo.root, 'config', 'set', 'style', 'crayon').code).toBe(1);
+    expect(cli(repo.root, 'config', 'set', 'style', 'noir').code).toBe(0);
+    expect(readFileSync(join(runDir, 'out', 'comic.svg'), 'utf8')).toContain(
+      'Where is this file?',
+    );
   });
 
   test('exports an Agent Trace record with line ranges', () => {
