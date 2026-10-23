@@ -1,4 +1,6 @@
-node_modules/
 /dist/
+node_modules/
 *.log
 *.tmp.ts
+*.tmp.png
+plugin/skills/tracetoon/bin/tracetoon-*-*

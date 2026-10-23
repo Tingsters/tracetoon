@@ -1,11 +1,13 @@
 {
   "name": "tracetoon",
-  "owner": { "name": "Tingsters" },
+  "owner": {
+    "name": "Tingsters"
+  },
   "plugins": [
     {
       "name": "tracetoon",
       "source": "./plugin",
-      "description": "Agent-trace PR descriptions from Claude Code, Codex and Antigravity logs, with an approval step (comics coming soon)."
+      "description": "PR descriptions and 4-panel comics from your Claude Code, Codex and Antigravity session logs, with an approval step."
     }
   ]
 }

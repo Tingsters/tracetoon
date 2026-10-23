@@ -47,7 +47,11 @@ fi
 if [ "${TRACETOON_ALLOW_DOWNLOAD:-}" = 1 ] && command -v gh >/dev/null 2>&1; then
   tmp=$(mktemp -d)
   if gh release download "v$ver" -R Tingsters/tracetoon -p "$name" -D "$tmp" >/dev/null 2>&1; then
+    # Prefer a checksum pinned in the skill; otherwise use the release's own list.
     want=$(grep " $name\$" "$skill/checksums.txt" 2>/dev/null | cut -d' ' -f1 || true)
+    if [ -z "$want" ] && gh release download "v$ver" -R Tingsters/tracetoon -p checksums.txt -D "$tmp" >/dev/null 2>&1; then
+      want=$(grep " $name\$" "$tmp/checksums.txt" | cut -d' ' -f1 || true)
+    fi
     if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$tmp/$name" | cut -d' ' -f1)
     else got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1); fi
     if [ -n "$want" ] && [ "$want" = "$got" ]; then

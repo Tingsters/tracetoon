@@ -34,7 +34,12 @@ if ($env:TRACETOON_ALLOW_DOWNLOAD -eq '1' -and (Get-Command gh -ErrorAction Sile
   & gh release download "v$ver" -R Tingsters/tracetoon -p $name -D $tmp 2>$null | Out-Null
   $file = Join-Path $tmp $name
   if (Test-Path $file) {
+    # Prefer a checksum pinned in the skill; otherwise use the release's own list.
     $line = Get-Content (Join-Path $skill 'checksums.txt') -ErrorAction SilentlyContinue | Where-Object { $_ -match " $([regex]::Escape($name))$" }
+    if (-not $line) {
+      & gh release download "v$ver" -R Tingsters/tracetoon -p checksums.txt -D $tmp 2>$null | Out-Null
+      $line = Get-Content (Join-Path $tmp 'checksums.txt') -ErrorAction SilentlyContinue | Where-Object { $_ -match " $([regex]::Escape($name))$" }
+    }
     $want = if ($line) { ($line -split ' ')[0] } else { '' }
     $got = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
     if ($want -and $want.ToLower() -eq $got) {

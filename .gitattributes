@@ -1,3 +1,6 @@
 * text=auto eol=lf
 *.cmd text eol=crlf
 *.mjs binary
+*.wasm binary
+*.ttf binary
+*.png binary

@@ -4,7 +4,15 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const out = resolve(import.meta.dir, '..', 'plugin', 'skills', 'tracetoon', 'dist', 'tracetoon.mjs');
+const out = resolve(
+  import.meta.dir,
+  '..',
+  'plugin',
+  'skills',
+  'tracetoon',
+  'dist',
+  'tracetoon.mjs',
+);
 const result = await Bun.build({
   entrypoints: [resolve(import.meta.dir, '..', 'src', 'cli.ts')],
   target: 'node',

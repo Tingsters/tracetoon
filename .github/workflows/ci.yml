@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # Tracetoon builds on @showtail/agent-traces from a sibling Showtail checkout
+      # (see tsconfig.json paths) until that package is published to npm.
+      - name: Check out Showtail next to this repo
+        shell: bash
+        run: git clone --depth 1 https://github.com/Tingsters/Showtail.git ../Showtail
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - name: Bundle and run the end-to-end tests against it
+        shell: bash
+        run: |
+          bun run bundle
+          TRACETOON_TEST_CLI="$PWD/plugin/skills/tracetoon/dist/tracetoon.mjs" bun test tests/flow.test.ts tests/comic.test.ts

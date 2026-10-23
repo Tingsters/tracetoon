@@ -1,7 +1,7 @@
 {
   "name": "tracetoon",
-  "version": "0.2.0",
-  "description": "Write pull request descriptions from the agent session logs already on your machine, with a preview you approve before anything is posted.",
+  "version": "1.0.0-rc.1",
+  "description": "PR descriptions and 4-panel comics from the agent session logs already on your machine, with a preview you approve before anything is posted.",
   "author": {
     "name": "Tingsters"
   },

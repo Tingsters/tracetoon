@@ -1,0 +1,47 @@
+name: release
+
+# Push a tag like v1.2.3 to build binaries and skill zips and publish a release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out Showtail next to this repo
+        run: git clone --depth 1 https://github.com/Tingsters/Showtail.git ../Showtail
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun test
+      - name: Check the tag matches the skill version
+        run: test "v$(cat plugin/skills/tracetoon/VERSION)" = "$GITHUB_REF_NAME"
+      - name: Build binaries
+        run: |
+          mkdir -p release
+          for t in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
+            ext=""; [ "$t" = windows-x64 ] && ext=".exe"
+            bun build --compile --minify --target="bun-$t" ./src/cli.ts --outfile "release/tracetoon-$t$ext"
+          done
+      - name: Package skill zips (slim, and one per platform with its binary)
+        run: |
+          (cd plugin/skills && zip -qr ../../release/tracetoon-skill.zip tracetoon)
+          for f in release/tracetoon-*-*; do
+            name=$(basename "$f"); plat=${name#tracetoon-}; plat=${plat%.exe}
+            d=$(mktemp -d); cp -r plugin/skills/tracetoon "$d/"; cp "$f" "$d/tracetoon/bin/"
+            (cd "$d" && zip -qr "$GITHUB_WORKSPACE/release/tracetoon-skill-$plat.zip" tracetoon)
+          done
+          (cd release && sha256sum tracetoon-* > checksums.txt)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" release/* --title "Tracetoon $GITHUB_REF_NAME" --generate-notes $flags
