@@ -146,3 +146,21 @@ describe('skill docs stay in sync', () => {
     expect(c.endsWith('https://github.com/acme/widgets/pull/42 #tracetoon')).toBe(true);
   });
 });
+
+describe('character sheets and style', () => {
+  test('only sequels attach character sheets; standalone pages draw the cast fresh', async () => {
+    const { keepsCast } = await import('../src/commands/comic.ts');
+    const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
+    expect(keepsCast(pageScript(pets))).toBe(false);
+    expect(keepsCast(pageScript(pets, { continuity: { mode: 'sequel', of: [3] } }))).toBe(
+      true,
+    );
+    const fresh = pagePrompt(pageScript(pets, { style: 'pulp-scifi' }), pets);
+    expect(fresh).toContain('classic cartoon animals true to the Pulp sci-fi style');
+    expect(fresh).toContain('Draw every character fresh');
+    const office = defaultBible('ser_test', 'office', ['Claude Code']);
+    expect(pagePrompt(pageScript(office, { style: 'manga-ink' }), office)).not.toContain(
+      'cartoon animals',
+    );
+  });
+});

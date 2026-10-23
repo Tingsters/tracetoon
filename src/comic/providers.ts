@@ -19,7 +19,7 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { formatById } from './formats.ts';
-import { paletteText, styleById } from './styles.ts';
+import { castKind, paletteText, styleById } from './styles.ts';
 import {
   BEAT_MEANING,
   type Aspect,
@@ -184,8 +184,21 @@ export function pagePrompt(
     `Lettering: ${style?.lettering ?? 'clear comic lettering'}. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
     'Keep the bottom 5% of the image free of important detail (a footer bar is added there).',
     refLabels.length
-      ? `Reference images: ${refLabels.join('; ')}. Keep each character's identity (face, hair, colors, outfit), redrawn in this page's art style.`
+      ? `Reference images: ${refLabels.join('; ')}. Keep each character's identity (face, hair, colors, outfit), redrawn in this page's art style; do not copy the reference images' drawing style.`
       : '',
+    style &&
+    !style.anime &&
+    script.panels.some((p) =>
+      p.characters.some((c) => {
+        const m = bible.cast.find((x) => x.id === c.cast);
+        return m && castKind(m.species) === 'animal';
+      }),
+    )
+      ? `Draw the animal characters as classic cartoon animals true to the ${style.name} style: not anime, not furry, no human bodies.`
+      : '',
+    refLabels.length
+      ? ''
+      : "Draw every character fresh in this page's art style from their description.",
     'Strictly: no real people, no logos, no watermarks.',
   ]
     .filter(Boolean)

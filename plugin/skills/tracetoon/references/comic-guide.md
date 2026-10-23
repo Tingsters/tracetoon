@@ -73,7 +73,8 @@ episodes**, meaning stacked or linked PRs and earlier PRs that touched the same
 areas of the code.
 - **`sequel`**: this PR continues one of those (same feature, a follow-up fix).
   Reuse its style and cast, set `"continuity": {"mode": "sequel", "of": [12]}`,
-  and you may call back to it. A "Previously" line appears only for sequels.
+  and you may call back to it. Character sheets are attached so the cast matches,
+  and a "Previously" line appears (only sequels get one).
 - **`standalone`** (default): fresh style. The cast is optional; a scene with
   only the bug, or with guest characters described in `scene`, is fine.
 - **`new-arc`**: new or very different work. Start fresh and be inventive.
@@ -140,8 +141,10 @@ Rules (checked by `tracetoon comic check`; warnings don't block):
 ## 7. Make the art, then proofread
 
 `tracetoon comic art` (see SKILL.md for consent) draws the **whole page in one
-image, lettering included**, so the words look like part of the comic. Character
-sheets keep the cast recognizable. Then:
+image, lettering included**, so the words look like part of the comic. For a
+sequel, the series' character sheets are attached so the cast looks the same as
+before. A standalone page draws the cast fresh from their descriptions, so each
+style can render them its own way. Then:
 
 1. `tracetoon comic render` adds Tracetoon's footer bar (`owner/repo #N · made
    with Tracetoon`) and prints a **proofread** list.

@@ -235,7 +235,11 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       results.push({ panel: 0, file: have.path, source: 'existing' });
     } else {
       try {
-        castMade = await makeCast(run, root, script, bible, choice.id as ProviderId);
+        // Character sheets keep a sequel's cast identical. A standalone page draws
+        // the cast fresh from their descriptions: attached sheets drag their own
+        // art style into every page (anime sheets turned cartoon animals furry).
+        if (keepsCast(script))
+          castMade = await makeCast(run, root, script, bible, choice.id as ProviderId);
         results.push(await makePage(run, root, script, bible, choice.id as ProviderId));
         clearPanels(run);
       } catch (e) {
@@ -324,6 +328,9 @@ const used = (script: ComicScript) => [
   ...new Set(script.panels.flatMap((p) => p.characters.map((c) => c.cast))),
 ];
 
+/** Does this page continue a story, so its cast must look exactly like before? */
+export const keepsCast = (script: ComicScript) => script.continuity?.mode === 'sequel';
+
 /** The whole-page image, if one was drawn (by a provider or the host agent). */
 function existingPage(run: Run): { path: string; mime: PanelImage['mime'] } | undefined {
   for (const ext of ['png', 'jpg', 'jpeg', 'webp']) {
@@ -359,7 +366,9 @@ async function makePage(
   bible: SeriesBible,
   id: ProviderId,
 ): Promise<{ panel: number; file: string; source: string }> {
-  const refs = [...castRefs(run, root, bible, used(script)).values()];
+  const refs = keepsCast(script)
+    ? [...castRefs(run, root, bible, used(script)).values()]
+    : [];
   const aspect = script.aspect ?? formatById(script.format)?.aspect ?? '4:3';
   const [img] = await generateImages(id, [
     {
