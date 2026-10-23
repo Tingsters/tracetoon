@@ -6,7 +6,8 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
 import { transcript } from '../comic/script.ts';
 import type { ComicScript, SeriesBible } from '../comic/types.ts';
@@ -172,13 +173,14 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   );
   writeJson(run, 'approval.json', approval);
 
+  const previewPath = join(run.dir, 'preview.html');
   emit(
     opts,
-    { run: run.id, ...approval, previewPath: join(run.dir, 'preview.html') },
+    { run: run.id, ...approval, previewPath, previewUrl: fileUrl(previewPath) },
     () =>
       [
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
-        `Preview: ${join(run.dir, 'preview.html')}`,
+        `Preview (Ctrl+click to open): ${fileUrl(previewPath)}`,
         findings.length
           ? `Leak scan found: ${findings.map((f) => `${f.kind} x${f.count}`).join(', ')}. ${
               approval.allowFindings
@@ -220,6 +222,7 @@ export function previewCmd(
       code: approval.code,
       comic: approval.comicFile ?? null,
       previewPath: htmlPath,
+      previewUrl: fileUrl(htmlPath),
     },
     () =>
       [
@@ -228,13 +231,21 @@ export function previewCmd(
         '-'.repeat(72),
         shown,
         '-'.repeat(72),
-        approval.comicFile ? `Comic image: ${approval.comicFile}` : '',
-        `Preview in a browser: ${htmlPath}`,
+        approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
+        `Preview (Ctrl+click to open): ${fileUrl(htmlPath)}`,
         `Approval code: ${approval.code}`,
       ]
         .filter(Boolean)
         .join('\n'),
   );
+}
+
+/**
+ * A file path as an absolute file:/// URL. Terminals and agent UIs turn these
+ * into clickable links (Ctrl+click), unlike bare or relative paths.
+ */
+export function fileUrl(path: string): string {
+  return pathToFileURL(resolve(path)).href;
 }
 
 function openInBrowser(path: string): void {

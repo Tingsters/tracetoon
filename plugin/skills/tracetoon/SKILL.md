@@ -68,9 +68,12 @@ that bypass on your own initiative.
 6. **Render.** `tracetoon render --json`. If the leak scan reports findings, fix
    `body.md` and render again. Don't use `--allow-findings` unless the user has
    looked at the finding and says it is fine.
-7. **Preview.** `tracetoon preview`, show the user the result, and offer
-   `tracetoon preview --open` to see it with the comic in a browser. Ask them to
-   approve or say what to change; for changes, edit and go back to step 5 or 6.
+7. **Preview.** `tracetoon preview`, and show the user the title and body. Give
+   them the preview link exactly as printed (`previewUrl` in `--json`): a full
+   `file:///…/preview.html` URL on its own line, not in backticks, not shortened
+   to a relative path, so they can Ctrl+click it to see the page with the comic.
+   You can also offer `tracetoon preview --open`. Ask them to approve or say what
+   to change; for changes, edit and go back to step 5 or 6.
 8. **Publish.** Only after the user approves:
    `tracetoon publish --code <approval code>`.
    - If the branch is not on GitHub yet, ask before adding `--push`.
