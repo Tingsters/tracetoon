@@ -55,9 +55,11 @@ $bin = "tracetoon-windows-$arch.exe"
 $headers = @{ 'User-Agent' = 'tracetoon-installer' }
 $tag = $env:TRACETOON_VERSION
 if (-not $tag) {
-  # Newest release, including release candidates.
-  $releases = Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$repo/releases?per_page=1"
-  $tag = @($releases)[0].tag_name
+  # Newest release, including release candidates. The API sorts by tag name
+  # (so rc.10 lands before rc.2), not by date: pick the latest published one.
+  $releases = Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$repo/releases?per_page=30"
+  $tag = (@($releases) | Where-Object { -not $_.draft -and $_.published_at } |
+    Sort-Object { [datetime]$_.published_at } -Descending | Select-Object -First 1).tag_name
   if (-not $tag) { throw 'Could not find a Tracetoon release.' }
 }
 $ver = $tag.TrimStart('v')
