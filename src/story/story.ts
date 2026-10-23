@@ -136,13 +136,12 @@ export function buildStory({
   const episode =
     current?.meta.episode ?? Math.max(0, ...others.map((e) => e.meta.episode ?? 0)) + 1;
 
-  // Related PRs: stacked branches, shared agent sessions, or links in the logs.
+  // Related PRs: stacked branches, or a session that linked itself to the other PR.
+  // Sharing a long agent session is not enough: one session often produces
+  // several unrelated PRs.
+  void sessionRefs;
   const related = others.filter(
-    (e) =>
-      e.head === truth.base ||
-      e.base === truth.head ||
-      linkedPrs.includes(e.number) ||
-      (e.meta.sessions ?? []).some((s) => sessionRefs.includes(s)),
+    (e) => e.head === truth.base || e.base === truth.head || linkedPrs.includes(e.number),
   );
   let saga: Story['saga'];
   if (related.length) {

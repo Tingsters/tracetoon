@@ -3,14 +3,13 @@
  * to fit an LLM's context. The host agent writes the PR description from this.
  */
 import { createHash } from 'node:crypto';
-import { relative } from 'node:path';
 import {
   attribute,
   evidenceLine,
   prLineIndex,
+  repoRel,
   type SessionMatch,
 } from '../correlate/correlate.ts';
-import { rootOf } from '../trace/pathMatch.ts';
 import type { PrTruth } from '../git/pr.ts';
 import type { Usage } from '../trace/types.ts';
 import { clip, makeScrubber, type Scrubber } from './sanitize.ts';
@@ -105,11 +104,31 @@ const TEST_RUNNERS = [
   /^make\s+(test|check)\b/,
 ];
 
-export function isTestCommand(cmd: string): boolean {
+/** The part of a chained command that runs tests, if any. */
+export function testSegment(cmd: string): string | undefined {
   return cmd
     .split(/&&|\|\||;|\||\n/)
     .map((s) => s.trim().replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
-    .some((s) => TEST_RUNNERS.some((re) => re.test(s)));
+    .find((s) => TEST_RUNNERS.some((re) => re.test(s)));
+}
+
+export function isTestCommand(cmd: string): boolean {
+  return testSegment(cmd) !== undefined;
+}
+
+/**
+ * Whether test output reports failures. Needed because a piped run
+ * (`bun test | tail`) exits with the last program's status, not the tests'.
+ */
+export function testOutputFailed(output: string | undefined): boolean {
+  if (!output) return false;
+  return (
+    /(^|\s)([1-9]\d*) (fail|failed|failing|failures?)\b/im.test(output) || // bun, pytest, mocha, vitest
+    /^Tests?:.*\b[1-9]\d* failed/im.test(output) || // jest
+    /^(FAIL|not ok)\b/m.test(output) || // jest file lines, TAP
+    /^test result: FAILED/m.test(output) || // cargo
+    /^--- FAIL:/m.test(output) // go
+  );
 }
 
 /** A short grouping key for a shell command: the program and its first argument. */
@@ -198,8 +217,7 @@ function sessionDigest(
         decisions.push({ t: r.ts, text: clip(scrub.text(r.text), 300) });
         break;
       case 'edit': {
-        const root = rootOf(r.file, m.roots);
-        const rel = root ? relative(root, r.file).split(/[\\/]/).join('/') : undefined;
+        const rel = repoRel({ roots: m.roots }, r.file);
         if (rel) files.add(rel);
         if (current && rel) {
           const set = prSets.get(rel);
@@ -215,14 +233,16 @@ function sessionDigest(
         break;
       }
       case 'command': {
-        const key = clip(scrub.text(commandKey(r.cmd)), 60);
-        const test = isTestCommand(r.cmd);
+        const seg = testSegment(r.cmd);
+        const test = seg !== undefined;
+        const key = clip(scrub.text(commandKey(seg ?? r.cmd)), 60);
+        const failed = r.isError === true || (test && testOutputFailed(r.output));
         const g = cmdGroups.get(key) ?? { count: 0, failures: 0, isTest: test };
         g.count++;
-        if (r.isError) g.failures++;
+        if (failed) g.failures++;
         cmdGroups.set(key, g);
-        if (test && r.isError) testFailedEarlier = true;
-        if (test && !r.isError && testFailedEarlier) {
+        if (test && failed) testFailedEarlier = true;
+        if (test && !failed && testFailedEarlier) {
           milestones.push('tests went from failing to passing');
           testFailedEarlier = false;
         }
