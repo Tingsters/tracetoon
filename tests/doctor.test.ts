@@ -13,7 +13,7 @@ describe('doctor', () => {
       describeRuntime('/home/u/.cache/tracetoon/1.0.0/tracetoon-linux-arm64', '1.3.14'),
     ).toBe('prebuilt binary');
     expect(describeRuntime('/usr/local/bin/bun', '1.3.14')).toBe('bun 1.3.14');
-    expect(describeRuntime('/usr/bin/node', undefined)).toMatch(/^node v/);
+    expect(describeRuntime('/usr/bin/node', null)).toMatch(/^node v/);
   });
 
   test('lists where the skill is installed, with versions', () => {

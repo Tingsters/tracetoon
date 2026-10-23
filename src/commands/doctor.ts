@@ -43,7 +43,8 @@ function probe(limit = 15): Record<string, Record<string, number>> {
 /** How Tracetoon is running: the prebuilt binary, or the bundle under bun or node. */
 export function describeRuntime(
   execPath = process.execPath,
-  bunVersion = (globalThis as { Bun?: { version: string } }).Bun?.version,
+  bunVersion: string | null = (globalThis as { Bun?: { version: string } }).Bun
+    ?.version ?? null,
 ): string {
   if (/[\\/]tracetoon-[a-z]+-[a-z0-9]+(\.exe)?$/i.test(execPath))
     return 'prebuilt binary';
