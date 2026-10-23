@@ -111,6 +111,39 @@ export interface Story {
   saga?: { id: string; prs: { number: number; title: string; synopsis?: string }[] };
   /** "Previously on…": synopses of the episodes this one follows. */
   previously: string[];
+  /** Art styles of the latest episodes, newest first (to keep comics varied). */
+  recentStyles?: string[];
+  /**
+   * Earlier episodes this one might continue, with why. The agent decides:
+   * only a comic marked as a sequel gets a "previously".
+   */
+  related?: RelatedEpisode[];
+  /** Areas of the repo this PR touches. */
+  areas?: string[];
+}
+
+export interface RelatedEpisode {
+  number: number;
+  title: string;
+  synopsis?: string;
+  style?: string;
+  format?: string;
+  why: string;
+}
+
+/**
+ * The areas a set of files belongs to: the first two folders for deep paths
+ * (src/comic), the first folder otherwise, "(root)" for top-level files.
+ */
+export function areasOf(paths: string[]): string[] {
+  const out = new Set<string>();
+  for (const path of paths) {
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length <= 1) out.add('(root)');
+    else if (parts.length === 2) out.add(parts[0]!);
+    else out.add(`${parts[0]}/${parts[1]}`);
+  }
+  return [...out].sort();
 }
 
 export interface StoryInput {
@@ -165,13 +198,54 @@ export function buildStory({
       .map((e) => ({ number: e.number, title: e.title, synopsis: e.meta.synopsis }));
     saga = { id, prs };
   }
+  // "Previously" only for a real saga (stacked branches, linked PRs). Recapping
+  // the latest unrelated PRs made every comic feel like a rerun.
   const prior = saga
     ? saga.prs.filter((p) => p.synopsis).map((p) => `#${p.number}: ${p.synopsis}`)
-    : others
-        .sort((a, b) => (b.meta.episode ?? 0) - (a.meta.episode ?? 0))
-        .slice(0, 2)
-        .reverse()
-        .filter((e) => e.meta.synopsis)
-        .map((e) => `#${e.number}: ${e.meta.synopsis}`);
-  return { series, episode, saga, previously: prior.slice(-4) };
+    : [];
+  const newest = [...others].sort(
+    (a, b) => (b.meta.episode ?? 0) - (a.meta.episode ?? 0),
+  );
+  const recentStyles = newest
+    .map((e) => e.meta.style)
+    .filter((x): x is string => !!x)
+    .slice(0, 5);
+  const areas = areasOf((truth.files ?? []).map((f) => f.path));
+  const suggestions: RelatedEpisode[] = [];
+  const add = (e: EpisodeRef, why: string) => {
+    if (suggestions.some((r) => r.number === e.number)) return;
+    suggestions.push({
+      number: e.number,
+      title: e.title,
+      synopsis: e.meta.synopsis,
+      style: e.meta.style,
+      format: e.meta.format,
+      why,
+    });
+  };
+  for (const e of related)
+    add(
+      e,
+      e.head === truth.base || e.base === truth.head
+        ? 'stacked branch'
+        : 'linked from a session',
+    );
+  const overlap = newest
+    .map((e) => ({
+      e,
+      shared: (e.meta.areas ?? []).filter((a) => areas.includes(a) && a !== '(root)'),
+    }))
+    .filter((x) => x.shared.length)
+    .sort((a, b) => b.shared.length - a.shared.length);
+  for (const { e, shared } of overlap.slice(0, 5))
+    add(e, `also touched ${shared.join(', ')}`);
+  return {
+    series,
+    episode,
+    saga,
+    previously: prior.slice(-4),
+    recentStyles,
+    related: suggestions.slice(0, 6),
+    areas,
+  };
 }

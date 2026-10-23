@@ -18,7 +18,17 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BEAT_MEANING, type CastMember, type Panel, type SeriesBible } from './types.ts';
+import { formatById } from './formats.ts';
+import { castKind, paletteText, styleById } from './styles.ts';
+import {
+  BEAT_MEANING,
+  type Aspect,
+  type CastMember,
+  type ComicScript,
+  type Dialogue,
+  type Panel,
+  type SeriesBible,
+} from './types.ts';
 
 export type ProviderId = 'openai' | 'gemini' | 'codex' | 'antigravity';
 export const PROVIDERS: ProviderId[] = ['openai', 'gemini', 'codex', 'antigravity'];
@@ -34,7 +44,17 @@ export interface Reference {
 export interface ImageJob {
   prompt: string;
   refs: Reference[];
+  /** Image shape; default square. */
+  aspect?: Aspect;
 }
+
+/** OpenAI image sizes for each page shape. */
+export const OPENAI_SIZE: Record<Aspect, string> = {
+  '4:3': '1536x1024',
+  '16:9': '1536x1024',
+  '1:1': '1024x1024',
+  '3:4': '1024x1536',
+};
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -57,8 +77,8 @@ function castLine(c: CastMember): string {
   return `${c.name} (${kind(c)}): ${c.description}; main colors ${c.palette.slice(0, 2).join(' and ')}`;
 }
 
-export function artPrompt(panel: Panel, bible: SeriesBible, index: number): string {
-  const who = panel.characters
+function who(panel: Panel, bible: SeriesBible): string {
+  return panel.characters
     .map((pc) => {
       const c = bible.cast.find((m) => m.id === pc.cast);
       if (!c) return '';
@@ -66,11 +86,31 @@ export function artPrompt(panel: Panel, bible: SeriesBible, index: number): stri
     })
     .filter(Boolean)
     .join('; ');
+}
+
+/** The art style for a script: its own style and palette for a page, else the series style. */
+export function styleText(bible: SeriesBible, script?: ComicScript): string {
+  const style = script?.v === 2 ? styleById(script.style) : undefined;
+  if (!style) return bible.style;
+  return `${style.prompt}; ${paletteText(script!.palette ?? style.palettes[0]!, script!.accent)}`;
+}
+
+/** One text-free panel; Tracetoon adds the bubbles (v1 scripts, or overlay lettering). */
+export function artPrompt(
+  panel: Panel,
+  bible: SeriesBible,
+  index: number,
+  script?: ComicScript,
+): string {
+  const people = who(panel, bible);
+  const count = script?.panels.length ?? 4;
   return [
-    `${bible.style}.`,
-    `Panel ${index + 1} of 4 (${BEAT_MEANING[panel.beat]}) of a four-panel comic.`,
+    `${styleText(bible, script)}.`,
+    panel.beat
+      ? `Panel ${index + 1} of ${count} (${BEAT_MEANING[panel.beat]}) of a comic.`
+      : `Panel ${index + 1} of ${count} of a comic.`,
     `Scene: ${panel.scene}.`,
-    who ? `Characters: ${who}.` : '',
+    people ? `Characters: ${people}.` : '',
     panel.camera ? `Camera: ${panel.camera} shot.` : '',
     panel.artPrompt ? `${panel.artPrompt}.` : '',
     'Square image. Keep the top third as plain, uncluttered background so speech bubbles can be added later.',
@@ -79,6 +119,90 @@ export function artPrompt(panel: Panel, bible: SeriesBible, index: number): stri
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+const SHAPE: Record<Aspect, string> = {
+  '4:3': 'landscape 4:3',
+  '16:9': 'wide landscape 16:9',
+  '1:1': 'square',
+  '3:4': 'portrait 3:4',
+};
+
+function textLine(d: Dialogue, bible: SeriesBible): string {
+  const name = bible.cast.find((c) => c.id === d.speaker)?.name ?? d.speaker;
+  const q = `"${d.text}"`;
+  switch (d.kind) {
+    case 'thought':
+      return `${name} thinks (thought bubble): ${q}`;
+    case 'caption':
+      return `caption box: ${q}`;
+    case 'sfx':
+      return `big sound-effect lettering: ${q}`;
+    case 'sign':
+      return `written on a sign, screen or label in the scene: ${q}`;
+    default:
+      return d.speaker === 'caption'
+        ? `caption box: ${q}`
+        : `${name} says (speech balloon): ${q}`;
+  }
+}
+
+/**
+ * One finished page, lettering included: the image model draws the panels, the
+ * headline and every line of text, so the words are part of the art.
+ */
+export function pagePrompt(
+  script: ComicScript,
+  bible: SeriesBible,
+  refLabels: string[] = [],
+): string {
+  const style = styleById(script.style);
+  const format = formatById(script.format);
+  const aspect = script.aspect ?? format?.aspect ?? '4:3';
+  const headline = script.headline ?? script.title;
+  const panels = script.panels.map((p, i) => {
+    const people = who(p, bible);
+    const text = (p.dialogue ?? []).map((d) => textLine(d, bible));
+    return [
+      `Panel ${i + 1}: ${p.scene}.`,
+      people ? `Characters: ${people}.` : '',
+      p.camera ? `${p.camera} shot.` : '',
+      p.artPrompt ? `${p.artPrompt}.` : '',
+      text.length ? `Text: ${text.join('; ')}.` : 'No text in this panel.',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  });
+  return [
+    `A finished comic page, ${SHAPE[aspect]} image.`,
+    `Art style: ${styleText(bible, script)}.`,
+    format && format.id !== 'custom' ? `Format: ${format.name}. ${format.layout}.` : '',
+    script.layout ? `Layout: ${script.layout}.` : '',
+    `Headline, lettered big and bold as part of the design: "${headline}".`,
+    `${script.panels.length === 1 ? 'The scene' : `The ${script.panels.length} panels, in reading order`}:`,
+    ...panels,
+    `Lettering: ${style?.lettering ?? 'clear comic lettering'}. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
+    'Keep the bottom 5% of the image free of important detail (a footer bar is added there).',
+    refLabels.length
+      ? `Reference images: ${refLabels.join('; ')}. Keep each character's identity (face, hair, colors, outfit), redrawn in this page's art style; do not copy the reference images' drawing style.`
+      : '',
+    style &&
+    !style.anime &&
+    script.panels.some((p) =>
+      p.characters.some((c) => {
+        const m = bible.cast.find((x) => x.id === c.cast);
+        return m && castKind(m.species) === 'animal';
+      }),
+    )
+      ? `Draw the animal characters as classic cartoon animals true to the ${style.name} style: not anime, not furry, no human bodies.`
+      : '',
+    refLabels.length
+      ? ''
+      : "Draw every character fresh in this page's art style from their description.",
+    'Strictly: no real people, no logos, no watermarks.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** A character reference portrait, made once per series and reused by every episode. */
@@ -215,7 +339,11 @@ async function gemini(job: ImageJob): Promise<Uint8Array> {
         data: Buffer.from(r.data).toString('base64'),
       })),
     ],
-    response_format: { type: 'image', aspect_ratio: '1:1', image_size: '1K' },
+    response_format: {
+      type: 'image',
+      aspect_ratio: job.aspect ?? '1:1',
+      image_size: job.aspect && job.aspect !== '1:1' ? '2K' : '1K',
+    },
   };
   const json = await fetchJson(
     'https://generativelanguage.googleapis.com/v1beta/interactions',
@@ -239,7 +367,7 @@ async function openai(job: ImageJob): Promise<Uint8Array> {
     const form = new FormData();
     form.append('model', OPENAI_MODEL());
     form.append('prompt', job.prompt);
-    form.append('size', '1024x1024');
+    form.append('size', OPENAI_SIZE[job.aspect ?? '1:1']);
     job.refs
       .slice(0, 8)
       .forEach((r, i) =>
@@ -257,7 +385,7 @@ async function openai(job: ImageJob): Promise<Uint8Array> {
       body: JSON.stringify({
         model: OPENAI_MODEL(),
         prompt: job.prompt,
-        size: '1024x1024',
+        size: OPENAI_SIZE[job.aspect ?? '1:1'],
         n: 1,
       }),
     });

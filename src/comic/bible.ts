@@ -28,7 +28,7 @@ const CASTS: Record<
   pets: {
     title: 'Pull Request Pets',
     style:
-      'anime-style 4-koma comic panel, cute chibi characters, clean confident line art, soft cel shading, warm pastel colors, cozy home office',
+      'Sunday-strip cartoon comic panel, cute cartoon animal characters, clean confident line art, warm flat colors, cozy home office',
     agents: {
       'Claude Code': {
         name: 'Kit',
@@ -156,6 +156,145 @@ const CASTS: Record<
       name: 'Space Gremlin',
       species: 'beetle',
       description: 'a tiny red space gremlin that chews on cables',
+      palette: ['#C0392B', '#FADBD8', '#641E16'],
+    },
+  },
+  office: {
+    title: 'Open Plan',
+    style:
+      'workplace sitcom comic panel, expressive cartoon people, clean line art, warm flat colors, open-plan office',
+    agents: {
+      'Claude Code': {
+        name: 'Kit',
+        species: 'human',
+        description:
+          'an upbeat engineer with copper-red hair in a messy bun, round glasses and a terracotta scarf',
+        palette: ['#E8833A', '#FFF1E0', '#B4532A'],
+      },
+      Codex: {
+        name: 'Pixel',
+        species: 'human',
+        description:
+          'a calm, precise engineer with a slate-blue bob, green eyes and a tiny headset',
+        palette: ['#5B7FA6', '#E8F0F8', '#2E4A66'],
+      },
+      Antigravity: {
+        name: 'Orbit',
+        species: 'human',
+        description:
+          'a cheerful engineer with curly brown hair, a green pendant and a habit of floating ideas on a whiteboard',
+        palette: ['#8B5E3C', '#F3E3D3', '#3BB273'],
+      },
+    },
+    fallback: {
+      name: 'Biscuit',
+      species: 'human',
+      description: 'a friendly new hire with golden curls and a lanyard full of badges',
+      palette: ['#D9A441', '#FFF4DC', '#8A5A12'],
+    },
+    human: {
+      name: 'Sam',
+      species: 'human',
+      description:
+        'a friendly team lead in a purple hoodie with headphones around their neck',
+      palette: ['#7A5C99', '#F2E6FF', '#3D2B52'],
+    },
+    bug: {
+      name: 'Glitch',
+      species: 'robot',
+      description: 'a tiny mischievous red robot gremlin that hides in the server rack',
+      palette: ['#C0392B', '#FADBD8', '#641E16'],
+    },
+  },
+  heist: {
+    title: 'The Merge Job',
+    style:
+      'heist caper comic panel, stylish crew, dramatic lighting, blueprints and vault doors, bold graphic shapes',
+    agents: {
+      'Claude Code': {
+        name: 'Kit',
+        species: 'human',
+        description:
+          'the planner: a sharp-eyed crew member with copper-red hair, a long coat and a terracotta scarf',
+        palette: ['#E8833A', '#FFF1E0', '#B4532A'],
+      },
+      Codex: {
+        name: 'Pixel',
+        species: 'human',
+        description:
+          'the hacker: slate-blue hair, green-tinted goggles and a laptop covered in stickers',
+        palette: ['#5B7FA6', '#E8F0F8', '#2E4A66'],
+      },
+      Antigravity: {
+        name: 'Orbit',
+        species: 'human',
+        description: 'the acrobat: curly brown hair, a green harness and grappling gear',
+        palette: ['#8B5E3C', '#F3E3D3', '#3BB273'],
+      },
+    },
+    fallback: {
+      name: 'Biscuit',
+      species: 'human',
+      description: 'the getaway driver with golden curls and driving gloves',
+      palette: ['#D9A441', '#FFF4DC', '#8A5A12'],
+    },
+    human: {
+      name: 'Sam',
+      species: 'human',
+      description:
+        'the mastermind in a purple suit jacket with headphones around their neck',
+      palette: ['#7A5C99', '#F2E6FF', '#3D2B52'],
+    },
+    bug: {
+      name: 'Glitch',
+      species: 'human',
+      description: 'a rival safecracker in a red mask with a smug grin',
+      palette: ['#C0392B', '#FADBD8', '#641E16'],
+    },
+  },
+  fantasy: {
+    title: 'Quest Log',
+    style:
+      'fantasy adventure comic panel, heroic party, castles and enchanted forests, rich storybook colors',
+    agents: {
+      'Claude Code': {
+        name: 'Kit',
+        species: 'human',
+        description:
+          'a young wizard with copper-red hair, an amber-tipped staff and a terracotta scarf',
+        palette: ['#E8833A', '#FFF1E0', '#B4532A'],
+      },
+      Codex: {
+        name: 'Pixel',
+        species: 'human',
+        description:
+          'a precise ranger with slate-blue hair, green eyes and a rune-carved bow',
+        palette: ['#5B7FA6', '#E8F0F8', '#2E4A66'],
+      },
+      Antigravity: {
+        name: 'Orbit',
+        species: 'human',
+        description:
+          'a levitating monk with curly brown hair and a glowing green pendant',
+        palette: ['#8B5E3C', '#F3E3D3', '#3BB273'],
+      },
+    },
+    fallback: {
+      name: 'Biscuit',
+      species: 'human',
+      description: 'a cheerful squire with golden curls and an oversized helmet',
+      palette: ['#D9A441', '#FFF4DC', '#8A5A12'],
+    },
+    human: {
+      name: 'Sam',
+      species: 'human',
+      description: 'the party leader in a purple cloak with a map case',
+      palette: ['#7A5C99', '#F2E6FF', '#3D2B52'],
+    },
+    bug: {
+      name: 'Glitch',
+      species: 'kaiju',
+      description: 'a tiny mischievous red imp with bat wings and a smug grin',
       palette: ['#C0392B', '#FADBD8', '#641E16'],
     },
   },

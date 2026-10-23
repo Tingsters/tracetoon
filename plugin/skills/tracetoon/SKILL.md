@@ -59,14 +59,22 @@ that bypass on your own initiative.
    also write a one-line `title.txt`.
 5. **Write and draw the comic** (skip if `config.comic` is false or the user
    doesn't want one). Follow
-   [references/comic-guide.md](references/comic-guide.md):
-   - write `comic.json`, then `tracetoon comic check`;
-   - make the art: your own image tool with `tracetoon comic prompts`, or
-     `tracetoon comic art`. That uses AI art through the Codex or Antigravity
-     CLI, or the OpenAI or Gemini API, after the user agrees once (exit code 4
-     means: ask them, then add `--consent`). Otherwise it uses the built-in
-     artist;
-   - `tracetoon comic render`, and look at `out/comic.png` if you can.
+   [references/comic-guide.md](references/comic-guide.md). Aim for something
+   funny that someone outside the repo would want to share:
+   - find the joke in the digest; pick a format, a style that fits the cast
+     (see [references/styles.md](references/styles.md); no anime with animal
+     characters) and isn't one of the recent styles, and decide whether it's a
+     sequel (only if it really continues a related episode);
+   - write `comic.json` (`"v": 2`), then `tracetoon comic check`;
+   - make the art: `tracetoon comic art` draws the whole page with its lettering
+     through the Codex or Antigravity CLI, or the OpenAI or Gemini API, after the
+     user agrees once (exit code 4 means: ask them, then add `--consent`).
+     Otherwise it uses the built-in artist. Or use your own image tool with
+     `tracetoon comic prompts`;
+   - `tracetoon comic render`, then **look at `out/comic.png` and proofread** the
+     lettering against the printed list. Redraw with `comic art --force` (up to 2
+     times), then fall back to `--lettering overlay`. Offer
+     `tracetoon comic reroll` if the user wants a different look.
 6. **Render.** `tracetoon render --json`. If the leak scan reports findings, fix
    `body.md` and render again. Don't use `--allow-findings` unless the user has
    looked at the finding and says it is fine.
@@ -82,6 +90,8 @@ that bypass on your own initiative.
    - Add `--draft` if the user wants a draft PR.
    - The comic is uploaded to the repo's `tracetoon-assets` branch (or attached
      with `gh` for private repos). Tell the user if that's new to the repo.
+   - Then offer the user the share caption and image link that `publish`
+     prints, ready to post on social media.
 
 ### Yolo mode
 
@@ -95,8 +105,9 @@ contributions. In that case, fall back to the preview.
 - `tracetoon series`: the repo's comic cast and earlier episodes.
 - `tracetoon export --agent-trace`: line-level attribution as an Agent Trace
   record, if the user asks for one.
-- `tracetoon config set <key> <value>`: `theme` (pets, mecha, scifi), `yolo`,
-  `comic`, `promptQuoting`, `hosting`.
+- `tracetoon config set <key> <value>`: `theme` (pets, mecha, scifi, office,
+  heist, fantasy), `style` (pin a house style, or `auto`), `yolo`, `comic`,
+  `promptQuoting`, `hosting`.
 
 ## Rules
 
