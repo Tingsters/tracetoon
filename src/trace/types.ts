@@ -1,0 +1,92 @@
+/** Normalized, agent-neutral view of what happened in an agent session. */
+
+export type AgentId = 'claude-code' | 'codex' | 'antigravity-cli' | 'antigravity-ide';
+
+export interface Usage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** Fields every record may carry: when it happened and where the agent was. */
+interface Base {
+  ts?: string;
+  cwd?: string;
+  branch?: string;
+}
+
+export type TraceRecord =
+  | (Base & {
+      kind: 'prompt';
+      text: string;
+      /** Written by a parent agent to a subagent, not typed by the user. */
+      delegated?: boolean;
+    })
+  | (Base & { kind: 'assistant'; text: string; model?: string })
+  | (Base & { kind: 'plan'; markdown: string; approved?: boolean })
+  | (Base & { kind: 'decision'; text: string })
+  | (Base & {
+      kind: 'edit';
+      /** Absolute path of the edited file. */
+      file: string;
+      added: string[];
+      removed: string[];
+      created?: boolean;
+    })
+  | (Base & {
+      kind: 'command';
+      cmd: string;
+      isError?: boolean;
+      /** Start of the command's output. Used only for matching (e.g. commit SHAs); never shown. */
+      output?: string;
+    })
+  | (Base & {
+      kind: 'link';
+      prUrl?: string;
+      prNumber?: number;
+      prRepository?: string;
+      worktreePath?: string;
+      worktreeBranch?: string;
+    })
+  | (Base & { kind: 'usage'; model?: string; usage: Usage });
+
+export type RecordKind = TraceRecord['kind'];
+
+/** A session log found on disk, before it is fully read. */
+export interface SessionRef {
+  agent: AgentId;
+  sessionId: string;
+  path: string;
+  mtimeMs: number;
+  cwd?: string;
+}
+
+export interface TraceSession {
+  agent: AgentId;
+  sessionId: string;
+  source: string;
+  title?: string;
+  records: TraceRecord[];
+  /** Whole-session cost reported by the agent, when it records one. */
+  sessionCostUsd?: number;
+  /** Record types this adapter did not recognize, with counts. */
+  unknownTypes: Record<string, number>;
+  warnings: string[];
+}
+
+export interface DiscoverQuery {
+  /** Repository roots (main checkout plus worktrees). */
+  roots: string[];
+  /** Ignore logs last written before this time (ms since epoch). */
+  sinceMs: number;
+}
+
+export interface TraceAdapter {
+  id: AgentId;
+  label: string;
+  /** Where this agent's logs live on this machine, or undefined if absent. */
+  home(): string | undefined;
+  discover(q: DiscoverQuery): SessionRef[];
+  read(ref: SessionRef): TraceSession;
+}

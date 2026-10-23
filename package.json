@@ -1,0 +1,31 @@
+{
+  "name": "tracetoon",
+  "version": "0.1.0",
+  "description": "Write pull request descriptions from the AI agent session logs already on your machine, plus a 4-panel comic.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "tracetoon": "./src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "bun x tsc --noEmit",
+    "format": "bun x prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "bundle": "bun build ./src/cli.ts --target node --outfile skill/tracetoon/dist/tracetoon.mjs",
+    "build": "bun build --compile --minify ./src/cli.ts --outfile dist/tracetoon"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "marked": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "bun-types": "^1.1.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
