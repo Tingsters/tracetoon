@@ -84,7 +84,7 @@ again. Downloads are checked against the release's SHA-256 checksums.
 4. **`tracetoon comic art` / `comic render`** draw the panels and add speech
    bubbles. Art comes from your agent's own image tool (Codex, Antigravity),
    Gemini or OpenAI if you have a key and agree, or the built-in artist (no key
-   needed; that's what drew the comic above).
+   needed).
 5. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text in an existing PR is kept), scans it for leaks and
    prints an approval code.
