@@ -1,0 +1,105 @@
+{
+  "v": 1,
+  "title": "Fact Check",
+  "synopsis": "Kit grades Tracetoon's own summaries against real past work, fixes what leaked or went missing, and puts the evidence right next to every description.",
+  "altText": "Panel 1: Sam asks whether Tracetoon's summaries are actually right. Panel 2: Kit builds a checklist from real past work and scores 41 out of 48. Panel 3: Glitch is caught smuggling old prompts from earlier PRs and hiding a failed test behind a pipe. Panel 4: Kit shows 50 out of 50 and an evidence panel; Sam is happy.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam asks whether the summaries are right",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "thinking"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "Are the summaries actually right?"
+        },
+        {
+          "speaker": "kit",
+          "text": "Let's check them against real work."
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit grades past PRs against a checklist",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "worried"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Six real cases. First score: 41 of 48."
+        },
+        {
+          "speaker": "kit",
+          "text": "Some of these prompts aren't even from this PR...",
+          "kind": "thought"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch is caught carrying old prompts and a hidden failed test",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "center",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Old prompts? A failed test hidden behind a pipe? Not me!"
+        },
+        {
+          "speaker": "sfx",
+          "kind": "sfx",
+          "text": "CAUGHT!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit shows the perfect score and the evidence panel",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "50 of 50, with the evidence on every preview."
+        },
+        {
+          "speaker": "sam",
+          "text": "Now I can check every claim myself!"
+        }
+      ]
+    }
+  ]
+}
