@@ -340,7 +340,7 @@ export function agentBatchPrompt(
     'Do not edit any files, do not run commands other than what is needed to save the images, and do not add text to the images.',
     saveTo
       ? 'Save each image to the exact path given with its prompt.'
-      : 'When all images are done, reply with only their absolute file paths, one per line, in order.',
+      : 'When all images are done, reply with only the absolute file path of the final image for each prompt, one per line, in prompt order. If you redrew an image, list only the version you chose.',
     '',
     ...jobs.map(
       (j, i) => `${i + 1}. ${j.prompt}${saveTo ? `\n   Save to: ${saveTo[i]}` : ''}`,
@@ -356,6 +356,36 @@ function imagesIn(dir: string, since = 0): string[] {
     .map((f) => join(dir, f))
     .filter((p) => statSync(p).mtimeMs >= since)
     .sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs);
+}
+
+/**
+ * Which of a Codex session's images answer which prompt. Codex sometimes redraws
+ * an image it isn't happy with, so the folder can hold more images than prompts,
+ * in any order. Its final reply lists the chosen file per prompt, in order: use
+ * that when it names one of the session's own images per prompt. Otherwise, use
+ * the newest images when there are exactly as many as prompts.
+ */
+export function pickCodexImages(
+  events: Record<string, unknown>[],
+  made: string[],
+  count: number,
+): string[] {
+  const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+  const own = new Map(made.map((p) => [norm(p), p]));
+  const replies = events
+    .filter((e) => e.type === 'item.completed')
+    .map((e) => (e.item as { type?: string; text?: string } | undefined) ?? {})
+    .filter((i) => i.type === 'agent_message');
+  for (const reply of replies.reverse()) {
+    const named = (reply.text ?? '')
+      .split(/\r?\n/)
+      .map((l) => l.trim().replace(/^[-*\d.)\s`]+|`$/g, ''))
+      .filter((l) => IMAGE_EXT.test(l))
+      .map((l) => own.get(norm(l)))
+      .filter((p): p is string => !!p);
+    if (named.length === count && new Set(named).size === count) return named;
+  }
+  return made.length === count ? made : [];
 }
 
 /**
@@ -386,26 +416,19 @@ async function codexBatch(jobs: ImageJob[]): Promise<Uint8Array[]> {
   const thread = events.find((e) => e.type === 'thread.started')?.thread_id as
     string | undefined;
   const home = process.env.CODEX_HOME || join(homedir(), '.codex');
-  let files = thread ? imagesIn(join(home, 'generated_images', thread)) : [];
-  if (files.length < jobs.length) {
-    // Fall back to the paths Codex printed.
-    const said = events
-      .filter((e) => e.type === 'item.completed')
-      .map((e) => (e.item as { type?: string; text?: string } | undefined) ?? {})
-      .filter((i) => i.type === 'agent_message')
-      .flatMap((i) => (i.text ?? '').split(/\r?\n/))
-      .map((l) => l.trim().replace(/^[-*\d.\s`]+|`$/g, ''))
-      .filter((l) => IMAGE_EXT.test(l) && existsSync(l));
-    if (said.length > files.length) files = said;
-  }
+  const dir = thread ? join(home, 'generated_images', thread) : undefined;
+  const made = dir ? imagesIn(dir) : [];
+  const files = pickCodexImages(events, made, jobs.length);
   if (files.length < jobs.length) {
     const why =
       res.code === 0
         ? ''
         : ` (codex exited ${res.code}: ${res.stderr.trim().split('\n').pop() ?? ''})`;
-    throw new Error(`Codex made ${files.length} of ${jobs.length} image(s)${why}.`);
+    throw new Error(
+      `Codex made ${made.length} image(s) for ${jobs.length} prompt(s)${why}.`,
+    );
   }
-  return files.slice(-jobs.length).map((f) => new Uint8Array(readFileSync(f)));
+  return files.map((f) => new Uint8Array(readFileSync(f)));
 }
 
 /**
