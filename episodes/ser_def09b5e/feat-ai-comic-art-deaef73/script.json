@@ -1,0 +1,121 @@
+{
+  "v": 1,
+  "title": "A Real Artist Joins the Team",
+  "synopsis": "Kit brings in Pixel to draw the comics with a real image model and character sheets; Glitch gives Sam cat ears, so every prompt now says who is human.",
+  "altText": "Panel 1: Sam and Kit look at a plain, flat comic and want better art. Panel 2: Pixel the cat paints character sheets of the cast at an easel while Kit cheers. Panel 3: Glitch the beetle proudly shows a drawing of Sam with cat ears, and Sam is shocked. Panel 4: Kit, Pixel and Sam admire a finished, consistent comic page together.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam and Kit at the desk, looking at a monitor showing a plain, flat cartoon page.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "worried"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "Our comics look like clip art."
+        },
+        {
+          "speaker": "kit",
+          "text": "We need a real artist."
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Pixel the cat paints character portraits of Sam, Kit and Glitch on an easel, while Kit cheers beside it.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "pixel",
+          "position": "left",
+          "expression": "determined"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "pixel",
+          "text": "Character sheets first. Everyone stays on model."
+        },
+        {
+          "speaker": "kit",
+          "text": "And no API key!"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch the beetle proudly holds up a small drawing of Sam with cat ears; Sam stares at it, shocked.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "excited"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "I gave you cat ears!"
+        },
+        {
+          "speaker": "sam",
+          "text": "I'm a human!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit, Pixel and Sam admire a finished, colorful comic page pinned to the wall.",
+      "camera": "wide",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "pixel",
+          "position": "center",
+          "expression": "happy"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Now every prompt says who's human."
+        },
+        {
+          "speaker": "sam",
+          "text": "And it's still me next episode."
+        }
+      ]
+    }
+  ]
+}

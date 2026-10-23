@@ -56,5 +56,11 @@
         "#2E4A66"
       ]
     }
-  ]
+  ],
+  "references": {
+    "glitch": "bible/ser_def09b5e/cast/glitch.png",
+    "kit": "bible/ser_def09b5e/cast/kit.png",
+    "pixel": "bible/ser_def09b5e/cast/pixel.png",
+    "sam": "bible/ser_def09b5e/cast/sam.png"
+  }
 }
