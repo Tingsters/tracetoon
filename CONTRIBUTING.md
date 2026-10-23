@@ -20,6 +20,7 @@ bun test
 | `src/comic/` | Script format, casts, built-in artist, bubbles, rasterizing, image providers |
 | `src/story/` | Series, episodes and sagas |
 | `src/github/` | PR body region and metadata, assets branch, repo templates and policy |
+| `src/hook/` | The agent PR hook (`hook pre-pr`), its install/uninstall into each agent's config, and the on/off switches |
 | `src/commands/` | The CLI commands |
 | `plugin/skills/tracetoon/` | The Agent Skills folder that ships: SKILL.md, references, launchers, bundle, assets |
 

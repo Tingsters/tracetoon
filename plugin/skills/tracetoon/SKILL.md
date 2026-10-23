@@ -22,10 +22,24 @@ to download the prebuilt binary from the Tracetoon GitHub release. If yes,
 re-run with the environment variable `TRACETOON_ALLOW_DOWNLOAD=1`. If no, follow
 [references/manual-mode.md](references/manual-mode.md).
 
+## When this skill is used
+
+Once installed, Tracetoon is the default for pull requests: a hook in your agent
+stops direct `gh pr create` (and `gh pr edit` of a title or body) and points you
+here. If that just happened, follow the workflow below instead of retrying the
+`gh` command.
+
+Tracetoon can be turned off. `tracetoon status` says whether it is on here and
+which setting decided. If it is off, tell the user why (for example "this repo
+turns it off in .github/tracetoon.json") and open the PR the normal way. If the
+user explicitly asks for a plain PR without Tracetoon, prefix the `gh` command
+with `TRACETOON=0` (PowerShell: `$env:TRACETOON='0'; gh pr create ...`). Never use
+that bypass on your own initiative.
+
 ## Workflow
 
-1. **Check.** `tracetoon doctor`. If `gh` is missing or not signed in, tell the
-   user; you can still prepare everything.
+1. **Check.** `tracetoon status`, then `tracetoon doctor`. If `gh` is missing or
+   not signed in, tell the user; you can still prepare everything.
 2. **Digest.** `tracetoon digest --json`. It prints the run folder and the
    digest path.
    - If `ambiguous` is not empty, show the user those sessions (title, agent,
