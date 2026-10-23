@@ -182,7 +182,6 @@ export function pagePrompt(
     `${script.panels.length === 1 ? 'The scene' : `The ${script.panels.length} panels, in reading order`}:`,
     ...panels,
     `Lettering: ${style?.lettering ?? 'clear comic lettering'}. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
-    'Keep the bottom 5% of the image free of important detail (a footer bar is added there).',
     refLabels.length
       ? `Reference images: ${refLabels.join('; ')}. Keep each character's identity (face, hair, colors, outfit), redrawn in this page's art style; do not copy the reference images' drawing style.`
       : '',
@@ -465,7 +464,7 @@ export function agentBatchPrompt(
     refLabels.length
       ? `The attached images are references: ${refLabels.map((l, i) => `image ${i + 1} is ${l}`).join('; ')}. Keep every character exactly consistent with them, and keep the images consistent with each other.`
       : 'Keep the characters and style consistent across all images.',
-    'Do not edit any files, do not run commands other than what is needed to save the images, and do not add text to the images.',
+    'Do not edit any files, and do not run commands other than what is needed to save the images. Put text in an image only where its prompt asks for it, exactly as written.',
     saveTo
       ? 'Save each image to the exact path given with its prompt.'
       : 'When all images are done, reply with only the absolute file path of the final image for each prompt, one per line, in prompt order. If you redrew an image, list only the version you chose.',

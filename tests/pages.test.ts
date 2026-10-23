@@ -164,3 +164,16 @@ describe('character sheets and style', () => {
     );
   });
 });
+
+describe('agent CLI wrapper prompt', () => {
+  test('never forbids the lettering a page prompt asks for', async () => {
+    const { agentBatchPrompt } = await import('../src/comic/providers.ts');
+    const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
+    const wrapped = agentBatchPrompt(
+      [{ prompt: pagePrompt(pageScript(pets), pets), refs: [] }],
+      [],
+    );
+    expect(wrapped).not.toMatch(/do not add text|no text/i);
+    expect(wrapped).toContain('"CLICK HERE, HUMAN"');
+  });
+});
