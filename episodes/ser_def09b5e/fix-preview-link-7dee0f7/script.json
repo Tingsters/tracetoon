@@ -1,0 +1,116 @@
+{
+  "v": 1,
+  "title": "The Link You Can Click",
+  "synopsis": "Kit turns the preview path into a link you can Ctrl+click, then catches Tracetoon's own digest pulling in old prompts and another repo's tests, and fixes all three.",
+  "altText": "Panel 1: Sam squints at a relative preview path that won't open. Panel 2: Kit prints a full file link and Sam clicks it. Panel 3: Glitch stuffs old prompts and another repo's test results into the PR's digest. Panel 4: Kit shows a clean digest with only this PR's work and 57 of 57 checks passing.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam stares at a terminal showing a relative path to preview.html that can't be clicked.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "worried"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "Where do I even open this?"
+        },
+        {
+          "speaker": "kit",
+          "text": "That path only makes sense to me."
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit prints a full file:/// link and Sam Ctrl+clicks it, opening the preview.",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "happy"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Now it's a real link. Ctrl+click!"
+        },
+        {
+          "speaker": "sam",
+          "text": "It opened!"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch sneaks old prompts and another repo's test results into this PR's digest.",
+      "camera": "wide",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "excited"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Old prompts! Someone else's tests! All yours!"
+        },
+        {
+          "speaker": "kit",
+          "text": "Those aren't from this PR!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit presents a clean digest with only this PR's work and a 57 of 57 score.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Only this PR's work now. 57 of 57."
+        },
+        {
+          "speaker": "sam",
+          "text": "Dogfooding pays off."
+        }
+      ]
+    }
+  ]
+}
