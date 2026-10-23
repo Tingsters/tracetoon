@@ -1,0 +1,83 @@
+{
+  "v": 2,
+  "title": "When 9 Beats 10",
+  "headline": "WHEN 9 BEATS 10",
+  "synopsis": "The installer kept picking rc.9 over rc.10, because GitHub sorts releases by name. Now it picks by date.",
+  "altText": "A 16-bit game strip. Panel 1: Sam watches an installer proudly announce rc.9. Panel 2: Kit the fox points at a leaderboard where rc.9 sits above rc.10, sorted like words. Panel 3: a calendar power-up drops; rc.10 takes first place and Sam cheers.",
+  "format": "strip",
+  "style": "pixel-16bit",
+  "palette": "limited",
+  "continuity": {
+    "mode": "standalone"
+  },
+  "panels": [
+    {
+      "scene": "Sam at a retro computer; the screen proudly flashes an install message",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "INSTALLING RC.9"
+        },
+        {
+          "speaker": "sam",
+          "text": "But we shipped rc.10!"
+        }
+      ]
+    },
+    {
+      "scene": "Kit the fox points at a high-score leaderboard where rc.9 sits above rc.10",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "1. RC.9  2. RC.10"
+        },
+        {
+          "speaker": "kit",
+          "text": "GitHub sorts them like words."
+        }
+      ]
+    },
+    {
+      "scene": "A calendar power-up drops from above; rc.10 jumps to first place while Sam cheers",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sfx",
+          "text": "LEVEL UP!"
+        },
+        {
+          "speaker": "caption",
+          "text": "Now sorted by date."
+        }
+      ]
+    }
+  ]
+}
