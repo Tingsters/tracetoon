@@ -10,6 +10,7 @@ import {
 } from '../hook/install.ts';
 import { repoRoot, switchState } from '../hook/switches.ts';
 import { git } from '../util/exec.ts';
+import { describeRuntime } from './doctor.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
 export interface ScopeOpts extends OutOpts {
@@ -88,9 +89,7 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
 
 /** The program agents should run for the hook: this binary, or bun + this script in development. */
 function selfProgram(): string[] {
-  // The installed binary (bin/tracetoon[.exe]) or a release binary (tracetoon-<os>-<arch>).
-  if (/[\\/]tracetoon(-[a-z]+-[a-z0-9]+)?(\.exe)?$/i.test(process.execPath))
-    return [process.execPath];
+  if (describeRuntime() === 'prebuilt binary') return [process.execPath];
   return [process.execPath, resolve(process.argv[1] ?? '')];
 }
 
