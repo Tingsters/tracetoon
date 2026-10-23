@@ -11,6 +11,9 @@ set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 skill=$(dirname -- "$here")
 ver=$(cat "$skill/VERSION" 2>/dev/null || echo 0.0.0)
+# Fonts and the rasterizer live in the skill; a cached binary can't find them alone.
+TRACETOON_ASSETS="${TRACETOON_ASSETS:-$skill/assets}"
+export TRACETOON_ASSETS
 
 if [ -n "${TRACETOON_BIN:-}" ]; then exec "$TRACETOON_BIN" "$@"; fi
 

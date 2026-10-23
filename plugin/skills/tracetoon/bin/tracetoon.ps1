@@ -7,6 +7,8 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $skill = Split-Path -Parent $here
 $ver = '0.0.0'
 if (Test-Path (Join-Path $skill 'VERSION')) { $ver = (Get-Content (Join-Path $skill 'VERSION') -Raw).Trim() }
+# Fonts and the rasterizer live in the skill; a cached binary can't find them alone.
+if (-not $env:TRACETOON_ASSETS) { $env:TRACETOON_ASSETS = Join-Path $skill 'assets' }
 
 if ($env:TRACETOON_BIN) { & $env:TRACETOON_BIN @args; exit $LASTEXITCODE }
 
