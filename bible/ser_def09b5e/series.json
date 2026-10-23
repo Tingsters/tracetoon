@@ -42,6 +42,19 @@
         "#FFF1E0",
         "#B4532A"
       ]
+    },
+    {
+      "id": "pixel",
+      "name": "Pixel",
+      "role": "agent",
+      "agent": "Codex",
+      "species": "cat",
+      "description": "a sleek blue-grey cat with bright green eyes and a tiny headset",
+      "palette": [
+        "#5B7FA6",
+        "#E8F0F8",
+        "#2E4A66"
+      ]
     }
   ]
 }

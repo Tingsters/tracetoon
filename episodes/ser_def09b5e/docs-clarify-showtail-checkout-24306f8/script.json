@@ -1,0 +1,107 @@
+{
+  "v": 1,
+  "title": "A Tiny Change Takes the Hook",
+  "synopsis": "A small contributor guide clarification exercises the PR hook, which catches a normal creation attempt and sends it through Tracetoon's preview workflow.",
+  "altText": "Sam asks Pixel the cat for a tiny documentation change to test the PR hook. Pixel explains that the Showtail and tracetoon checkouts must be neighbors. Glitch tries to rush the PR, but the hook requires a preview. Pixel reports 68 passing tests and a ready preview.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam asks Pixel for a small documentation change to exercise the newly installed PR hook.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "happy"
+        },
+        {
+          "cast": "pixel",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "One tiny doc change. Let's try the PR hook."
+        },
+        {
+          "speaker": "pixel",
+          "text": "I'll clarify the setup!"
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Pixel checks the TypeScript paths and adds a sentence about the two sibling checkouts.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "pixel",
+          "position": "center",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "pixel",
+          "text": "Showtail and tracetoon need to be neighbors. Now the guide explains why."
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch watches a normal PR creation attempt get caught by the newly installed hook.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "surprised"
+        },
+        {
+          "cast": "pixel",
+          "position": "right",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Straight to GitHub?"
+        },
+        {
+          "speaker": "pixel",
+          "text": "The hook says: preview first!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Pixel presents the prepared PR preview to Sam after the documentation checks pass.",
+      "camera": "medium",
+      "characters": [
+        {
+          "cast": "pixel",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "pixel",
+          "text": "68 tests passed. Preview ready!"
+        },
+        {
+          "speaker": "sam",
+          "text": "Tiny change, full comic."
+        }
+      ]
+    }
+  ]
+}
