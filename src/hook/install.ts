@@ -188,12 +188,14 @@ export function installHooks(
       return { agent: t.agent, label: t.label, file: t.file, result: 'unchanged' };
     }
     write(t.file, next);
-    const note =
-      t.agent === 'codex'
-        ? codexNote(t)
-        : t.agent === 'antigravity'
-          ? 'Restart the Antigravity IDE to load it.'
-          : undefined;
+    let note: string | undefined;
+    if (t.agent === 'codex') note = codexNote(t);
+    if (t.agent === 'antigravity') {
+      const bad = antigravityInvalidBlocks(next).filter((n) => n !== 'tracetoon');
+      note = bad.length
+        ? `Warning: Antigravity ignores this whole file because of an invalid block from another tool (${bad.join(', ')}). Fix or remove it to activate the hook.`
+        : 'Restart the Antigravity IDE to load it.';
+    }
     return { agent: t.agent, label: t.label, file: t.file, result: 'installed', note };
   });
 }
@@ -221,29 +223,99 @@ export function uninstallHooks(targets = hookTargets()): HookChange[] {
   });
 }
 
-/** Whether each agent currently has the Tracetoon hook. */
-export function hookStatus(targets = hookTargets()): {
+const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse']);
+const HANDLER_EVENTS = new Set([
+  'SessionStart',
+  'PreInvocation',
+  'PostInvocation',
+  'Stop',
+]);
+
+/**
+ * Named blocks in Antigravity's hooks.json that Antigravity will reject. One bad
+ * block makes it ignore the whole file, Tracetoon's hook included, so this is
+ * worth telling the user about. Tool events take matcher blocks with a `hooks`
+ * list; the other events take handlers (with `command`) directly.
+ */
+export function antigravityInvalidBlocks(data: Json): string[] {
+  const bad: string[] = [];
+  for (const [name, block] of Object.entries(data)) {
+    if (!block || typeof block !== 'object') {
+      bad.push(name);
+      continue;
+    }
+    const handlerOk = (h: unknown) => !!h && typeof (h as Json).command === 'string';
+    const ok = Object.entries(block as Json).every(([event, list]) => {
+      if (event === 'enabled') return typeof list === 'boolean';
+      if (!Array.isArray(list))
+        return !TOOL_EVENTS.has(event) && !HANDLER_EVENTS.has(event);
+      if (TOOL_EVENTS.has(event))
+        return list.every((m) => m && Array.isArray(m.hooks) && m.hooks.every(handlerOk));
+      if (HANDLER_EVENTS.has(event)) return list.every(handlerOk);
+      return true;
+    });
+    if (!ok) bad.push(name);
+  }
+  return bad;
+}
+
+/** Whether Codex has trusted Tracetoon's hook (`/hooks`), from ~/.codex/config.toml. */
+function codexTrusted(t: HookTarget, data: Json): boolean | undefined {
+  const groups: Json[] = Array.isArray(data.hooks?.PreToolUse)
+    ? data.hooks.PreToolUse
+    : [];
+  const i = groups.findIndex(
+    (g) => Array.isArray(g?.hooks) && g.hooks.some((h: Json) => isOurs(h?.command)),
+  );
+  if (i < 0) return undefined;
+  try {
+    const toml = readFileSync(join(dirname(t.file), 'config.toml'), 'utf8');
+    return toml.includes(`hooks.json:pre_tool_use:${i}:0'`);
+  } catch {
+    return false;
+  }
+}
+
+export interface HookState {
   agent: HookAgent;
   label: string;
   present: boolean;
   installed: boolean;
   file: string;
-}[] {
+  /** Something that stops the hook from running even though it's installed. */
+  problem?: string;
+}
+
+/** Whether each agent currently has the Tracetoon hook, and whether it will actually run. */
+export function hookStatus(targets = hookTargets()): HookState[] {
   return targets.map((t) => {
-    let installed = false;
+    let data: Json = {};
+    let unreadable = false;
     try {
-      installed = isOurs(
-        readFileSync(t.file, 'utf8').match(/"command":\s*"([^"]*hook pre-pr[^"]*)"/)?.[1],
-      );
+      data = readStrict(t.file);
     } catch {
-      /* missing file */
+      unreadable = true;
     }
-    return {
+    const installed =
+      !unreadable &&
+      JSON.stringify(data).includes('hook pre-pr') &&
+      /tracetoon/i.test(JSON.stringify(data));
+    const state: HookState = {
       agent: t.agent,
       label: t.label,
       present: t.present,
       installed,
       file: t.file,
     };
+    if (unreadable) state.problem = `${t.file} is not valid JSON`;
+    else if (installed && t.agent === 'antigravity') {
+      const bad = antigravityInvalidBlocks(data).filter((n) => n !== 'tracetoon');
+      if (bad.length) {
+        state.problem = `Antigravity ignores the whole hooks file because of an invalid block from another tool (${bad.join(', ')}); fix or remove it to activate the hook`;
+      }
+    } else if (installed && t.agent === 'codex' && codexTrusted(t, data) === false) {
+      state.problem = 'not trusted yet: run /hooks in Codex and trust the Tracetoon hook';
+    }
+    return state;
   });
 }

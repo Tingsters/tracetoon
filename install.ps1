@@ -31,17 +31,19 @@ function Get-Targets {
   return $t
 }
 
-$cacheRoot = Join-Path (Join-Path $env:LOCALAPPDATA 'tracetoon') 'cache'
+# The binary lives at a fixed path, so agent hooks keep working (and Codex keeps
+# its trust) across updates. The launchers check it first.
+$homeRoot = Join-Path $env:LOCALAPPDATA 'tracetoon'
+$stable = Join-Path (Join-Path $homeRoot 'bin') 'tracetoon.exe'
 $targets = @(Get-Targets)
 
 if ($env:TRACETOON_UNINSTALL -eq '1') {
-  # Hooks first, while a binary is still around to remove them.
-  $old = Get-ChildItem -Path $cacheRoot -Recurse -Filter 'tracetoon-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($old) { & $old.FullName hook uninstall }
+  # Hooks first, while the binary is still around to remove them.
+  if (Test-Path $stable) { & $stable hook uninstall }
   foreach ($t in $targets) {
     if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir; Write-Host "removed from $($t.Name) ($($t.Dir))" }
   }
-  if (Test-Path $cacheRoot) { Remove-Item -Recurse -Force $cacheRoot }
+  if (Test-Path $homeRoot) { Remove-Item -Recurse -Force $homeRoot }
   Write-Host 'Tracetoon uninstalled.'
   return
 }
@@ -81,14 +83,13 @@ try {
   $skill = Join-Path $skillTmp 'tracetoon'
   if (-not (Test-Path (Join-Path $skill 'SKILL.md'))) { throw 'Skill archive is missing SKILL.md.' }
 
-  $cache = Join-Path $cacheRoot $ver
-  New-Item -ItemType Directory -Force -Path $cache | Out-Null
-  $exe = Join-Path $cache $bin
-  Copy-Item -Force (Join-Path $tmp $bin) $exe
-  & $exe --version | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'Installed binary does not run.' }
-  # Keep only this version's binary.
-  Get-ChildItem -Path $cacheRoot -Directory | Where-Object { $_.Name -ne $ver } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stable) | Out-Null
+  & (Join-Path $tmp $bin) --version | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Downloaded binary does not run.' }
+  Copy-Item -Force (Join-Path $tmp $bin) $stable
+  $exe = $stable
+  # Binaries cached by older versions are no longer needed.
+  Remove-Item -Recurse -Force (Join-Path $homeRoot 'cache') -ErrorAction SilentlyContinue
 
   Write-Host 'Skill:'
   foreach ($t in $targets) {

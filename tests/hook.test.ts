@@ -255,3 +255,44 @@ describe('hook end to end', () => {
     expect(garbage.stdout).toBe('');
   });
 });
+
+describe('hook diagnostics', () => {
+  test("flags other tools' invalid Antigravity blocks and untrusted Codex hooks", () => {
+    const h = tempDir('tracetoon-home-');
+    mkdirSync(join(h, '.gemini', 'antigravity-cli'), { recursive: true });
+    mkdirSync(join(h, '.gemini', 'config'), { recursive: true });
+    mkdirSync(join(h, '.codex'), { recursive: true });
+    // Handlers nested under "hooks" for a non-tool event: Antigravity rejects the whole file.
+    writeFileSync(
+      join(h, '.gemini', 'config', 'hooks.json'),
+      JSON.stringify({
+        other: { enabled: true, Stop: [{ hooks: [{ type: 'command', command: 'x' }] }] },
+      }),
+    );
+    const targets = hookTargets(h, {});
+    const changes = installHooks('/x/tracetoon', targets);
+    expect(changes[2]!.note).toContain('invalid block from another tool (other)');
+    const status = hookStatus(targets);
+    expect(status[1]).toMatchObject({ installed: true });
+    expect(status[1]!.problem).toContain('/hooks');
+    expect(status[2]!.problem).toContain('(other)');
+
+    writeFileSync(
+      join(h, '.codex', 'config.toml'),
+      "[hooks.state.'" +
+        join(h, '.codex') +
+        '\hooks.json:pre_tool_use:0:0\']\ntrusted_hash = "sha256:x"\n',
+    );
+    expect(hookStatus(targets)[1]!.problem).toBeUndefined();
+    writeFileSync(
+      join(h, '.gemini', 'config', 'hooks.json'),
+      JSON.stringify({
+        other: { enabled: true, Stop: [{ type: 'command', command: 'x' }] },
+        tracetoon: JSON.parse(
+          readFileSync(join(h, '.gemini', 'config', 'hooks.json'), 'utf8'),
+        ).tracetoon,
+      }),
+    );
+    expect(hookStatus(targets)[2]!.problem).toBeUndefined();
+  });
+});
