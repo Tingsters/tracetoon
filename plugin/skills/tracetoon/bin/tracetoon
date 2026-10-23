@@ -34,11 +34,14 @@ exe=""
 name="tracetoon-$plat$exe"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/tracetoon/$ver"
 
+# Where the installer puts the binary (a fixed path, so hooks survive updates).
+installed="${XDG_DATA_HOME:-$HOME/.local/share}/tracetoon/bin/tracetoon$exe"
 win_cache=""
 if [ "$os" = windows ] && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+  installed="$(cygpath -u "$LOCALAPPDATA")/tracetoon/bin/tracetoon.exe"
   win_cache="$(cygpath -u "$LOCALAPPDATA")/tracetoon/cache/$ver/$name"
 fi
-for candidate in "$here/$name" "$cache/$name" $win_cache; do
+for candidate in "$here/$name" "$installed" "$cache/$name" $win_cache; do
   if [ -x "$candidate" ]; then exec "$candidate" "$@"; fi
 done
 

@@ -74,7 +74,10 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
       ...hooks
         .filter((h) => h.present)
         .map(
-          (h) => `  ${h.label.padEnd(12)} ${h.installed ? 'installed' : 'not installed'}`,
+          (h) =>
+            `  ${h.label.padEnd(12)} ${h.installed ? (h.problem ? 'installed, NOT ACTIVE' : 'active') : 'not installed'}${
+              h.problem ? `\n               ${h.problem}` : ''
+            }`,
         ),
       state.enabled
         ? 'Turn off: tracetoon off [--repo | --local], or TRACETOON=0 for one command.'
@@ -85,7 +88,8 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
 
 /** The program agents should run for the hook: this binary, or bun + this script in development. */
 function selfProgram(): string[] {
-  if (/[\\/]tracetoon-[a-z]+-[a-z0-9]+(\.exe)?$/i.test(process.execPath))
+  // The installed binary (bin/tracetoon[.exe]) or a release binary (tracetoon-<os>-<arch>).
+  if (/[\\/]tracetoon(-[a-z]+-[a-z0-9]+)?(\.exe)?$/i.test(process.execPath))
     return [process.execPath];
   return [process.execPath, resolve(process.argv[1] ?? '')];
 }

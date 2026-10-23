@@ -109,9 +109,13 @@ export function doctor(
     lines.push(
       `tracetoon here: ${report.switch.enabled ? 'on' : 'off'} (${report.switch.why})`,
       `PR hook: ${
-        report.prHook.map((h) => `${h.label} ${h.installed ? 'yes' : 'no'}`).join(', ') ||
-        'no agents found'
+        report.prHook
+          .map(
+            (h) => `${h.label} ${h.installed ? (h.problem ? 'inactive' : 'yes') : 'no'}`,
+          )
+          .join(', ') || 'no agents found'
       }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
+      ...report.prHook.filter((h) => h.problem).map((h) => `  ${h.label}: ${h.problem}`),
     );
     lines.push(
       `image providers: ${['gemini', 'openai'].filter((p) => report.imageProviders[p as 'gemini']).join(', ') || 'none (built-in comic art will be used)'}`,
