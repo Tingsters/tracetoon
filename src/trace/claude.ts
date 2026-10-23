@@ -143,6 +143,7 @@ interface Pending {
   ts?: string;
   cwd?: string;
   branch?: string;
+  model?: string;
 }
 
 /** Parse one Claude JSONL file's content into records. Exported for tests. */
@@ -220,6 +221,7 @@ export function parseClaudeLines(
           ts: call.ts ?? base.ts,
           cwd: call.cwd ?? base.cwd,
           branch: call.branch ?? base.branch,
+          model: call.model,
         };
         if (EDIT_TOOLS.has(call.name)) {
           if (isError) continue;
@@ -293,6 +295,7 @@ export function parseClaudeLines(
           name: str(c.name)!,
           input: isObj(c.input) ? c.input : {},
           ...base,
+          model,
         });
       }
     }
@@ -326,12 +329,13 @@ export const claudeAdapter: TraceAdapter = {
     return existsSync(dir) ? claudeHome() : undefined;
   },
   count: () => claude.findTranscripts().length,
-  discover({ roots, sinceMs, needles = [] }) {
+  discover({ roots, sinceMs, needles = [], all }) {
     const out: SessionRef[] = [];
     const lowered = needles.map((n) => n.toLowerCase());
     for (const t of claude.findTranscripts()) {
       if (t.mtimeMs < sinceMs) continue;
-      let relevant = t.cwd !== undefined && mentionsAnyRoot(JSON.stringify(t.cwd), roots);
+      let relevant =
+        !!all || (t.cwd !== undefined && mentionsAnyRoot(JSON.stringify(t.cwd), roots));
       if (!relevant) {
         // Sessions can start elsewhere and move into the repo, or work in a worktree
         // that's gone: check the whole file and its subagents for a repo root or a

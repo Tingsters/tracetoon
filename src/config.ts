@@ -18,6 +18,12 @@ export interface Config {
   disclosure: 'assisted-by' | 'co-authored-by' | 'none';
   /** Digest token budget. */
   budgetTokens: number;
+  /** Where the comic image is hosted: the assets branch, a GitHub attachment, or decide automatically. */
+  hosting: 'auto' | 'branch' | 'attach';
+  /** Image providers the user agreed to send comic prompts to. */
+  imageConsent: string[];
+  /** Make a comic at all. */
+  comic: boolean;
 }
 
 export const DEFAULTS: Config = {
@@ -26,6 +32,9 @@ export const DEFAULTS: Config = {
   promptQuoting: 'paraphrase',
   disclosure: 'assisted-by',
   budgetTokens: 12000,
+  hosting: 'auto',
+  imageConsent: [],
+  comic: true,
 };
 
 export function userConfigPath(): string {
@@ -66,7 +75,12 @@ export function setUserConfig(key: keyof Config, raw: string): Config {
       ? raw === 'true'
       : typeof def === 'number'
         ? Number(raw)
-        : raw;
+        : Array.isArray(def)
+          ? raw
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : raw;
   const next = { ...cur, [key]: value };
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(next, null, 2) + '\n', 'utf8');

@@ -330,7 +330,7 @@ export const codexAdapter: TraceAdapter = {
     return existsSync(dir) ? dirname(dir) : undefined;
   },
   count: () => codex.findRollouts().length,
-  discover({ roots, sinceMs, needles = [] }) {
+  discover({ roots, sinceMs, needles = [], all }) {
     const lowered = needles.map((n) => n.toLowerCase());
     const out: SessionRef[] = [];
     for (const r of codex.findRollouts()) {
@@ -342,7 +342,7 @@ export const codexAdapter: TraceAdapter = {
         continue;
       }
       const low = lowered.length ? text.toLowerCase() : '';
-      if (mentionsAnyRoot(text, roots) || lowered.some((n) => low.includes(n))) {
+      if (all || mentionsAnyRoot(text, roots) || lowered.some((n) => low.includes(n))) {
         out.push({
           agent: 'codex',
           sessionId: r.sessionId,

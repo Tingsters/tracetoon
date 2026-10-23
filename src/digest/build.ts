@@ -88,6 +88,8 @@ export interface TraceDigest {
   /** Provenance other tools recorded in the repo (Entire checkpoints, git-ai notes). */
   interop: Interop;
   privacy: { redactions: number; droppedForeignRecords: number; sessionIdsHashed: true };
+  /** Other PR numbers the included sessions linked themselves to (Claude pr-link). */
+  linkedPrs: number[];
   notes: string[];
   truncated: string[];
 }
@@ -467,6 +469,18 @@ export function buildDigest(
       droppedForeignRecords: chosen.reduce((n, m) => n + m.droppedForeign, 0),
       sessionIdsHashed: true,
     },
+    linkedPrs: [
+      ...new Set(
+        chosen
+          .filter((m) => m.band !== 'excluded')
+          .flatMap((m) => m.kept)
+          .flatMap((r) =>
+            r.kind === 'link' && r.prNumber && r.prNumber !== truth.pr?.number
+              ? [r.prNumber]
+              : [],
+          ),
+      ),
+    ],
     notes,
     truncated: [],
   };

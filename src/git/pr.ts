@@ -19,6 +19,8 @@ export interface FileChange {
   path: string;
   added: string[];
   removed: string[];
+  /** Line number (in the new file) of each entry in `added`, when known. */
+  addedAt?: number[];
 }
 
 export interface ExistingPr {
@@ -150,6 +152,8 @@ export function parseUnifiedDiff(diff: string): FileChange[] {
   let cur: FileChange | undefined;
   let oldPath: string | undefined;
   let inHunk = false;
+  let newLine = 0;
+  const hunkStart = (l: string) => Number(/\+(\d+)/.exec(l)?.[1] ?? 0);
   for (const line of diff.split(/\r?\n/)) {
     if (line.startsWith('diff --git ')) {
       cur = undefined;
@@ -166,18 +170,25 @@ export function parseUnifiedDiff(diff: string): FileChange[] {
         // A deleted file has `+++ /dev/null`: record it under its old path.
         const path = p === '/dev/null' ? oldPath : p.replace(/^b\//, '');
         if (path) {
-          cur = { path, added: [], removed: [] };
+          cur = { path, added: [], removed: [], addedAt: [] };
           files.push(cur);
         }
       } else if (line.startsWith('@@')) {
         inHunk = true;
+        newLine = hunkStart(line);
       }
       continue;
     }
-    if (line.startsWith('@@')) continue;
+    if (line.startsWith('@@')) {
+      newLine = hunkStart(line);
+      continue;
+    }
     if (!cur) continue;
-    if (line.startsWith('+')) cur.added.push(line.slice(1));
-    else if (line.startsWith('-')) cur.removed.push(line.slice(1));
+    if (line.startsWith('+')) {
+      cur.added.push(line.slice(1));
+      cur.addedAt?.push(newLine++);
+    } else if (line.startsWith('-')) cur.removed.push(line.slice(1));
+    else if (line.startsWith(' ')) newLine++;
   }
   return files;
 }

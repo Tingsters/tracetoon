@@ -97,6 +97,8 @@ export interface DiscoverQuery {
    * PR's short commit SHAs, which find sessions that worked in a deleted worktree.
    */
   needles?: string[];
+  /** Return every session regardless of repo (for `doctor --probe`). */
+  all?: boolean;
 }
 
 export interface TraceAdapter {

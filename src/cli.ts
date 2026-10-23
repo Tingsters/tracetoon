@@ -9,8 +9,16 @@ import {
 } from './config.ts';
 import { doctor } from './commands/doctor.ts';
 import { contextCmd, digestCmd, expandCmd, scanCmd } from './commands/digest.ts';
-import { emit, UserError } from './commands/output.ts';
+import { emit, exitCodeOf, UserError } from './commands/output.ts';
 import { previewCmd, publishCmd, renderCmd } from './commands/publish.ts';
+import {
+  comicArtCmd,
+  comicCheckCmd,
+  comicPromptsCmd,
+  comicRenderCmd,
+} from './commands/comic.ts';
+import { exportCmd } from './commands/export.ts';
+import { seriesShowCmd } from './commands/series.ts';
 import { TOOL_VERSION } from './version.ts';
 
 const list = (v: string) =>
@@ -33,7 +41,9 @@ const g = () => program.opts<{ json?: boolean }>();
 program
   .command('doctor')
   .description('check git, gh and which agent logs are on this machine')
-  .action(() => doctor(cwd, g()));
+  .option('--probe', 'also list record types the log readers do not recognize')
+  .option('--strict', 'with --probe: exit 5 if any are found')
+  .action((o) => doctor(cwd, { ...g(), ...o }));
 
 program
   .command('scan')
@@ -72,7 +82,9 @@ program
   )
   .option('--run <id>', 'run id (default: latest)')
   .option('--allow-findings', 'allow posting even though the leak scan found something')
+  .option('--no-comic', 'leave the comic out even if one was rendered')
   .action((o) => {
+    o.noComic = o.comic === false;
     renderCmd(cwd, { ...g(), ...o });
   });
 
@@ -92,7 +104,47 @@ program
   .option('--push', 'push the branch first if GitHub does not have it')
   .option('--draft', 'open the PR as a draft')
   .option('--ack-policy', 'the user read the repo AI policy and still wants to post')
+  .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
   .action((o) => publishCmd(cwd, { ...g(), ...o }));
+
+const comic = program.command('comic').description('make the 4-panel comic for this PR');
+comic
+  .command('check')
+  .description('validate comic.json against the series cast')
+  .option('--run <id>', 'run id (default: latest)')
+  .action((o) => comicCheckCmd(cwd, { ...g(), ...o }));
+comic
+  .command('prompts')
+  .description("print per-panel image prompts for the host agent's own image tool")
+  .option('--run <id>', 'run id (default: latest)')
+  .action((o) => comicPromptsCmd(cwd, { ...g(), ...o }));
+comic
+  .command('art')
+  .description('make any panel art that is missing (built-in artist, Gemini or OpenAI)')
+  .option('--run <id>', 'run id (default: latest)')
+  .option('--provider <name>', 'auto, builtin, gemini or openai', 'auto')
+  .option('--consent', 'the user agreed to send comic prompts to this provider')
+  .option('--force', 'redraw panels that already exist')
+  .action((o) => comicArtCmd(cwd, { ...g(), ...o }));
+comic
+  .command('render')
+  .description('lay out panels and speech bubbles into out/comic.png')
+  .option('--run <id>', 'run id (default: latest)')
+  .action((o) => comicRenderCmd(cwd, { ...g(), ...o }));
+
+program
+  .command('series')
+  .description("show this repo's comic series: cast, theme and earlier episodes")
+  .option('--offline', 'do not contact GitHub')
+  .action((o) => seriesShowCmd(cwd, { ...g(), ...o }));
+
+program
+  .command('export')
+  .description('write the PR attribution as an Agent Trace record (agent-trace.dev)')
+  .option('--agent-trace', 'Agent Trace JSON (the only format today)', true)
+  .option('--base <ref>', 'base branch')
+  .option('--offline', 'do not ask GitHub for an existing PR')
+  .action((o) => exportCmd(cwd, { ...g(), ...o }));
 
 const config = program.command('config').description('show or change settings');
 config.command('get [key]').action((key?: keyof Config) => {
@@ -116,5 +168,5 @@ try {
   const err = e as Error & { exitCode?: number };
   if (g().json) process.stdout.write(JSON.stringify({ error: err.message }) + '\n');
   else process.stderr.write(`tracetoon: ${err.message}\n`);
-  process.exit(err instanceof UserError ? err.exitCode : 1);
+  process.exit(exitCodeOf(err));
 }

@@ -11,7 +11,7 @@ export interface ExecResult {
 export function run(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv } = {},
+  opts: { cwd?: string; input?: string | Uint8Array; env?: NodeJS.ProcessEnv } = {},
 ): ExecResult {
   const r = spawnSync(cmd, args, {
     cwd: opts.cwd,
@@ -32,7 +32,12 @@ export function run(
 }
 
 /** Git with the same hardening Showtail uses: no fsmonitor, no ext protocol. */
-export function git(cwd: string, args: string[], input?: string): ExecResult {
+export function git(
+  cwd: string,
+  args: string[],
+  input?: string | Uint8Array,
+  env?: NodeJS.ProcessEnv,
+): ExecResult {
   return run(
     'git',
     [
@@ -44,7 +49,7 @@ export function git(cwd: string, args: string[], input?: string): ExecResult {
       'core.quotepath=off',
       ...args,
     ],
-    { cwd, input },
+    { cwd, input, env: env ? { ...process.env, ...env } : undefined },
   );
 }
 
@@ -56,4 +61,14 @@ export function gh(cwd: string, args: string[]): ExecResult {
     cwd,
     env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' },
   });
+}
+
+/** Git command whose stdout is binary (e.g. `cat-file blob` of an image). */
+export function gitBytes(cwd: string, args: string[]): Uint8Array | undefined {
+  const r = spawnSync('git', args, {
+    cwd,
+    maxBuffer: 256 * 1024 * 1024,
+    windowsHide: true,
+  });
+  return r.status === 0 && r.stdout ? new Uint8Array(r.stdout) : undefined;
 }

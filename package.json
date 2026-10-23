@@ -12,10 +12,11 @@
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",
     "format": "bun x prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "bundle": "bun build ./src/cli.ts --target node --minify --outfile plugin/skills/tracetoon/dist/tracetoon.mjs",
+    "bundle": "bun run scripts/bundle.ts",
     "build": "bun build --compile --minify ./src/cli.ts --outfile dist/tracetoon"
   },
   "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2",
     "commander": "^14.0.0",
     "marked": "^16.0.0"
   },
@@ -23,7 +24,8 @@
     "@types/node": "^22.0.0",
     "bun-types": "^1.1.0",
     "prettier": "^3.3.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "@expo-google-fonts/comic-neue": "^0.4.1"
   },
   "engines": {
     "bun": ">=1.1.0"

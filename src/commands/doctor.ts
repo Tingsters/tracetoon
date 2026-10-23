@@ -20,7 +20,29 @@ function atLeast(v: string | undefined, min: string): boolean {
   return true;
 }
 
-export function doctor(cwd: string, opts: OutOpts): void {
+/** Unknown record types in each agent's most recent sessions: early warning of format changes. */
+function probe(limit = 15): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const a of ADAPTERS) {
+    if (!a.home()) continue;
+    const refs = a
+      .discover({ roots: [], sinceMs: 0, all: true })
+      .sort((x, y) => y.mtimeMs - x.mtimeMs)
+      .slice(0, limit);
+    const unknown: Record<string, number> = {};
+    for (const ref of refs) {
+      for (const [k, v] of Object.entries(a.read(ref).unknownTypes))
+        unknown[k] = (unknown[k] ?? 0) + v;
+    }
+    out[a.id] = unknown;
+  }
+  return out;
+}
+
+export function doctor(
+  cwd: string,
+  opts: OutOpts & { probe?: boolean; strict?: boolean },
+): void {
   const runtime =
     typeof (globalThis as { Bun?: { version: string } }).Bun !== 'undefined'
       ? `bun ${(globalThis as unknown as { Bun: { version: string } }).Bun.version}`
@@ -52,6 +74,7 @@ export function doctor(cwd: string, opts: OutOpts): void {
     ghAttach: atLeast(ghV, '2.99.0'),
     repo: top.ok ? top.stdout.trim() : null,
     agents: [...agents, ...planned],
+    ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
     imageProviders: {
       gemini: !!process.env.GEMINI_API_KEY,
       openai: !!process.env.OPENAI_API_KEY,
@@ -71,8 +94,22 @@ export function doctor(cwd: string, opts: OutOpts): void {
           }${a.supported ? '' : ' (support coming soon)'}`,
       ),
     ];
+    if (report.unknownRecordTypes) {
+      for (const [agent, types] of Object.entries(report.unknownRecordTypes)) {
+        const list = Object.entries(types).map(([k, v]) => `${k} x${v}`);
+        lines.push(
+          `  ${agent}: ${list.length ? `unknown record types: ${list.join(', ')}` : 'all record types recognized'}`,
+        );
+      }
+    }
+    lines.push(
+      `image providers: ${['gemini', 'openai'].filter((p) => report.imageProviders[p as 'gemini']).join(', ') || 'none (built-in comic art will be used)'}`,
+    );
     if (!ghV) lines.push('Install the GitHub CLI (gh) to create or update PRs.');
     else if (!ghAuth) lines.push('Run `gh auth login` to let Tracetoon post PRs.');
     return lines.join('\n');
   });
+  const unknown = report.unknownRecordTypes ?? {};
+  if (opts.strict && Object.values(unknown).some((t) => Object.keys(t).length))
+    process.exitCode = 5;
 }

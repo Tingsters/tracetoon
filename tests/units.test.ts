@@ -44,7 +44,8 @@ describe('parseUnifiedDiff', () => {
       '-bye2',
     ].join('\n');
     const files = parseUnifiedDiff(diff);
-    expect(files).toEqual([
+    expect(files.map((f) => f.addedAt)).toEqual([[1], []]);
+    expect(files.map(({ addedAt: _a, ...f }) => f)).toEqual([
       {
         path: 'a.ts',
         added: ['new line'],

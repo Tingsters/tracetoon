@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
 
-const CLI = resolve(import.meta.dir, '../src/cli.ts');
+// Set TRACETOON_TEST_CLI to run these against the bundled build instead of the source.
+const CLI = process.env.TRACETOON_TEST_CLI ?? resolve(import.meta.dir, '../src/cli.ts');
 const FAKE_GH = resolve(import.meta.dir, 'fake-gh.ts');
 
 let claudeHome: string;

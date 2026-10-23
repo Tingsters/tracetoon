@@ -316,7 +316,7 @@ function makeAdapter(
       return find().length || existsSync(join(home, id)) ? home : undefined;
     },
     count: () => find().length,
-    discover({ roots, sinceMs, needles = [] }) {
+    discover({ roots, sinceMs, needles = [], all }) {
       const lowered = needles.map((n) => n.toLowerCase());
       const history = readHistory(antigravity.geminiHome());
       const out: SessionRef[] = [];
@@ -336,6 +336,7 @@ function makeAdapter(
             text.includes(h.display.slice(0, 40)),
         );
         if (
+          all ||
           viaHistory ||
           mentionsAnyRoot(text, roots) ||
           lowered.some((n) => low.includes(n))
