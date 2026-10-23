@@ -24,6 +24,16 @@ fetch() { # url dest
   else die "need curl or wget"; fi
 }
 
+# The tag of the most recently published release in a GitHub releases JSON list
+# (stdin). Pairs each tag_name with its published_at; drafts (null) are skipped.
+latest_tag() {
+  grep -oE '"(tag_name|published_at)": *("[^"]*"|null)' |
+    sed -E 's/^"[a-z_]+": *//; s/"//g' |
+    paste - - |
+    awk -F'\t' '$2 != "null" && $2 != "" { print $2 "\t" $1 }' |
+    sort | tail -n 1 | cut -f2
+}
+
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -94,9 +104,10 @@ tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 if [ -z "$tag" ]; then
-  # Newest release, including release candidates.
-  fetch "https://api.github.com/repos/$REPO/releases?per_page=1" "$tmp/releases.json"
-  tag=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$tmp/releases.json" | head -1)
+  # Newest release, including release candidates. The API sorts by tag name
+  # (so rc.10 lands before rc.2), not by date: pick the latest published one.
+  fetch "https://api.github.com/repos/$REPO/releases?per_page=30" "$tmp/releases.json"
+  tag=$(latest_tag < "$tmp/releases.json")
   [ -n "$tag" ] || die "could not find a Tracetoon release"
 fi
 ver=${tag#v}
