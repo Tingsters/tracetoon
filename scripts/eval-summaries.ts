@@ -63,7 +63,7 @@ const CASES: Case[] = [
     name: 'PR #1 doctor change (Claude Code)',
     repo: join(dev, 'tracetoon'),
     base: 'cbd8f79',
-    head: 'feat/doctor-install-info',
+    head: 'a2c019f', // PR #1 as first published, before main was merged into it
     expect: (d) => [
       eq('included sessions', d.sessions.filter((s) => s.band === 'included').length, 1),
       hasPrompt(d, 'create a new pr for tracetoon with it'),
@@ -80,6 +80,18 @@ const CASES: Case[] = [
         ok: files(d).every((f) => /doctor|tracetoon\.mjs/.test(f)),
         detail: files(d).join(', '),
       },
+    ],
+  },
+  {
+    name: 'PR #1 after merging main into it',
+    repo: join(dev, 'tracetoon'),
+    base: 'main',
+    head: 'feat/doctor-install-info',
+    expect: (d) => [
+      hasPrompt(d, 'create a new pr for tracetoon with it'),
+      atLeast('agent-matched lines %', d.stats.agentMatchedPct, 60),
+      eq('PR commits (merges excluded)', d.stats.commits, 2),
+      eq('commits made in sessions', d.stats.commitsMadeInSessions, 2),
     ],
   },
   {
