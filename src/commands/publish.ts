@@ -5,7 +5,7 @@
  * see. The only edits after approval fill in where the comic image is hosted.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
@@ -320,7 +320,20 @@ function hostComic(
   const files: AssetFile[] = [{ path: `${folder}/comic.${ext}`, data }];
   if (script)
     files.push({ path: `${folder}/script.json`, data: JSON.stringify(script, null, 2) });
-  if (bible && ctx?.bibleIsNew)
+  // Character sheets drawn in this run join the series, so later episodes reuse them.
+  const artDir = join(run.dir, 'art');
+  const castMade = (existsSync(artDir) ? readdirSync(artDir) : [])
+    .map((f) => /^cast-(.+)\.png$/.exec(f)?.[1])
+    .filter((id): id is string => !!id && !!bible && !bible.references?.[id]);
+  if (bible) {
+    for (const id of castMade) {
+      const local = join(artDir, `cast-${id}.png`);
+      const path = `bible/${bible.series}/cast/${id}.png`;
+      files.push({ path, data: readFileSync(local) });
+      bible.references = { ...bible.references, [id]: path };
+    }
+  }
+  if (bible && (ctx?.bibleIsNew || castMade.length))
     files.push({ path: biblePath(bible.series), data: JSON.stringify(bible, null, 2) });
   try {
     const commit = publishAssets(truth.toplevel, files, `tracetoon: ${folder}`);

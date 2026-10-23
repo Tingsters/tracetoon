@@ -28,7 +28,7 @@ const CASTS: Record<
   pets: {
     title: 'Pull Request Pets',
     style:
-      'anime-style 4-koma comic panel, cute chibi animals, clean confident line art, soft cel shading, warm pastel colors, cozy home office',
+      'anime-style 4-koma comic panel, cute chibi characters, clean confident line art, soft cel shading, warm pastel colors, cozy home office',
     agents: {
       'Claude Code': {
         name: 'Kit',

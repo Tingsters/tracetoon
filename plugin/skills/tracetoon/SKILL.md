@@ -62,8 +62,10 @@ that bypass on your own initiative.
    [references/comic-guide.md](references/comic-guide.md):
    - write `comic.json`, then `tracetoon comic check`;
    - make the art: your own image tool with `tracetoon comic prompts`, or
-     `tracetoon comic art` (Gemini/OpenAI after the user consents, otherwise
-     the built-in artist);
+     `tracetoon comic art`. That uses AI art through the Codex or Antigravity
+     CLI, or the OpenAI or Gemini API, after the user agrees once (exit code 4
+     means: ask them, then add `--consent`). Otherwise it uses the built-in
+     artist;
    - `tracetoon comic render`, and look at `out/comic.png` if you can.
 6. **Render.** `tracetoon render --json`. If the leak scan reports findings, fix
    `body.md` and render again. Don't use `--allow-findings` unless the user has

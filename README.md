@@ -104,9 +104,11 @@ Turn it off at whichever level you need. Any "off" wins:
    saga).
 3. **Your agent writes** `body.md` and a four-panel `comic.json` from the digest.
 4. **`tracetoon comic art` / `comic render`** draw the panels and add speech
-   bubbles. Art comes from your agent's own image tool (Codex, Antigravity),
-   Gemini or OpenAI if you have a key and agree, or the built-in artist (no key
-   needed).
+   bubbles. The art is AI-drawn when you allow it: your agent's own image tool,
+   the Codex or Antigravity CLI already on your machine (your own login, no
+   key), or OpenAI or Gemini with an API key. Otherwise the built-in artist
+   draws it. Each character gets a reference sheet once per series, so the cast
+   looks the same in every episode.
 5. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text in an existing PR is kept), scans it for leaks and
    prints an approval code.
@@ -147,9 +149,23 @@ the binary included are attached to each release.
 | `imageConsent` | `[]` | Image services you agreed to (set by `comic art --consent`) |
 | `budgetTokens` | `12000` | Digest size |
 
-Image generation uses `GEMINI_API_KEY` (model `gemini-3.1-flash-image`,
-override with `TRACETOON_GEMINI_MODEL`) or `OPENAI_API_KEY` (`gpt-image-2`,
-override with `TRACETOON_OPENAI_MODEL`).
+### Comic art
+
+`tracetoon comic art` picks the first route you have approved, in this order:
+
+| Route | Needs | Prompts go to |
+| --- | --- | --- |
+| `openai` | `OPENAI_API_KEY` (model `gpt-image-2.5-flare`, change with `TRACETOON_OPENAI_MODEL`) | OpenAI, billed to your key |
+| `gemini` | `GEMINI_API_KEY` (model `gemini-nano-banana-2.1`, change with `TRACETOON_GEMINI_MODEL`) | Google, billed to your key |
+| `codex` | the Codex CLI, signed in | OpenAI, counted against your Codex usage |
+| `antigravity` (experimental) | the Antigravity CLI, signed in | Google, counted against your Antigravity quota |
+
+Nothing is sent until you agree once per route; the agent asks you, then runs
+`tracetoon comic art --provider <route> --consent`. Prompts contain only the
+comic's scenes and character descriptions. `tracetoon doctor` shows which routes
+exist and which you have approved. To stop using one, remove it from
+`imageConsent` with `tracetoon config set imageConsent <list>`. If a route
+fails, the built-in artist draws the panels instead.
 
 ## Develop
 

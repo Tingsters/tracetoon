@@ -221,3 +221,66 @@ describe('commands that start by changing directory', () => {
       );
   });
 });
+
+describe('image responses', () => {
+  test('finds the image in each API shape', async () => {
+    const { findImageData } = await import('../src/comic/providers.ts');
+    // Gemini Interactions API
+    expect(
+      findImageData({
+        steps: [
+          {
+            type: 'model_output',
+            content: [
+              { type: 'text', text: 'hi' },
+              { type: 'image', data: 'AAA' },
+            ],
+          },
+        ],
+      }),
+    ).toBe('AAA');
+    // Gemini generateContent
+    expect(
+      findImageData({
+        candidates: [{ content: { parts: [{ inlineData: { data: 'BBB' } }] } }],
+      }),
+    ).toBe('BBB');
+    // OpenAI Images API
+    expect(findImageData({ data: [{ b64_json: 'CCC' }] })).toBe('CCC');
+    expect(findImageData({ error: 'no' })).toBeUndefined();
+  });
+});
+
+describe('matching Codex images to prompts', () => {
+  const reply = (text: string) => ({
+    type: 'item.completed',
+    item: { type: 'agent_message', text },
+  });
+  const made = [
+    '/h/g/t/a.png',
+    '/h/g/t/b.png',
+    '/h/g/t/c.png',
+    '/h/g/t/d.png',
+    '/h/g/t/e.png',
+  ];
+
+  test("trusts Codex's final list over file times when it redrew images", async () => {
+    const { pickCodexImages } = await import('../src/comic/providers.ts');
+    const events = [
+      reply('Working on it.'),
+      reply('/h/g/t/c.png\n/h/g/t/a.png\n/h/g/t/e.png'),
+    ];
+    expect(pickCodexImages(events, made, 3)).toEqual([
+      '/h/g/t/c.png',
+      '/h/g/t/a.png',
+      '/h/g/t/e.png',
+    ]);
+  });
+
+  test('ignores files outside the session and refuses to guess', async () => {
+    const { pickCodexImages } = await import('../src/comic/providers.ts');
+    const events = [reply('/etc/secret.png\n/h/g/t/a.png\n/h/g/t/b.png')];
+    expect(pickCodexImages(events, made, 3)).toEqual([]);
+    expect(pickCodexImages([], made.slice(0, 3), 3)).toEqual(made.slice(0, 3));
+  });
+});

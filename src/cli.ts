@@ -122,14 +122,22 @@ comic
   .action((o) => comicCheckCmd(cwd, { ...g(), ...o }));
 comic
   .command('prompts')
-  .description("print per-panel image prompts for the host agent's own image tool")
+  .description(
+    "print character-sheet and panel prompts for the host agent's own image tool",
+  )
   .option('--run <id>', 'run id (default: latest)')
   .action((o) => comicPromptsCmd(cwd, { ...g(), ...o }));
 comic
   .command('art')
-  .description('make any panel art that is missing (built-in artist, Gemini or OpenAI)')
+  .description(
+    'make the panel art: AI (Codex, Antigravity, OpenAI or Gemini, after consent) or the built-in artist',
+  )
   .option('--run <id>', 'run id (default: latest)')
-  .option('--provider <name>', 'auto, builtin, gemini or openai', 'auto')
+  .option(
+    '--provider <name>',
+    'auto, builtin, codex, antigravity, openai or gemini',
+    'auto',
+  )
   .option('--consent', 'the user agreed to send comic prompts to this provider')
   .option('--force', 'redraw panels that already exist')
   .action((o) => comicArtCmd(cwd, { ...g(), ...o }));

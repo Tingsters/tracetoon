@@ -18,6 +18,7 @@ setDefaultTimeout(90_000);
 // Set TRACETOON_TEST_CLI to run these against the bundled build instead of the source.
 const CLI = process.env.TRACETOON_TEST_CLI ?? resolve(import.meta.dir, '../src/cli.ts');
 const FAKE_GH = resolve(import.meta.dir, 'fake-gh.ts');
+const FAKE_CODEX = resolve(import.meta.dir, 'fake-codex.ts');
 const GREET =
   'export function greet(name: string): string {\n  return `Hello, ${name}!`;\n}\n';
 
@@ -385,6 +386,83 @@ describe('comic end to end', () => {
       'gemini',
     ]);
     expect(cli(repo.root, 'comic', 'art', '--force').json.provider).toBe('gemini');
+  });
+
+  test('Codex draws character sheets once, then every panel with them attached', () => {
+    const { repo, remote, runDir } = prepared();
+    const log = join(tempDir('tracetoon-codexlog-'), 'calls.jsonl');
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    env.FAKE_CODEX_LOG = log;
+    const calls = () =>
+      readFileSync(log, 'utf8')
+        .trim()
+        .split('\n')
+        .map(
+          (l) => JSON.parse(l) as { args: string[]; images: string[]; prompt: string },
+        );
+
+    const refused = cli(repo.root, 'comic', 'art', '--provider', 'codex');
+    expect(refused.code).toBe(4);
+    expect(refused.json.error).toContain('Codex login');
+    expect(existsSync(log)).toBe(false);
+
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(0);
+    expect(art.json.provider).toBe('codex');
+    expect(art.json.panels.map((p: any) => p.source)).toEqual([
+      'codex',
+      'codex',
+      'codex',
+      'codex',
+    ]);
+    const cast = art.json.castMade as string[];
+    expect(cast.length).toBeGreaterThan(1);
+    for (const id of cast)
+      expect(existsSync(join(runDir, 'art', `cast-${id}.png`))).toBe(true);
+    const [sheets, panels] = calls();
+    expect(sheets!.prompt).toContain('Character reference portrait');
+    expect(sheets!.images).toEqual([]);
+    expect(panels!.images).toHaveLength(cast.length);
+    expect((panels!.prompt.match(/^\d+\. /gm) ?? []).length).toBe(4);
+    expect(panels!.prompt).toContain('(character reference)');
+    expect(panels!.args).toContain('--sandbox');
+
+    // Approved once: auto picks Codex next time, and the sheets are reused.
+    const again = cli(repo.root, 'comic', 'art', '--force');
+    expect(again.json.provider).toBe('codex');
+    expect(again.json.castMade).toEqual([]);
+    expect(calls()).toHaveLength(3);
+
+    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+    const r = cli(repo.root, 'render');
+    expect(cli(repo.root, 'publish', '--code', r.json.code, '--push').code).toBe(0);
+    const tip = git(remote, ['rev-parse', 'refs/heads/tracetoon-assets']).stdout.trim();
+    const files = git(remote, ['ls-tree', '-r', '--name-only', tip]).stdout;
+    const series = /bible\/(ser_[0-9a-f]{8})\/series\.json/.exec(files)![1]!;
+    for (const id of cast) expect(files).toContain(`bible/${series}/cast/${id}.png`);
+    const saved = JSON.parse(
+      git(remote, ['show', `${tip}:bible/${series}/series.json`]).stdout,
+    ) as SeriesBible;
+    expect(Object.keys(saved.references ?? {}).sort()).toEqual([...cast].sort());
+  });
+
+  test('a failed AI provider falls back to the built-in artist', () => {
+    const { repo, runDir } = prepared();
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    env.FAKE_CODEX_MAKE = '1';
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(0);
+    expect(art.json.warning).toContain('built-in artist');
+    expect(art.json.panels.map((p: any) => p.source)).toEqual([
+      'builtin',
+      'builtin',
+      'builtin',
+      'builtin',
+    ]);
+    expect(
+      readdirSync(join(runDir, 'art')).filter((f) => /^panel-\d\.png$/.test(f)),
+    ).toEqual([]);
+    expect(cli(repo.root, 'comic', 'art', '--provider', 'dalle').code).toBe(1);
   });
 
   test('exports an Agent Trace record with line ranges', () => {
