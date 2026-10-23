@@ -1,0 +1,105 @@
+{
+  "v": 1,
+  "title": "Doctor, Doctor!",
+  "synopsis": "Kit teaches tracetoon doctor to say where the skill is installed and to recognize its own binary, after Glitch hides in a default parameter.",
+  "altText": "Panel 1: Sam has just installed Tracetoon and asks where it went; Kit says the doctor should know. Panel 2: Kit checks the Claude, Codex and Antigravity folders and the binary's name. Panel 3: Glitch pops out of a test, cackling that undefined became the default. Panel 4: Kit passes null instead, the tests are green, and Sam cheers that the doctor knows everything now.",
+  "panels": [
+    {
+      "beat": "ki",
+      "scene": "Sam has just run the one-command installer and looks puzzled",
+      "characters": [
+        {
+          "cast": "sam",
+          "position": "left",
+          "expression": "thinking"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sam",
+          "text": "Installed! But where did it go?"
+        },
+        {
+          "speaker": "kit",
+          "text": "Ask the doctor. Well... soon!"
+        }
+      ]
+    },
+    {
+      "beat": "sho",
+      "scene": "Kit checks each agent's skills folder and the binary's name",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Claude, Codex, Antigravity: three folders, three versions."
+        },
+        {
+          "speaker": "kit",
+          "text": "And a binary that thinks it's Bun.",
+          "kind": "thought"
+        }
+      ]
+    },
+    {
+      "beat": "ten",
+      "scene": "Glitch pops out of the new test",
+      "camera": "close",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "center",
+          "expression": "angry"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "sfx",
+          "kind": "sfx",
+          "text": "FAIL!"
+        },
+        {
+          "speaker": "glitch",
+          "text": "You passed undefined, so I became the default!"
+        }
+      ]
+    },
+    {
+      "beat": "ketsu",
+      "scene": "Kit fixes the test and everyone celebrates",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "sam",
+          "position": "right",
+          "expression": "excited"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Null means no Bun. All green!"
+        },
+        {
+          "speaker": "sam",
+          "text": "The doctor knows everything now!"
+        }
+      ]
+    }
+  ]
+}
