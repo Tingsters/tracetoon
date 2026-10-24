@@ -2,6 +2,7 @@
 import { marked } from 'marked';
 import type { Approval } from '../commands/publish.ts';
 import type { TraceDigest } from '../digest/build.ts';
+import { claimSummary, type ClaimFinding } from '../digest/claims.ts';
 
 const esc = (s: string) =>
   s
@@ -80,10 +81,15 @@ export function renderPreviewHtml(input: {
   digest: TraceDigest;
   /** The comic as it would look in a social post (image path and caption). */
   share?: { image: string; caption: string };
+  /** Advisory claim-check findings, shown beside the sentences they're about. */
+  claims?: ClaimFinding[];
 }): string {
-  const { title, body, approval, digest, share } = input;
+  const { title, body, approval, digest, share, claims = [] } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
-  const html = marked.parse(body, { async: false, gfm: true }) as string;
+  const marked_ = annotateClaims(body, claims);
+  const html = marked_.place(
+    marked.parse(marked_.body, { async: false, gfm: true }) as string,
+  );
   const findings = approval.findings.length
     ? `<p class="warn">Leak scan: ${approval.findings.map((f) => `${esc(f.kind)}×${f.count}`).join(', ')}</p>`
     : '<p class="ok">Leak scan: clean</p>';
@@ -110,6 +116,9 @@ a{color:var(--accent)}.warn{color:var(--warn)}.ok{color:var(--ok)}
 aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px}
 .evidence{color:var(--fg)}.evidence h2{font-size:16px;margin:16px 0 4px}.evidence h3{font-size:14px;margin:12px 0 4px}
 .evidence ul{margin:4px 0;padding-left:20px}.evidence li{margin:2px 0}.evidence .n{color:var(--muted)}
+.claim{font-size:11px;font-weight:600;padding:0 4px;border-radius:8px;margin-left:2px;vertical-align:super;text-decoration:none}
+.claim.contradicted{background:#ffebe9;color:#cf222e}.claim.not-established{background:#fff8c5;color:#9a6700}
+.checks{margin-top:12px;font-size:14px;color:var(--muted)}.checks li{margin:4px 0}.checks b{color:var(--fg)}
 .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;color:var(--fg)}
 .social{margin-top:24px}.social h2{font-size:16px;margin:0 0 8px}
 .phone{max-width:380px;border:1px solid var(--border);border-radius:16px;padding:12px;background:var(--code)}
@@ -118,6 +127,7 @@ aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var
 <h1 class="title">${esc(title)}</h1>
 <div class="meta">${approval.mode === 'edit' ? `Updates PR #${approval.prNumber}` : 'New pull request'} | ${esc(approval.head)} -> ${esc(approval.base)}</div>
 <div class="card">${html}</div>
+${marked_.notes}
 ${
   share
     ? `<section class="social"><h2>On a phone, shared</h2><div class="phone"><img src="${esc(share.image)}" alt="comic at phone size"><p>${esc(share.caption)}</p></div>
@@ -166,4 +176,64 @@ ${x.decisions.length ? `<b>Decisions</b>${li(x.decisions.map((p) => esc(p.text))
 <h2>Sessions</h2>${sessions.join('') || '<p class="n">No agent sessions matched.</p>'}
 <h2>Disclosure</h2>${li(d.disclosure.suggestedTrailers.map(esc), 'no AI trailer suggested')}
 </details>`;
+}
+
+const CLAIM_MARK = (n: number) => `\u27e6c${n}\u27e7`;
+
+/**
+ * Put a small numbered marker after each sentence a finding is about (only the
+ * ones worth a look: contradicted, or not established), and list them under the
+ * draft. Markers go in as plain text first and become HTML after rendering, so
+ * the description's own HTML is never trusted.
+ */
+export function annotateClaims(
+  body: string,
+  claims: ClaimFinding[],
+): { body: string; place: (html: string) => string; notes: string } {
+  const shown = claims.filter(
+    (c) => c.state === 'contradicted' || c.state === 'not established',
+  );
+  let out = body;
+  const placed: { n: number; c: ClaimFinding }[] = [];
+  shown.forEach((c) => {
+    const words = c.quote
+      .replace(/[`*_]/g, '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (words.length < 2) return;
+    // Match the sentence loosely: markdown markup and line breaks may sit between words.
+    const re = new RegExp(words.join('[\\s`*_]+').replace(/\\\.$/, ''), 'i');
+    const m = re.exec(out);
+    if (!m) return;
+    const n = placed.length + 1;
+    let end = m.index + m[0].length;
+    while (/[`*_.!?)]/.test(out[end] ?? '')) end++;
+    out = out.slice(0, end) + CLAIM_MARK(n) + out.slice(end);
+    placed.push({ n, c });
+  });
+  const place = (html: string) =>
+    placed.reduce(
+      (h, { n, c }) =>
+        h.replace(
+          CLAIM_MARK(n),
+          `<a class="claim ${c.state.replace(' ', '-')}" href="#check-${n}" title="${esc(c.detail)}">${n}</a>`,
+        ),
+      html,
+    );
+  const counts = claimSummary(claims);
+  const summary = claims.length
+    ? `${counts.observed} supported by captured evidence, ${counts['author-reported']} reported by the author, ${counts['not established']} not established, ${counts.contradicted} contradicted.`
+    : '';
+  const notes = placed.length
+    ? `<section class="checks"><p><b>Checks on the text</b> (advisory; logs can be incomplete, so "not established" is not "false"). ${summary}</p><ol>${placed
+        .map(
+          ({ n, c }) =>
+            `<li id="check-${n}"><b>${c.state}</b>: ${esc(c.detail)}${c.evidence.length ? ` <span class="n">(${c.evidence.join(', ')})</span>` : ''}</li>`,
+        )
+        .join('')}</ol></section>`
+    : summary
+      ? `<section class="checks"><p><b>Checks on the text:</b> ${summary}</p></section>`
+      : '';
+  return { body: out, place, notes };
 }

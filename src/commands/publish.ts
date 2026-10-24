@@ -13,6 +13,7 @@ import { transcript } from '../comic/script.ts';
 import type { ComicScript, SeriesBible } from '../comic/types.ts';
 import { loadConfig } from '../config.ts';
 import type { TraceDigest } from '../digest/build.ts';
+import { checkClaims, claimSummary, type ClaimFinding } from '../digest/claims.ts';
 import { assetUrl, publishAssets, type AssetFile } from '../github/assets.ts';
 import {
   contentHash,
@@ -125,7 +126,7 @@ export interface RenderOpts extends OutOpts {
 }
 
 export function renderCmd(cwd: string, opts: RenderOpts): Approval {
-  const { run } = loadRun(cwd, opts.run);
+  const { run, truth } = loadRun(cwd, opts.run);
   const digest = readJson<TraceDigest>(run, 'digest.json');
   if (!digest)
     throw new UserError('This run has no digest.json. Run `tracetoon digest` first.');
@@ -211,6 +212,15 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     renderedAt: new Date().toISOString(),
   };
   writeFileSync(join(run.dir, 'final-body.md'), body, 'utf8');
+  // Advisory: check the description's claims against the captured evidence.
+  const claims = checkClaims({
+    title,
+    body: bodyMd,
+    digest,
+    root: truth.toplevel,
+    authorText: readText(run, 'author.md'),
+  });
+  writeJson(run, 'claims.json', claims);
   const previewBody = comic
     ? body.replaceAll(COMIC_SRC, `./out/${comic.path.split(/[\\/]/).pop()}`)
     : body;
@@ -220,6 +230,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       title,
       body: previewBody,
       approval,
+      claims,
       digest,
       share: comic
         ? {
@@ -235,7 +246,18 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const previewPath = join(run.dir, 'preview.html');
   emit(
     opts,
-    { run: run.id, ...approval, previewPath, previewUrl: fileUrl(previewPath) },
+    {
+      run: run.id,
+      ...approval,
+      previewPath,
+      previewUrl: fileUrl(previewPath),
+      claims: {
+        ...claimSummary(claims),
+        findings: claims.filter(
+          (c) => c.state === 'contradicted' || c.state === 'not established',
+        ),
+      },
+    },
     () =>
       [
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
@@ -247,6 +269,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
                 : 'Fix body.md and render again.'
             }`
           : 'Leak scan: clean.',
+        claimLine(claims),
         approval.policy === 'prohibited'
           ? 'WARNING: this repository appears to prohibit AI-assisted contributions. Read the policy before posting.'
           : '',
@@ -256,6 +279,19 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         .join('\n'),
   );
   return approval;
+}
+
+/** One advisory line about the claim check, with the claims worth a look. */
+function claimLine(claims: ClaimFinding[]): string {
+  if (!claims.length) return '';
+  const c = claimSummary(claims);
+  const look = claims.filter(
+    (x) => x.state === 'contradicted' || x.state === 'not established',
+  );
+  return [
+    `Claim check (advisory): ${c.observed} supported, ${c['author-reported']} author-reported, ${c['not established']} not established, ${c.contradicted} contradicted.`,
+    ...look.map((x) => `  - ${x.state}: "${x.quote.slice(0, 90)}" (${x.detail})`),
+  ].join('\n');
 }
 
 export function previewCmd(
