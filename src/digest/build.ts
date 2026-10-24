@@ -15,6 +15,7 @@ import type { Usage } from '../trace/types.ts';
 import { clip, makeScrubber, type Scrubber } from './sanitize.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { detectInterop, type Interop } from '../git/interop.ts';
+import { splitCommands } from '../util/shell.ts';
 
 export interface DigestSession {
   ref: string;
@@ -106,9 +107,8 @@ const TEST_RUNNERS = [
 
 /** The part of a chained command that runs tests, if any. */
 export function testSegment(cmd: string): string | undefined {
-  return cmd
-    .split(/&&|\|\||;|\||\n/)
-    .map((s) => s.trim().replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
+  return splitCommands(cmd)
+    .map((s) => s.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
     .find((s) => TEST_RUNNERS.some((re) => re.test(s)));
 }
 
@@ -133,15 +133,12 @@ export function testOutputFailed(output: string | undefined): boolean {
 
 /** A short grouping key for a shell command: the program and its first argument. */
 export function commandKey(cmd: string): string {
-  const segments = cmd
-    .split(/&&|\|\||;|\||\n/)
-    .map((s) => s.trim())
-    .filter((s) => s && !/^(cd|set|export|pushd)\b/.test(s));
+  const segments = splitCommands(cmd).filter((s) => !/^(cd|set|export|pushd)\b/.test(s));
   const first = segments[0] ?? cmd.trim();
   const tokens = first
     .replace(/^[A-Z_][A-Z0-9_]*=\S*\s+/g, '')
     .split(/\s+/)
-    .filter((t) => !/^-/.test(t));
+    .filter((t) => !/^(-|<|>|\d>)/.test(t)); // flags, heredocs and redirections
   return tokens.slice(0, 2).join(' ') || first.slice(0, 40);
 }
 

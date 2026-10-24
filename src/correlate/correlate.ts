@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { isPathUnder, pathKey } from '@showtail/agent-traces/paths/pathUtil';
 import type { PrTruth } from '../git/pr.ts';
 import { leadingCd, mentionsAnyRoot, rootOf, underAnyRoot } from '../trace/pathMatch.ts';
+import { splitCommands } from '../util/shell.ts';
 import type { TraceRecord, TraceSession } from '../trace/types.ts';
 
 export const INCLUDE_AT = 0.5;
@@ -242,7 +243,7 @@ const COMMIT_MAKER =
 
 /** Does any part of this (possibly chained) command create commits? */
 function makesCommit(cmd: string): boolean {
-  return cmd.split(/&&|\|\||;|\||\n/).some((part) => COMMIT_MAKER.test(part));
+  return splitCommands(cmd).some((part) => COMMIT_MAKER.test(part));
 }
 
 /** PR commits the session made. */
