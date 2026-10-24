@@ -87,6 +87,24 @@ describe('sentences', () => {
 });
 
 describe('verification claims', () => {
+  test('a failing run on later work (after the PR head and more edits) does not contradict the PR', () => {
+    const f = checkClaims({
+      title: 't',
+      body: 'Before the commit, `bun test` passed (96 pass, 0 fail).',
+      digest: digest([
+        run({ id: 'R1', revision: 'before later edits' }),
+        run({
+          id: 'R2',
+          t: '2026-10-24T03:00:00Z',
+          outcome: 'failed',
+          summary: ['5 pass', '1 fail'],
+          revision: 'after later work',
+        }),
+      ]),
+    });
+    expect(f[0]?.state).toBe('observed');
+  });
+
   test('a passing run with no later edits: observed', () => {
     const f = check('`bun test` passed (96 pass, 0 fail).', digest([run({})]));
     expect(states(f)).toEqual(['verification:observed']);

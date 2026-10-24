@@ -28,7 +28,9 @@ export function contextNotes(
 ): ContextNote[] {
   const notes: ContextNote[] = [];
   const included = digest.sessions.filter((s) => s.band === 'included');
-  const runs = included.flatMap((s) => s.runs ?? []);
+  const runs = included
+    .flatMap((s) => s.runs ?? [])
+    .filter((r) => r.revision !== 'after later work');
   const behavior = digest.files.filter((f) => (f.role ?? 'behavior') === 'behavior');
   const behaviorAdded = behavior.reduce((n, f) => n + f.added, 0);
 
@@ -112,7 +114,9 @@ export function evidenceNotes(
       );
     lines.push('');
   }
-  const runs = included.flatMap((s) => s.runs ?? []);
+  const runs = included
+    .flatMap((s) => s.runs ?? [])
+    .filter((r) => r.revision !== 'after later work');
   const lastByKind = new Map(
     runs.map((r) => [`${r.kind}:${r.cmd.split(' ').slice(0, 2).join(' ')}`, r]),
   );

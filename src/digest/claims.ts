@@ -86,10 +86,14 @@ function runKindsFor(s: string): Run['kind'][] {
 }
 
 function allRuns(d: ClaimInput['digest']): Run[] {
-  return d.sessions
-    .flatMap((s) => s.runs ?? [])
-    .slice()
-    .sort((a, b) => (a.t ?? '').localeCompare(b.t ?? ''));
+  return (
+    d.sessions
+      .flatMap((s) => s.runs ?? [])
+      // Runs on later work (after the PR's last commit and further edits) say nothing about this PR.
+      .filter((r) => r.revision !== 'after later work')
+      .slice()
+      .sort((a, b) => (a.t ?? '').localeCompare(b.t ?? ''))
+  );
 }
 
 // ---------------------------------------------------------------- checks
