@@ -6,6 +6,7 @@ import { decodeMeta, humanPart, regionContent, regionEdited } from '../github/bo
 import { prTruth } from '../git/pr.ts';
 import { scan } from '../pipeline.ts';
 import { recentStyles } from '../github/history.ts';
+import { describeTitleRules, readTitleRules } from '../github/titleRules.ts';
 import { findRun, newRun, readJson, writeJson } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
@@ -130,6 +131,10 @@ export function contextCmd(
   }
   const template = findPrTemplate(truth.toplevel);
   const policy = detectAiPolicy(truth.toplevel);
+  const titleRules = readTitleRules(truth.toplevel, {
+    offline: opts.offline,
+    repo: truth.remote ? `${truth.remote.owner}/${truth.remote.name}` : undefined,
+  });
   const config = loadConfig(truth.toplevel);
   // The only thing read back from earlier PRs: their comic styles, so this one
   // differs. Skipped when comics are off.
@@ -158,6 +163,7 @@ export function contextCmd(
       : null,
     config,
     comic: { recentStyles: recent },
+    titleRules,
   };
   writeJson(run, 'context.json', ctx);
   emit(
@@ -184,6 +190,7 @@ export function contextCmd(
         `AI policy: ${policy.verdict}${policy.excerpts.length ? ` (${policy.excerpts.length} mention(s))` : ''}`,
         ...policy.excerpts.slice(0, 5).map((e) => `  ${e.file}:${e.line}: ${e.text}`),
         `yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting} | comic: ${config.comic ? 'on' : 'off'}`,
+        ...describeTitleRules(titleRules),
         !config.comic
           ? ''
           : config.style && config.style !== 'auto'
