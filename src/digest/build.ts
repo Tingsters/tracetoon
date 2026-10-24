@@ -281,7 +281,7 @@ export function runOutcome(
     return { outcome: 'failed', basis: 'exit status', summary };
   if (!masked) return { outcome: 'passed', basis: 'exit status', summary };
   // Type checkers print nothing when they pass.
-  if (kind === 'typecheck' && !/error/i.test(output ?? ''))
+  if (kind === 'typecheck' && !/\berror\b/i.test(output ?? ''))
     return { outcome: 'passed', basis: 'output', summary };
   if (
     summary.length &&

@@ -70,6 +70,24 @@ describe('verification runs', () => {
     });
   });
 
+  test('a type check with a hidden status passes only when it printed no errors', () => {
+    const piped = 'bun x tsc --noEmit 2>&1 | head -5';
+    expect(runOutcome(piped, 'bun x tsc --noEmit', false, '', 'typecheck')).toMatchObject(
+      {
+        outcome: 'passed',
+      },
+    );
+    expect(
+      runOutcome(
+        piped,
+        'bun x tsc --noEmit',
+        false,
+        "src/a.ts(3,1): error TS2304: Cannot find name 'x'.",
+        'typecheck',
+      ).outcome,
+    ).not.toBe('passed');
+  });
+
   test('a pipe or ; hides the status: judge by output, or admit we do not know', () => {
     const piped = 'bun test 2>&1 | tail -3';
     expect(
