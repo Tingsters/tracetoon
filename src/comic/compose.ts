@@ -1,8 +1,8 @@
 /**
  * Lays out comic pages. Two kinds:
  *  - `composePage`: text-free panel art in a grid, with Tracetoon's bubbles,
- *    a title band and a footer (v1 4-koma scripts, the built-in artist, and
- *    pages with overlay lettering);
+ *    a title band and a footer (v1 4-koma scripts and pages with overlay
+ *    lettering);
  *  - `pageWithFooter`: a whole page the image model drew, lettering included,
  *    with Tracetoon's exact footer bar underneath.
  */
@@ -15,7 +15,7 @@ const TITLE_H = 110;
 const FOOTER_H = 48;
 export const CELL = (PAGE_W - 2 * MARGIN - GUTTER) / 2; // 758
 export const PAGE_H = TITLE_H + MARGIN + 2 * CELL + GUTTER + FOOTER_H + MARGIN;
-const SRC = 800; // panel art coordinate space
+const SRC = 800; // panel art coordinate space (bubbles are placed in it, whatever the image size)
 const FONT = 'Comic Neue';
 const INK = '#2B2B33';
 
@@ -279,7 +279,7 @@ function columns(n: number): number {
 
 /**
  * The full page as SVG, with Tracetoon's bubbles over text-free art: v1 4-koma
- * scripts, the built-in artist, and pages drawn with overlay lettering.
+ * scripts and pages drawn with overlay lettering.
  */
 export function composePage(
   script: ComicScript,

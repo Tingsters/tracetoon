@@ -188,7 +188,7 @@ export function doctor(
           ? ready
               .map((p) => `${p.id}${p.approved ? ' (approved)' : ' (needs your OK)'}`)
               .join(', ')
-          : 'built-in artist (for AI art, install Codex or Antigravity, or set OPENAI_API_KEY or GEMINI_API_KEY)'
+          : 'no image route, so PRs get no comic (install Codex or Antigravity, or set OPENAI_API_KEY or GEMINI_API_KEY)'
       }`,
     );
     if (!ghV) lines.push('Install the GitHub CLI (gh) to create or update PRs.');

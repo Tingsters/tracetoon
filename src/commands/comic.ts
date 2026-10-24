@@ -1,7 +1,8 @@
 /**
  * `tracetoon comic check | art | render`: turn the agent's comic.json into a
- * finished comic page. Art can come from the host agent (files it saved to
- * art/), an image model the user agreed to, or the built-in SVG artist.
+ * finished comic page. Art comes from an image model the user agreed to, or
+ * from the host agent's own image tool (files it saved to art/). With neither,
+ * there is no comic.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,7 +35,6 @@ import {
   type CheckOpts,
   type ScriptProblem,
 } from '../comic/script.ts';
-import { panelSvg } from '../comic/svgArt.ts';
 import {
   PALETTES,
   type ComicScript,
@@ -135,40 +135,56 @@ function existingPanel(
 
 export interface ArtOpts extends OutOpts {
   run?: string;
-  provider?: 'auto' | 'builtin' | ProviderId;
+  provider?: 'auto' | ProviderId;
   consent?: boolean;
   force?: boolean;
   /** `model`: the image model letters the page (default for pages); `overlay`: Tracetoon draws bubbles. */
   lettering?: 'model' | 'overlay';
 }
 
+/** Exit code when no approved image route can draw the comic. */
+export const NO_ARTIST_EXIT = 5;
+
+/** The approved image route to use, if there is one. */
 function chooseProvider(
-  want: ArtOpts['provider'],
+  want: string | undefined,
   consented: string[],
-): { id: 'builtin' | ProviderId; hint?: string } {
-  if (want && want !== 'auto' && want !== 'builtin' && !PROVIDERS.includes(want))
+): ProviderId | undefined {
+  if (want === 'builtin')
     throw new UserError(
-      `Unknown provider "${want}". Use auto, builtin, ${PROVIDERS.join(', ')}.`,
+      `The built-in artist was removed. Use ${PROVIDERS.join(', ')}, or skip the comic.`,
     );
-  if (want === 'builtin') return { id: 'builtin' };
-  if (want && want !== 'auto') return { id: want };
-  for (const id of PROVIDERS) {
-    if (providerAvailable(id) && consented.includes(id)) return { id };
-  }
+  if (want && want !== 'auto' && !PROVIDERS.includes(want as ProviderId))
+    throw new UserError(`Unknown provider "${want}". Use auto, ${PROVIDERS.join(', ')}.`);
+  if (want && want !== 'auto') return want as ProviderId;
+  return PROVIDERS.find((id) => providerAvailable(id) && consented.includes(id));
+}
+
+/** Why there's no art, and what the user can do instead. */
+function noArtist(): UserError {
   const ready = PROVIDERS.filter(providerAvailable).map(providerInfo);
-  return {
-    id: 'builtin',
-    hint: ready.length
-      ? `AI art is available but not approved yet: ${ready
-          .map(
-            (p) =>
-              `${p.id} (sends comic scenes and character descriptions to ${p.sendsTo})`,
-          )
-          .join(
-            '; ',
-          )}. After the user agrees, run: tracetoon comic art --provider ${ready[0]!.id} --consent --force`
-      : undefined,
-  };
+  const options = [
+    ...(ready.length
+      ? [
+          `approve an image route: ${ready
+            .map(
+              (p) =>
+                `${p.id} (sends comic scenes and character descriptions to ${p.sendsTo})`,
+            )
+            .join(
+              '; ',
+            )}. After the user agrees, run: tracetoon comic art --provider ${ready[0]!.id} --consent`,
+        ]
+      : [
+          'set up an image route: install the Codex or Antigravity CLI, or set OPENAI_API_KEY or GEMINI_API_KEY',
+        ]),
+    'draw it with your own image tool: `tracetoon comic prompts` prints the prompts and where to save the images; then run `tracetoon comic render`',
+    'or skip the comic: the PR is published without one',
+  ];
+  return new UserError(
+    `No approved image route to draw the comic. Options:\n${options.map((o) => `  - ${o}`).join('\n')}`,
+    NO_ARTIST_EXIT,
+  );
 }
 
 /** The cast's reference portraits: this run's, or the series' from the assets branch. */
@@ -201,12 +217,12 @@ function castRefs(
 export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
   const { run, root, script, bible } = load(cwd, opts.run);
   let config = loadConfig(root);
-  const choice = chooseProvider(opts.provider, config.imageConsent);
-  if (choice.id !== 'builtin') {
-    const info = providerInfo(choice.id);
+  const provider = chooseProvider(opts.provider, config.imageConsent);
+  if (provider) {
+    const info = providerInfo(provider);
     if (!info.available)
       throw new UserError(`${info.label} is not available: ${info.detail}.`);
-    if (!config.imageConsent.includes(choice.id)) {
+    if (!config.imageConsent.includes(provider)) {
       if (!opts.consent) {
         throw new UserError(
           `Making the comic art with ${info.label} sends the comic's scenes, text and character descriptions (never code or log text) to ${info.sendsTo}. Ask the user once, then re-run with --consent.`,
@@ -215,80 +231,71 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       }
       config = setUserConfig(
         'imageConsent',
-        [...config.imageConsent, choice.id].join(','),
+        [...config.imageConsent, provider].join(','),
       );
     }
   }
   mkdirSync(join(run.dir, 'art'), { recursive: true });
-
-  // A page drawn whole by an image model, lettering included, unless the agent
-  // asked for overlay lettering (or there's no model).
-  const wantPage =
-    isPage(script) && choice.id !== 'builtin' && (opts.lettering ?? 'model') === 'model';
-  let warning: string | undefined;
+  const lettering = opts.lettering ?? 'model';
   let castMade: string[] = [];
   const results: { panel: number; file: string; source: string }[] = [];
 
-  if (wantPage) {
+  // A page drawn whole, lettering included: by an image model, or already saved
+  // by the host agent's own image tool. Overlay lettering uses panels instead.
+  if (isPage(script) && lettering === 'model') {
     const have = existingPage(run);
     if (have && !opts.force) {
       results.push({ panel: 0, file: have.path, source: 'existing' });
-    } else {
+    } else if (provider) {
       try {
         // Character sheets keep a sequel's cast identical. A standalone page draws
         // the cast fresh from their descriptions: attached sheets drag their own
         // art style into every page (anime sheets turned cartoon animals furry).
         if (keepsCast(script))
-          castMade = await makeCast(run, root, script, bible, choice.id as ProviderId);
-        results.push(await makePage(run, root, script, bible, choice.id as ProviderId));
+          castMade = await makeCast(run, root, script, bible, provider);
+        results.push(await makePage(run, root, script, bible, provider));
         clearPanels(run);
       } catch (e) {
-        warning = `${providerInfo(choice.id as ProviderId).label} failed (${(e as Error).message}). Used the built-in artist with overlay lettering instead.`;
+        throw new UserError(
+          `${providerInfo(provider).label} could not draw the page (${(e as Error).message}). Try again with --force, another --provider, or --lettering overlay; if it keeps failing, skip the comic.`,
+        );
       }
+    } else {
+      throw noArtist();
     }
-    if (results.length) {
-      finish('page', 'model');
-      return;
-    }
+    finish('page', 'model');
+    return;
   }
 
   // Panel mode: text-free panels, bubbles added by `comic render`.
   clearPage(run);
   const todo = script.panels
     .map((panel, i) => ({ panel, i, have: existingPanel(run, i) }))
-    .filter((p) => opts.force || !p.have || warning);
+    .filter((p) => opts.force || !p.have);
   for (const [i] of script.panels.entries()) {
     const have = existingPanel(run, i);
     if (have && !todo.some((t) => t.i === i))
       results.push({ panel: i + 1, file: have.path, source: 'existing' });
   }
-  if (choice.id !== 'builtin' && todo.length && !warning) {
+  if (todo.length) {
+    if (!provider) throw noArtist();
     try {
-      castMade = await makeCast(run, root, script, bible, choice.id);
-      await makePanels(run, root, script, bible, choice.id, todo, results);
+      castMade = await makeCast(run, root, script, bible, provider);
+      await makePanels(run, root, script, bible, provider, todo, results);
     } catch (e) {
-      warning = `${providerInfo(choice.id).label} failed (${(e as Error).message}). Used the built-in artist instead.`;
-      for (const t of todo)
-        if (!results.some((r) => r.panel === t.i + 1)) drawBuiltin(t.i);
+      // Panels already drawn are kept; a retry draws only the missing ones.
+      const missing = todo.filter((t) => !results.some((r) => r.panel === t.i + 1));
+      throw new UserError(
+        `${providerInfo(provider).label} could not draw panel${missing.length === 1 ? '' : 's'} ${missing.map((t) => t.i + 1).join(', ')} (${(e as Error).message}). Run \`tracetoon comic art\` again to draw the missing ones, or try another --provider; if it keeps failing, skip the comic.`,
+      );
     }
-  } else {
-    for (const t of todo) drawBuiltin(t.i);
   }
   finish('panels', 'overlay');
-
-  function drawBuiltin(i: number): void {
-    // An AI panel from an earlier run would otherwise win over this one.
-    for (const ext of ['png', 'jpg', 'webp'])
-      rmSync(join(run.dir, 'art', `panel-${i + 1}.${ext}`), { force: true });
-    const file = join(run.dir, 'art', `panel-${i + 1}.svg`);
-    writeFileSync(file, panelSvg(script.panels[i]!, bible, i), 'utf8');
-    results.push({ panel: i + 1, file, source: 'builtin' });
-  }
 
   function finish(mode: 'page' | 'panels', lettering: 'model' | 'overlay'): void {
     results.sort((a, b) => a.panel - b.panel);
     writeJson(run, 'art/manifest.json', {
-      provider: choice.id,
+      provider: provider ?? 'existing',
       mode,
       lettering,
       panels: results,
@@ -297,13 +304,11 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
     emit(
       opts,
       {
-        provider: choice.id,
+        provider: provider ?? 'existing',
         mode,
         lettering,
         panels: results,
         castMade,
-        hint: choice.hint,
-        warning,
       },
       () =>
         [
@@ -315,8 +320,6 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
               ? `page: ${r.source} -> ${r.file}`
               : `panel ${r.panel}: ${r.source} -> ${r.file}`,
           ),
-          warning ? `Warning: ${warning}` : '',
-          choice.hint ? `Note: ${choice.hint}` : '',
         ]
           .filter(Boolean)
           .join('\n'),
@@ -426,7 +429,6 @@ async function makePanels(
 ): Promise<void> {
   const cast = castRefs(run, root, bible, used(script));
   const save = (i: number, data: Uint8Array) => {
-    rmSync(join(run.dir, 'art', `panel-${i + 1}.svg`), { force: true });
     const file = join(run.dir, 'art', `panel-${i + 1}.${extOf(data)}`);
     writeFileSync(file, data);
     results.push({ panel: i + 1, file, source: id });
@@ -553,14 +555,21 @@ export async function comicRenderCmd(
       footerText(run, root),
     );
   } else {
-    const images: PanelImage[] = script.panels.map((panel, i) => {
-      const have = existingPanel(run, i);
-      if (have) return { mime: have.mime, data: readFileSync(have.path) };
-      return {
-        mime: 'image/svg+xml',
-        data: new TextEncoder().encode(panelSvg(panel, bible, i)),
-      };
-    });
+    const found = script.panels.map((_, i) => existingPanel(run, i));
+    const missing = found.flatMap((f, i) => (f ? [] : [i + 1]));
+    if (missing.length) {
+      const what =
+        isPage(script) && missing.length === found.length
+          ? 'this comic'
+          : `panel${missing.length === 1 ? '' : 's'} ${missing.join(', ')}`;
+      throw new UserError(
+        `No art for ${what}. Run \`tracetoon comic art\`, or save the images that \`tracetoon comic prompts\` lists, or skip the comic.`,
+      );
+    }
+    const images: PanelImage[] = found.map((f) => ({
+      mime: f!.mime,
+      data: readFileSync(f!.path),
+    }));
     const layout = readJson<Layout>(run, 'layout.json');
     svg = composePage(
       script,

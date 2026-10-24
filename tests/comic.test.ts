@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addAgents, defaultBible } from '../src/comic/bible.ts';
 import { composePage, wrap } from '../src/comic/compose.ts';
 import { svgToPng } from '../src/comic/raster.ts';
 import { checkScript, transcript } from '../src/comic/script.ts';
-import { panelSvg } from '../src/comic/svgArt.ts';
 import type { ComicScript, SeriesBible } from '../src/comic/types.ts';
 import { decodeMeta, encodeMeta, type PrMeta } from '../src/github/body.ts';
 import { buildStory, type EpisodeRef } from '../src/story/story.ts';
@@ -114,13 +113,15 @@ describe('comic pieces', () => {
     expect(lines[1]!.split(' ').length).toBeGreaterThan(1);
   });
 
-  test('builds a PNG page with the built-in artist', async () => {
+  test('builds a PNG page from panel art, with bubbles and the episode', async () => {
     const bible = defaultBible('ser_x', 'scifi', ['Claude Code']);
     const s = script(bible);
-    const images = s.panels.map((p, i) => ({
-      mime: 'image/svg+xml' as const,
-      data: new TextEncoder().encode(panelSvg(p, bible, i)),
-    }));
+    // A 1x1 PNG stands in for each panel's art.
+    const pixel = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const images = s.panels.map(() => ({ mime: 'image/png' as const, data: pixel }));
     const svg = composePage(s, bible, images, { episode: 3 });
     expect(svg).toContain('Ep. 3');
     const png = await svgToPng(svg, 800);
@@ -332,10 +333,11 @@ describe('comic end to end', () => {
   test('makes the comic, puts it on the assets branch, and links it by commit', () => {
     const { repo, remote, runDir } = prepared();
     expect(cli(repo.root, 'comic', 'check').code).toBe(0);
-    const art = cli(repo.root, 'comic', 'art');
-    expect(art.json.provider).toBe('builtin');
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.json.provider).toBe('codex');
     expect(
-      readdirSync(join(runDir, 'art')).filter((f) => f.endsWith('.svg')),
+      readdirSync(join(runDir, 'art')).filter((f) => /^panel-\d\.png$/.test(f)),
     ).toHaveLength(4);
     const rendered = cli(repo.root, 'comic', 'render');
     expect(rendered.code).toBe(0);
@@ -393,6 +395,60 @@ describe('comic end to end', () => {
     expect(git(repo.root, ['branch', '--show-current']).stdout.trim()).toBe('feature');
   });
 
+  test('no approved image route: exit 5 with the options, and the PR goes out without a comic', () => {
+    const { repo, runDir } = prepared();
+    const art = cli(repo.root, 'comic', 'art');
+    expect(art.code).toBe(5);
+    expect(art.json.error).toContain('No approved image route');
+    expect(art.json.error).toContain('tracetoon comic prompts');
+    expect(art.json.error).toContain('skip the comic');
+    expect(existsSync(join(runDir, 'art', 'panel-1.svg'))).toBe(false);
+    expect(cli(repo.root, 'comic', 'art', '--provider', 'builtin').json.error).toContain(
+      'removed',
+    );
+
+    const comic = cli(repo.root, 'comic', 'render');
+    expect(comic.code).toBe(1);
+    expect(comic.json.error).toContain('No art for panels 1, 2, 3, 4');
+
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    }).stdout;
+    expect(text).toContain('No comic: comic.json exists but no comic was drawn');
+    // Each render makes a new approval code; publish with the latest one.
+    const r = cli(repo.root, 'render');
+    expect(r.code).toBe(0);
+    expect(r.json.comicSha).toBeUndefined();
+    expect(readFileSync(join(runDir, 'final-body.md'), 'utf8')).not.toContain(
+      'tracetoon:comic-src',
+    );
+    const pub = cli(repo.root, 'publish', '--code', r.json.code, '--push');
+    expect(pub.code).toBe(0);
+    expect(pub.json.error).toBeUndefined();
+  });
+
+  test('art the host agent saved itself is used even with no approved route', () => {
+    const { repo, runDir } = prepared();
+    const pixel = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    mkdirSync(join(runDir, 'art'), { recursive: true });
+    for (let i = 1; i <= 4; i++)
+      writeFileSync(join(runDir, 'art', `panel-${i}.png`), pixel);
+    const art = cli(repo.root, 'comic', 'art');
+    expect(art.code).toBe(0);
+    expect(art.json.panels.map((p: any) => p.source)).toEqual([
+      'existing',
+      'existing',
+      'existing',
+      'existing',
+    ]);
+    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+  });
+
   test('image providers need the user to agree first', () => {
     const { repo, runDir } = prepared();
     const fake = join(runDir, 'fake.png');
@@ -414,8 +470,8 @@ describe('comic end to end', () => {
     env.GEMINI_API_KEY = 'test-key';
     env.TRACETOON_FAKE_IMAGE = fake;
     const auto = cli(repo.root, 'comic', 'art');
-    expect(auto.json.provider).toBe('builtin');
-    expect(auto.json.hint).toContain('--consent');
+    expect(auto.code).toBe(5);
+    expect(auto.json.error).toContain('tracetoon comic art --provider gemini --consent');
     const refused = cli(repo.root, 'comic', 'art', '--provider', 'gemini', '--force');
     expect(refused.code).toBe(4);
     const ok = cli(
@@ -498,23 +554,29 @@ describe('comic end to end', () => {
     expect(Object.keys(saved.references ?? {}).sort()).toEqual([...cast].sort());
   });
 
-  test('a failed AI provider falls back to the built-in artist', () => {
+  test('a failed image route is reported, not covered up', () => {
     const { repo, runDir } = prepared();
     env.TRACETOON_CODEX_BIN = FAKE_CODEX;
     env.FAKE_CODEX_MAKE = '1';
     const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
-    expect(art.code).toBe(0);
-    expect(art.json.warning).toContain('built-in artist');
-    expect(art.json.panels.map((p: any) => p.source)).toEqual([
-      'builtin',
-      'builtin',
-      'builtin',
-      'builtin',
-    ]);
+    expect(art.code).toBe(1);
+    expect(art.json.error).toContain('could not draw panels 1, 2, 3, 4');
+    expect(art.json.error).toContain('skip the comic');
     expect(
-      readdirSync(join(runDir, 'art')).filter((f) => /^panel-\d\.png$/.test(f)),
+      readdirSync(join(runDir, 'art')).filter((f) => /^panel-\d\.(png|svg)$/.test(f)),
     ).toEqual([]);
     expect(cli(repo.root, 'comic', 'art', '--provider', 'dalle').code).toBe(1);
+
+    // A whole page that fails is reported the same way.
+    const bible = JSON.parse(
+      readFileSync(join(runDir, 'bible.json'), 'utf8'),
+    ) as SeriesBible;
+    writeFileSync(join(runDir, 'comic.json'), JSON.stringify(pageScript(bible)));
+    env.FAKE_CODEX_MAKE = '0';
+    const page = cli(repo.root, 'comic', 'art', '--force');
+    expect(page.code).toBe(1);
+    expect(page.json.error).toContain('could not draw the page');
+    expect(existsSync(join(runDir, 'art', 'page.png'))).toBe(false);
   });
 
   test('a page is drawn whole with its lettering, then gets the footer bar', () => {
@@ -597,7 +659,10 @@ describe('comic end to end', () => {
     expect(
       cli(repo.root, 'context', '--offline', '--run', runDir.split(/[\\/]/).pop()!).code,
     ).toBe(0);
-    expect(cli(repo.root, 'comic', 'art').code).toBe(0);
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    expect(cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent').code).toBe(
+      0,
+    );
     expect(cli(repo.root, 'comic', 'render').code).toBe(0);
 
     const r = cli(repo.root, 'render');

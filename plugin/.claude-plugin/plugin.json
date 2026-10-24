@@ -1,6 +1,6 @@
 {
   "name": "tracetoon",
-  "version": "1.0.0-rc.13",
+  "version": "1.0.0-rc.14",
   "description": "PR descriptions and 4-panel comics from the agent session logs already on your machine, with a preview you approve before anything is posted.",
   "author": {
     "name": "Tingsters"

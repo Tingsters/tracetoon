@@ -115,9 +115,9 @@ Turn it off at whichever level you need. Any "off" wins:
    Codex or Antigravity CLI already on your machine (your own login, no key), or
    OpenAI or Gemini with an API key. Tracetoon adds a footer bar (`owner/repo
    #N · made with Tracetoon`). Character sheets keep the cast recognizable, and
-   a comic recaps an earlier one only when it's a real sequel. Without AI, the
-   built-in artist draws it. `tracetoon comic reroll` redraws it in another
-   style.
+   a comic recaps an earlier one only when it's a real sequel. Without an image
+   route, the PR simply has no comic. `tracetoon comic reroll` redraws it in
+   another style.
 5. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text in an existing PR is kept), scans it for leaks and
    prints an approval code.
@@ -175,8 +175,9 @@ Nothing is sent until you agree once per route; the agent asks you, then runs
 `tracetoon comic art --provider <route> --consent`. Prompts contain only the
 comic's scenes and character descriptions. `tracetoon doctor` shows which routes
 exist and which you have approved. To stop using one, remove it from
-`imageConsent` with `tracetoon config set imageConsent <list>`. If a route
-fails, the built-in artist draws the panels instead.
+`imageConsent` with `tracetoon config set imageConsent <list>`. With no
+approved route, or if a route keeps failing, the PR is published without a
+comic.
 
 ## Develop
 
