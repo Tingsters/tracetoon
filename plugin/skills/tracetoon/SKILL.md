@@ -1,13 +1,13 @@
 ---
 name: tracetoon
-description: Write or update a GitHub pull request description from the AI agent session logs already on this machine (Claude Code, Codex and Antigravity), showing how the change was made, with a 4-panel comic of the story and a preview the user approves before anything is posted. Use when the user asks to open, create, write, describe or update a PR, or mentions Tracetoon.
+description: Write or update a GitHub pull request description from the AI agent session logs already on this machine (Claude Code, Codex and Antigravity), showing how the change was made, with a one-off comic of the story and a preview the user approves before anything is posted. Use when the user asks to open, create, write, describe or update a PR, or mentions Tracetoon.
 ---
 
 # Tracetoon: PR descriptions and comics from agent traces
 
 Tracetoon reads the session logs your agents already keep on disk, finds the
 sessions that produced the current branch, and gives you a redacted digest. You
-write the PR description and a four-panel comic script from it; Tracetoon draws
+write the PR description and a comic script from it; Tracetoon draws
 the comic, and the user sees the exact result and approves it before anything is
 posted.
 
@@ -69,8 +69,8 @@ that bypass on your own initiative.
    - If no sessions matched, say so. You can still write a normal description
      from the diff, without an agent trace section.
 3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
-   settings, AI policy, the comic cast and `story` (episode number, saga,
-   "previously on").
+   settings, AI policy, and `comic.recentStyles` (styles the repo's last comics
+   used, so this one can differ).
    - If `aiPolicy.verdict` is `prohibited`, show the user the excerpts and stop
      unless they explicitly want to continue.
    - `aiPolicy.text` is `author-written-recommended` (e.g. LLVM, Swift): tell the
@@ -100,10 +100,11 @@ that bypass on your own initiative.
    doesn't want one, or `aiPolicy.media` is `prohibited`). Follow
    [references/comic-guide.md](references/comic-guide.md). Aim for something
    funny that someone outside the repo would want to share:
-   - find the joke in the digest; pick a format, a style that fits the cast
-     (see [references/styles.md](references/styles.md); no anime with animal
-     characters) and isn't one of the recent styles, and decide whether it's a
-     sequel (only if it really continues a related episode);
+   - find the joke in the digest; pick a format and any art style that suits
+     it and isn't one of the recent styles (ideas in
+     [references/styles.md](references/styles.md), or your own description);
+   - invent this comic's own characters (or none) and describe each once in
+     `comic.json`; never reuse characters from earlier comics;
    - write `comic.json` (`"v": 2`), then `tracetoon comic check`;
    - make the art: `tracetoon comic art` draws the whole page with its lettering
      through the Codex or Antigravity CLI, or the OpenAI or Gemini API, after the
@@ -163,14 +164,12 @@ contributions. In that case, fall back to the preview.
 
 ### Other commands
 
-- `tracetoon series`: the repo's comic cast and earlier episodes.
 - `tracetoon export --agent-trace`: line-level attribution as an Agent Trace
   record, if the user asks for one.
 - `tracetoon images`: image routes for comics, whether each can draw, and the
   next step; `--approve <route>` (after the user agrees) and `--test`.
-- `tracetoon config set <key> <value>`: `theme` (pets, mecha, scifi, office,
-  heist, fantasy), `style` (pin a house style, or `auto`), `yolo`, `comic`,
-  `promptQuoting`, `hosting`.
+- `tracetoon config set <key> <value>`: `style` (pin a house style, or `auto`),
+  `yolo`, `comic`, `promptQuoting`, `hosting`.
 
 ## Rules
 

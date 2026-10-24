@@ -1,22 +1,15 @@
 /** Checks a comic script before any art is made. */
 import { formatById, FORMATS } from './formats.ts';
-import { STYLES, styleById, styleClash } from './styles.ts';
-import {
-  ASPECTS,
-  BEATS,
-  EXPRESSIONS,
-  PALETTES,
-  type ComicScript,
-  type SeriesBible,
-} from './types.ts';
+import { styleById } from './styles.ts';
+import { ASPECTS, BEATS, EXPRESSIONS, PALETTES, type ComicScript } from './types.ts';
 
-/** Words per line in a v1 script (Tracetoon wraps them into bubbles). */
-export const MAX_WORDS = 14;
 /** Words per text item on a page: the model letters them, so keep them short. */
 export const MAX_ITEM_WORDS = 12;
 /** All the words on a page, headline included: it has to read on a phone. */
 export const MAX_PAGE_WORDS = 50;
 export const MAX_HEADLINE_WORDS = 6;
+export const MAX_CHARACTERS = 6;
+export const MAX_STYLE_CHARS = 120;
 
 export interface ScriptProblem {
   where: string;
@@ -26,16 +19,14 @@ export interface ScriptProblem {
 }
 
 export interface CheckOpts {
-  /** Style ids of the repo's latest comics, newest first. */
+  /** Styles of the repo's latest comics, newest first. */
   recentStyles?: string[];
   /** A style the user pinned in config (always allowed, never a repeat). */
   pinnedStyle?: string;
-  allowAnimalAnime?: boolean;
 }
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
-
-export const isPage = (s: Pick<ComicScript, 'v'>) => s.v === 2;
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Every piece of text the model is asked to letter, in reading order. */
 export function pageText(s: ComicScript): string[] {
@@ -47,126 +38,128 @@ export function pageText(s: ComicScript): string[] {
 
 export const errors = (ps: ScriptProblem[]) => ps.filter((p) => p.severity !== 'warning');
 
-export function checkScript(
-  script: unknown,
-  bible: SeriesBible,
-  opts: CheckOpts = {},
-): ScriptProblem[] {
+export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProblem[] {
   const out: ScriptProblem[] = [];
   const bad = (where: string, problem: string) => out.push({ where, problem });
   const warn = (where: string, problem: string) =>
     out.push({ where, problem, severity: 'warning' });
   if (typeof script !== 'object' || script === null)
     return [{ where: 'comic.json', problem: 'is not a JSON object' }];
-  const s = script as Partial<ComicScript>;
-  const page = s.v === 2;
-  if (s.v !== 1 && s.v !== 2) bad('v', 'must be 1 (4-koma) or 2 (page)');
+  const s = script as Partial<ComicScript> & { v?: unknown };
+  if (s.v !== 2)
+    bad(
+      'v',
+      s.v === 1
+        ? 'the fixed 4-panel format (v1) was removed; write a page ("v": 2) with its own characters'
+        : 'must be 2',
+    );
   for (const key of ['title', 'synopsis', 'altText'] as const) {
     if (typeof s[key] !== 'string' || !s[key]!.trim()) bad(key, 'is required');
   }
 
-  if (!page) {
-    if (!Array.isArray(s.panels) || s.panels.length !== 4) {
-      bad('panels', 'must have exactly 4 panels (setup, development, twist, resolution)');
-      return out;
-    }
-  } else {
-    const format = formatById(s.format);
-    if (!format) bad('format', `must be one of ${FORMATS.map((f) => f.id).join(', ')}`);
-    if (s.format === 'custom' && !s.layout?.trim())
-      bad('layout', 'is required for a custom format: describe the page');
-    if (!Array.isArray(s.panels) || s.panels.length < 1 || s.panels.length > 6) {
-      bad('panels', 'must have 1 to 6 panels');
-      return out;
-    }
-    if (
-      format &&
-      (s.panels.length < format.panels[0] || s.panels.length > format.panels[1])
-    )
-      warn(
-        'panels',
-        `${format.name} usually has ${format.panels[0]}–${format.panels[1]} panels; you have ${s.panels.length}`,
-      );
-    if (s.aspect && !ASPECTS.includes(s.aspect))
-      bad('aspect', `must be one of ${ASPECTS.join(', ')}`);
-    const style = styleById(s.style);
-    if (!style) bad('style', `must be one of ${STYLES.map((x) => x.id).join(', ')}`);
-    if (opts.pinnedStyle && s.style !== opts.pinnedStyle)
+  const format = formatById(s.format);
+  if (!format) bad('format', `must be one of ${FORMATS.map((f) => f.id).join(', ')}`);
+  if (s.format === 'custom' && !s.layout?.trim())
+    bad('layout', 'is required for a custom format: describe the page');
+  if (!Array.isArray(s.panels) || s.panels.length < 1 || s.panels.length > 6) {
+    bad('panels', 'must have 1 to 6 panels');
+    return out;
+  }
+  if (
+    format &&
+    (s.panels.length < format.panels[0] || s.panels.length > format.panels[1])
+  )
+    warn(
+      'panels',
+      `${format.name} usually has ${format.panels[0]}–${format.panels[1]} panels; you have ${s.panels.length}`,
+    );
+  if (s.aspect && !ASPECTS.includes(s.aspect))
+    bad('aspect', `must be one of ${ASPECTS.join(', ')}`);
+
+  // Any art style: an idea by id, or the agent's own words.
+  if (typeof s.style !== 'string' || !s.style.trim())
+    bad('style', 'is required: a style idea id (see styles.md) or your own description');
+  else if (s.style.length > MAX_STYLE_CHARS)
+    bad('style', `keep it under ${MAX_STYLE_CHARS} characters`);
+  else {
+    if (opts.pinnedStyle && !same(s.style, opts.pinnedStyle))
       bad('style', `this repo pins the style "${opts.pinnedStyle}" (config style)`);
-    if (s.palette && !PALETTES.includes(s.palette))
-      bad('palette', `must be one of ${PALETTES.join(', ')}`);
-    if (style && s.palette && !style.palettes.includes(s.palette))
-      warn('palette', `${style.name} is usually ${style.palettes.join(' or ')}`);
-    const headline = s.headline ?? s.title ?? '';
-    if (words(headline) > MAX_HEADLINE_WORDS)
-      bad('headline', `has ${words(headline)} words; keep it to ${MAX_HEADLINE_WORDS}`);
-    if (s.continuity && !['standalone', 'sequel', 'new-arc'].includes(s.continuity.mode))
-      bad('continuity.mode', 'must be standalone, sequel or new-arc');
-    if (s.continuity?.mode === 'sequel' && !s.continuity.of?.length)
-      bad('continuity.of', 'a sequel names the PR numbers it follows');
-    if (style) {
-      const used = [
-        ...new Set(s.panels.flatMap((p) => (p.characters ?? []).map((c) => c.cast))),
-      ]
-        .map((id) => bible.cast.find((c) => c.id === id))
-        .filter((c): c is SeriesBible['cast'][number] => !!c);
-      const clash = styleClash(style, used, { allowAnimalAnime: opts.allowAnimalAnime });
-      if (clash && opts.pinnedStyle !== style.id) bad('style', clash);
-      const recent = (opts.recentStyles ?? []).slice(0, 3);
-      if (recent.includes(style.id) && opts.pinnedStyle !== style.id)
-        warn(
-          'style',
-          `${style.name} was used in one of the last ${recent.length} comics; pick something fresh (or keep it for a sequel)`,
-        );
-    }
-    const total = pageText(s as ComicScript).reduce((n, t) => n + words(t), 0);
-    if (total > MAX_PAGE_WORDS)
-      bad(
-        'panels',
-        `the page has ${total} words; keep it to ${MAX_PAGE_WORDS} so it reads on a phone`,
+    const recent = (opts.recentStyles ?? []).slice(0, 3);
+    if (!opts.pinnedStyle && recent.some((r) => same(r, s.style!)))
+      warn(
+        'style',
+        `"${s.style}" was used in one of the last ${recent.length} comics; pick something fresh`,
       );
   }
+  if (s.palette && !PALETTES.includes(s.palette))
+    bad('palette', `must be one of ${PALETTES.join(', ')}`);
+  const idea = styleById(s.style);
+  if (idea && s.palette && !idea.palettes.includes(s.palette))
+    warn('palette', `${idea.name} is usually ${idea.palettes.join(' or ')}`);
+  const headline = s.headline ?? s.title ?? '';
+  if (words(headline) > MAX_HEADLINE_WORDS)
+    bad('headline', `has ${words(headline)} words; keep it to ${MAX_HEADLINE_WORDS}`);
 
-  const castIds = new Set(bible.cast.map((c) => c.id));
-  const maxChars = page ? 4 : 3;
-  const maxLines = page ? 4 : 3;
-  const maxWords = page ? MAX_ITEM_WORDS : MAX_WORDS;
-  (s.panels ?? []).forEach((p, i) => {
+  // Characters are invented for this comic and described once.
+  const names = new Set<string>();
+  if (s.characters !== undefined && !Array.isArray(s.characters))
+    bad('characters', 'must be a list of { name, description }');
+  for (const [i, c] of (Array.isArray(s.characters) ? s.characters : []).entries()) {
+    if (!c?.name?.trim()) bad(`characters[${i}].name`, 'is required');
+    else if (names.has(c.name.toLowerCase()))
+      bad(`characters[${i}].name`, `"${c.name}" is listed twice`);
+    else names.add(c.name.toLowerCase());
+    if (!c?.description?.trim())
+      bad(`characters[${i}].description`, 'describe what this character looks like');
+  }
+  if (names.size > MAX_CHARACTERS)
+    bad('characters', `at most ${MAX_CHARACTERS} characters per comic`);
+  const listed = [...names].join(', ') || 'none listed';
+
+  const total = pageText(s as ComicScript).reduce((n, t) => n + words(t), 0);
+  if (total > MAX_PAGE_WORDS)
+    bad(
+      'panels',
+      `the page has ${total} words; keep it to ${MAX_PAGE_WORDS} so it reads on a phone`,
+    );
+
+  s.panels.forEach((p, i) => {
     const at = `panels[${i}]`;
-    if (!page && p.beat !== BEATS[i]) bad(`${at}.beat`, `should be "${BEATS[i]}"`);
-    if (page && p.beat && !BEATS.includes(p.beat))
+    if (p.beat && !BEATS.includes(p.beat))
       bad(`${at}.beat`, `must be one of ${BEATS.join(', ')} (or left out)`);
     if (!p.scene?.trim()) bad(`${at}.scene`, 'is required');
     if (!Array.isArray(p.characters)) bad(`${at}.characters`, 'must be a list');
     for (const [j, c] of (p.characters ?? []).entries()) {
-      if (!castIds.has(c.cast))
+      if (!c?.name || !names.has(c.name.toLowerCase()))
         bad(
-          `${at}.characters[${j}].cast`,
-          `"${c.cast}" is not in the cast (${[...castIds].join(', ')})`,
+          `${at}.characters[${j}].name`,
+          `"${c?.name ?? ''}" isn't in this comic's characters (${listed})`,
         );
-      if (!['left', 'center', 'right'].includes(c.position))
+      if (!['left', 'center', 'right'].includes(c?.position))
         bad(`${at}.characters[${j}].position`, 'must be left, center or right');
-      if (c.expression && !EXPRESSIONS.includes(c.expression))
+      if (c?.expression && !EXPRESSIONS.includes(c.expression))
         bad(
           `${at}.characters[${j}].expression`,
           `must be one of ${EXPRESSIONS.join(', ')}`,
         );
     }
-    if ((p.characters ?? []).length > maxChars)
-      bad(`${at}.characters`, `at most ${maxChars} characters per panel`);
+    if ((p.characters ?? []).length > 4)
+      bad(`${at}.characters`, 'at most 4 characters per panel');
     if (!Array.isArray(p.dialogue)) bad(`${at}.dialogue`, 'must be a list');
-    if ((p.dialogue ?? []).length > maxLines)
-      bad(`${at}.dialogue`, `at most ${maxLines} lines per panel`);
+    if ((p.dialogue ?? []).length > 4) bad(`${at}.dialogue`, 'at most 4 lines per panel');
     for (const [j, d] of (p.dialogue ?? []).entries()) {
       const w = `${at}.dialogue[${j}]`;
       const narration = d.speaker === 'caption' || d.kind === 'sfx' || d.kind === 'sign';
-      if (!narration && !castIds.has(d.speaker))
-        bad(`${w}.speaker`, `"${d.speaker}" is not in the cast`);
+      if (!narration && !names.has(String(d.speaker).toLowerCase()))
+        bad(
+          `${w}.speaker`,
+          `"${d.speaker}" isn't in this comic's characters (${listed})`,
+        );
       if (d.kind && !['speech', 'thought', 'caption', 'sfx', 'sign'].includes(d.kind))
         bad(`${w}.kind`, 'must be speech, thought, caption, sfx or sign');
       if (!d.text?.trim()) bad(`${w}.text`, 'is empty');
-      else if (words(d.text) > maxWords)
-        bad(`${w}.text`, `has ${words(d.text)} words; keep it to ${maxWords}`);
+      else if (words(d.text) > MAX_ITEM_WORDS)
+        bad(`${w}.text`, `has ${words(d.text)} words; keep it to ${MAX_ITEM_WORDS}`);
       if (/https?:\/\/|@\w/.test(d.text ?? ''))
         bad(`${w}.text`, 'must not contain links or @mentions');
     }
@@ -175,9 +168,8 @@ export function checkScript(
 }
 
 /** A plain-text transcript of the comic for the PR body (accessibility). */
-export function transcript(script: ComicScript, bible: SeriesBible): string {
-  const name = (id: string) => bible.cast.find((c) => c.id === id)?.name ?? id;
-  const head = script.v === 2 && script.headline ? `**${script.headline}**\n\n` : '';
+export function transcript(script: ComicScript): string {
+  const head = script.headline ? `**${script.headline}**\n\n` : '';
   return (
     head +
     script.panels
@@ -189,7 +181,7 @@ export function transcript(script: ComicScript, bible: SeriesBible): string {
               ? `**${d.text}**`
               : d.kind === 'sign'
                 ? `[${d.text}]`
-                : `**${name(d.speaker)}:** ${d.text}`,
+                : `**${d.speaker}:** ${d.text}`,
         );
         return `${i + 1}. ${p.scene}${lines.length ? '\n   ' + lines.join('\n   ') : ''}`;
       })

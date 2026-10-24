@@ -7,7 +7,7 @@
     {
       "name": "tracetoon",
       "source": "./plugin",
-      "description": "PR descriptions and 4-panel comics from your Claude Code, Codex and Antigravity session logs, with an approval step."
+      "description": "PR descriptions and one-off comics from your Claude Code, Codex and Antigravity session logs, with an approval step."
     }
   ]
 }

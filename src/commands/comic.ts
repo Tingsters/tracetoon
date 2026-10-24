@@ -2,7 +2,8 @@
  * `tracetoon comic check | art | render`: turn the agent's comic.json into a
  * finished comic page. Art comes from an image model the user agreed to, or
  * from the host agent's own image tool (files it saved to art/). With neither,
- * there is no comic.
+ * there is no comic. Each comic stands alone: its characters and style are
+ * its own.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,10 +14,9 @@ import {
   type PanelImage,
 } from '../comic/compose.ts';
 import { FORMATS, formatById } from '../comic/formats.ts';
-import { fittingStyles, STYLES, styleById, styleClash } from '../comic/styles.ts';
+import { freshStyles, styleById } from '../comic/styles.ts';
 import {
   artPrompt,
-  castPrompt,
   generateImages,
   imageMime,
   pagePrompt,
@@ -31,22 +31,15 @@ import { routeStatuses, setupAdvice, usable } from '../comic/routes.ts';
 import {
   checkScript,
   errors,
-  isPage,
   pageText,
   type CheckOpts,
   type ScriptProblem,
 } from '../comic/script.ts';
-import {
-  PALETTES,
-  type ComicScript,
-  type Palette,
-  type SeriesBible,
-} from '../comic/types.ts';
+import { PALETTES, type ComicScript, type Palette } from '../comic/types.ts';
 import { loadConfig, setUserConfig } from '../config.ts';
-import { readAsset } from '../github/assets.ts';
+import { repoWeb } from '../github/history.ts';
 import { prTruth } from '../git/pr.ts';
 import { findRun, readJson, writeJson, type Run } from '../run.ts';
-import { repoWeb, type Story } from '../story/story.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
 const EXT_MIME: Record<string, PanelImage['mime']> = {
@@ -61,17 +54,15 @@ interface Loaded {
   run: Run;
   root: string;
   script: ComicScript;
-  bible: SeriesBible;
 }
 
 /** What the script check needs beyond the script: pinned style, recent styles. */
 function checkOptsFor(run: Run, root: string): CheckOpts {
   const config = loadConfig(root);
-  const story = readJson<{ story?: Story }>(run, 'context.json')?.story;
+  const ctx = readJson<{ comic?: { recentStyles?: string[] } }>(run, 'context.json');
   return {
     pinnedStyle: config.style && config.style !== 'auto' ? config.style : undefined,
-    allowAnimalAnime: config.allowAnimalAnime,
-    recentStyles: story?.recentStyles ?? [],
+    recentStyles: ctx?.comic?.recentStyles ?? [],
   };
 }
 
@@ -86,30 +77,26 @@ function describe(problems: ScriptProblem[]): string {
 function load(cwd: string, runId?: string): Loaded {
   const truth = prTruth(cwd, { noGh: true });
   const run = findRun(truth.gitDir, runId);
-  const bible = readJson<SeriesBible>(run, 'bible.json');
-  if (!bible)
-    throw new UserError('No bible.json in this run. Run `tracetoon context` first.');
   const script = readJson<ComicScript>(run, 'comic.json');
   if (!script)
     throw new UserError(
       `Write the comic script to ${join(run.dir, 'comic.json')} first.`,
     );
-  const problems = errors(checkScript(script, bible, checkOptsFor(run, truth.toplevel)));
+  const problems = errors(checkScript(script, checkOptsFor(run, truth.toplevel)));
   if (problems.length)
     throw new UserError(`comic.json has problems:\n${describe(problems)}`);
-  return { run, root: truth.toplevel, script, bible };
+  return { run, root: truth.toplevel, script };
 }
 
 export function comicCheckCmd(cwd: string, opts: OutOpts & { run?: string }): void {
   const truth = prTruth(cwd, { noGh: true });
   const run = findRun(truth.gitDir, opts.run);
-  const bible = readJson<SeriesBible>(run, 'bible.json');
   const script = readJson<unknown>(run, 'comic.json');
-  if (!bible || script === undefined)
+  if (script === undefined)
     throw new UserError(
-      'Need bible.json (from `tracetoon context`) and comic.json in the run.',
+      `Write the comic script to ${join(run.dir, 'comic.json')} first.`,
     );
-  const problems = checkScript(script, bible, checkOptsFor(run, truth.toplevel));
+  const problems = checkScript(script, checkOptsFor(run, truth.toplevel));
   const blocking = errors(problems);
   emit(opts, { ok: blocking.length === 0, problems }, () =>
     [
@@ -139,7 +126,7 @@ export interface ArtOpts extends OutOpts {
   provider?: 'auto' | ProviderId;
   consent?: boolean;
   force?: boolean;
-  /** `model`: the image model letters the page (default for pages); `overlay`: Tracetoon draws bubbles. */
+  /** `model`: the image model letters the page (default); `overlay`: Tracetoon draws bubbles. */
   lettering?: 'model' | 'overlay';
 }
 
@@ -190,35 +177,8 @@ function noArtist(root: string): UserError {
   );
 }
 
-/** The cast's reference portraits: this run's, or the series' from the assets branch. */
-function castRefs(
-  run: Run,
-  root: string,
-  bible: SeriesBible,
-  ids: string[],
-): Map<string, Reference> {
-  const refs = new Map<string, Reference>();
-  for (const id of ids) {
-    const name = bible.cast.find((c) => c.id === id)?.name ?? id;
-    const local = join(run.dir, 'art', `cast-${id}.png`);
-    const series = bible.references?.[id];
-    const data = existsSync(local)
-      ? new Uint8Array(readFileSync(local))
-      : series
-        ? readAsset(root, series)
-        : undefined;
-    if (data)
-      refs.set(id, {
-        mime: imageMime(data),
-        data,
-        label: `${name} (character reference)`,
-      });
-  }
-  return refs;
-}
-
 export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
-  const { run, root, script, bible } = load(cwd, opts.run);
+  const { run, root, script } = load(cwd, opts.run);
   let config = loadConfig(root);
   const provider = chooseProvider(opts.provider, config.imageConsent);
   if (provider) {
@@ -240,23 +200,17 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
   }
   mkdirSync(join(run.dir, 'art'), { recursive: true });
   const lettering = opts.lettering ?? 'model';
-  let castMade: string[] = [];
   const results: { panel: number; file: string; source: string }[] = [];
 
   // A page drawn whole, lettering included: by an image model, or already saved
   // by the host agent's own image tool. Overlay lettering uses panels instead.
-  if (isPage(script) && lettering === 'model') {
+  if (lettering === 'model') {
     const have = existingPage(run);
     if (have && !opts.force) {
       results.push({ panel: 0, file: have.path, source: 'existing' });
     } else if (provider) {
       try {
-        // Character sheets keep a sequel's cast identical. A standalone page draws
-        // the cast fresh from their descriptions: attached sheets drag their own
-        // art style into every page (anime sheets turned cartoon animals furry).
-        if (keepsCast(script))
-          castMade = await makeCast(run, root, script, bible, provider);
-        results.push(await makePage(run, root, script, bible, provider));
+        results.push(await makePage(run, script, provider));
         clearPanels(run);
       } catch (e) {
         throw new UserError(
@@ -283,8 +237,7 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
   if (todo.length) {
     if (!provider) throw noArtist(root);
     try {
-      castMade = await makeCast(run, root, script, bible, provider);
-      await makePanels(run, root, script, bible, provider, todo, results);
+      await makePanels(run, script, provider, todo, results);
     } catch (e) {
       // Panels already drawn are kept; a retry draws only the missing ones.
       const missing = todo.filter((t) => !results.some((r) => r.panel === t.i + 1));
@@ -297,45 +250,24 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
 
   function finish(mode: 'page' | 'panels', lettering: 'model' | 'overlay'): void {
     results.sort((a, b) => a.panel - b.panel);
-    writeJson(run, 'art/manifest.json', {
+    const summary = {
       provider: provider ?? 'existing',
       mode,
       lettering,
       panels: results,
-      castMade,
-    });
-    emit(
-      opts,
-      {
-        provider: provider ?? 'existing',
-        mode,
-        lettering,
-        panels: results,
-        castMade,
-      },
-      () =>
-        [
-          ...castMade.map(
-            (id) => `character sheet: ${id} -> ${join(run.dir, 'art', `cast-${id}.png`)}`,
-          ),
-          ...results.map((r) =>
-            r.panel === 0
-              ? `page: ${r.source} -> ${r.file}`
-              : `panel ${r.panel}: ${r.source} -> ${r.file}`,
-          ),
-        ]
-          .filter(Boolean)
-          .join('\n'),
+    };
+    writeJson(run, 'art/manifest.json', summary);
+    emit(opts, summary, () =>
+      results
+        .map((r) =>
+          r.panel === 0
+            ? `page: ${r.source} -> ${r.file}`
+            : `panel ${r.panel}: ${r.source} -> ${r.file}`,
+        )
+        .join('\n'),
     );
   }
 }
-
-const used = (script: ComicScript) => [
-  ...new Set(script.panels.flatMap((p) => p.characters.map((c) => c.cast))),
-];
-
-/** Does this page continue a story, so its cast must look exactly like before? */
-export const keepsCast = (script: ComicScript) => script.continuity?.mode === 'sequel';
 
 /** The whole-page image, if one was drawn (by a provider or the host agent). */
 function existingPage(run: Run): { path: string; mime: PanelImage['mime'] } | undefined {
@@ -364,28 +296,15 @@ const extOf = (data: Uint8Array) =>
       ? 'webp'
       : 'png';
 
-/** Draw the whole page, lettering included, with the character sheets attached. */
+/** Draw the whole page, lettering included. */
 async function makePage(
   run: Run,
-  root: string,
   script: ComicScript,
-  bible: SeriesBible,
   id: ProviderId,
 ): Promise<{ panel: number; file: string; source: string }> {
-  const refs = keepsCast(script)
-    ? [...castRefs(run, root, bible, used(script)).values()]
-    : [];
   const aspect = script.aspect ?? formatById(script.format)?.aspect ?? '4:3';
   const [img] = await generateImages(id, [
-    {
-      prompt: pagePrompt(
-        script,
-        bible,
-        refs.map((r) => r.label ?? 'a character'),
-      ),
-      refs,
-      aspect,
-    },
+    { prompt: pagePrompt(script), refs: [], aspect },
   ]);
   clearPage(run);
   const file = join(run.dir, 'art', `page.${extOf(img!)}`);
@@ -393,137 +312,70 @@ async function makePage(
   return { panel: 0, file, source: id };
 }
 
-/** Draw reference portraits for cast members in this comic who don't have one yet. */
-async function makeCast(
-  run: Run,
-  root: string,
-  script: ComicScript,
-  bible: SeriesBible,
-  id: ProviderId,
-): Promise<string[]> {
-  const ids = used(script);
-  const have = castRefs(run, root, bible, ids);
-  const missing = ids.filter((c) => !have.has(c));
-  if (!missing.length) return [];
-  const images = await generateImages(
-    id,
-    missing.map((c) => ({
-      prompt: castPrompt(
-        bible.cast.find((m) => m.id === c)!,
-        bible,
-      ),
-      refs: [],
-    })),
-  );
-  missing.forEach((c, k) =>
-    writeFileSync(join(run.dir, 'art', `cast-${c}.png`), images[k]!),
-  );
-  return missing;
-}
-
 async function makePanels(
   run: Run,
-  root: string,
   script: ComicScript,
-  bible: SeriesBible,
   id: ProviderId,
   todo: { panel: ComicScript['panels'][number]; i: number }[],
   results: { panel: number; file: string; source: string }[],
 ): Promise<void> {
-  const cast = castRefs(run, root, bible, used(script));
   const save = (i: number, data: Uint8Array) => {
     const file = join(run.dir, 'art', `panel-${i + 1}.${extOf(data)}`);
     writeFileSync(file, data);
     results.push({ panel: i + 1, file, source: id });
   };
   if (id === 'codex' || id === 'antigravity') {
-    // One agent session draws every panel, with all the character sheets attached.
-    const refs = [...cast.values()];
+    // One agent session draws every panel, so they match each other.
     const images = await generateImages(
       id,
-      todo.map((t) => ({ prompt: artPrompt(t.panel, bible, t.i, script), refs })),
+      todo.map((t) => ({ prompt: artPrompt(t.panel, t.i, script), refs: [] })),
     );
     todo.forEach((t, k) => save(t.i, images[k]!));
     return;
   }
-  // APIs: one call per panel, with that panel's characters; the first panel
-  // drawn then anchors the look of the rest.
+  // APIs: one call per panel; the first panel drawn anchors the look of the rest.
   let anchor: Reference | undefined;
   for (const t of todo) {
-    const refs = t.panel.characters
-      .map((c) => cast.get(c.cast))
-      .filter((r): r is Reference => !!r);
-    if (anchor) refs.push(anchor);
     const [img] = await generateImages(id, [
-      { prompt: artPrompt(t.panel, bible, t.i, script), refs },
+      { prompt: artPrompt(t.panel, t.i, script), refs: anchor ? [anchor] : [] },
     ]);
     save(t.i, img!);
     anchor ??= {
       mime: imageMime(img!),
       data: img!,
-      label: 'the first panel of this comic (match its style)',
+      label: 'the first panel of this comic (match its characters and style)',
     };
   }
 }
 
 /** Prompts for the host agent's own image tool (Codex image_gen, Antigravity). */
-export function comicPromptsCmd(cwd: string, opts: OutOpts & { run?: string }): void {
-  const { run, root, script, bible } = load(cwd, opts.run);
-  const ids = used(script);
-  const have = castRefs(run, root, bible, ids);
-  const cast = ids
-    .filter((c) => !have.has(c))
-    .map((c) => ({
-      cast: c,
-      saveTo: join(run.dir, 'art', `cast-${c}.png`),
-      prompt: castPrompt(
-        bible.cast.find((m) => m.id === c)!,
-        bible,
-      ),
-    }));
-  const references = [...have.keys()].map((c) => {
-    const local = join(run.dir, 'art', `cast-${c}.png`);
-    if (!existsSync(local)) writeFileSync(local, have.get(c)!.data);
-    return { cast: c, path: local };
-  });
-  const prompts = isPage(script)
-    ? [
-        {
-          panel: 0,
-          saveTo: join(run.dir, 'art', 'page.png'),
-          prompt: pagePrompt(
-            script,
-            bible,
-            references.map((r) => `${r.cast} (character reference)`),
-          ),
-        },
-      ]
-    : script.panels.map((p, i) => ({
-        panel: i + 1,
-        saveTo: join(run.dir, 'art', `panel-${i + 1}.png`),
-        prompt: artPrompt(p, bible, i, script),
-      }));
-  emit(
-    opts,
-    { cast, references, prompts, text: isPage(script) ? pageText(script) : undefined },
-    () =>
-      [
-        ...(cast.length
-          ? [
-              'Character sheets first (then use them as references):',
-              ...cast.map((c) => `${c.cast} -> ${c.saveTo}\n${c.prompt}`),
-              '',
-            ]
-          : []),
-        ...(references.length
-          ? [`Character references: ${references.map((r) => r.path).join(', ')}`, '']
-          : []),
-        ...prompts.map((p) =>
-          p.panel === 0
-            ? `Whole page -> ${p.saveTo}\n${p.prompt}`
-            : `Panel ${p.panel} -> ${p.saveTo}\n${p.prompt}`,
-        ),
-      ].join('\n\n'),
+export function comicPromptsCmd(
+  cwd: string,
+  opts: OutOpts & { run?: string; lettering?: 'model' | 'overlay' },
+): void {
+  const { run, script } = load(cwd, opts.run);
+  const prompts =
+    (opts.lettering ?? 'model') === 'model'
+      ? [
+          {
+            panel: 0,
+            saveTo: join(run.dir, 'art', 'page.png'),
+            prompt: pagePrompt(script),
+          },
+        ]
+      : script.panels.map((p, i) => ({
+          panel: i + 1,
+          saveTo: join(run.dir, 'art', `panel-${i + 1}.png`),
+          prompt: artPrompt(p, i, script),
+        }));
+  emit(opts, { prompts, text: pageText(script) }, () =>
+    prompts
+      .map((p) =>
+        p.panel === 0
+          ? `Whole page -> ${p.saveTo}\n${p.prompt}`
+          : `Panel ${p.panel} -> ${p.saveTo}\n${p.prompt}`,
+      )
+      .join('\n\n'),
   );
 }
 
@@ -546,11 +398,9 @@ export async function comicRenderCmd(
   cwd: string,
   opts: OutOpts & { run?: string },
 ): Promise<void> {
-  const { run, root, script, bible } = load(cwd, opts.run);
-  const story = readJson<{ story?: Story }>(run, 'context.json')?.story;
+  const { run, root, script } = load(cwd, opts.run);
   const manifest = readJson<{ mode?: string }>(run, 'art/manifest.json');
-  const page =
-    isPage(script) && manifest?.mode !== 'panels' ? existingPage(run) : undefined;
+  const page = manifest?.mode !== 'panels' ? existingPage(run) : undefined;
   let svg: string;
   if (page) {
     svg = pageWithFooter(
@@ -562,7 +412,7 @@ export async function comicRenderCmd(
     const missing = found.flatMap((f, i) => (f ? [] : [i + 1]));
     if (missing.length) {
       const what =
-        isPage(script) && missing.length === found.length
+        missing.length === found.length
           ? 'this comic'
           : `panel${missing.length === 1 ? '' : 's'} ${missing.join(', ')}`;
       throw new UserError(
@@ -574,16 +424,7 @@ export async function comicRenderCmd(
       data: readFileSync(f!.path),
     }));
     const layout = readJson<Layout>(run, 'layout.json');
-    svg = composePage(
-      script,
-      bible,
-      images,
-      {
-        episode: story?.episode,
-        footer: isPage(script) ? footerText(run, root) : undefined,
-      },
-      layout,
-    );
+    svg = composePage(script, images, { footer: footerText(run, root) }, layout);
   }
   mkdirSync(join(run.dir, 'out'), { recursive: true });
   const svgPath = join(run.dir, 'out', 'comic.svg');
@@ -630,47 +471,27 @@ export interface RerollOpts extends OutOpts {
 }
 
 /**
- * Keep the story, change the look: pick a fresh style that suits the cast (or
- * the one given), update comic.json, and redraw with the approved provider.
+ * Keep the story, change the look: a style idea not used lately (or the style
+ * given, in any words), then redraw with the approved provider.
  */
 export async function comicRerollCmd(cwd: string, opts: RerollOpts): Promise<void> {
-  const { run, root, script, bible } = load(cwd, opts.run);
-  if (!isPage(script))
-    throw new UserError('Reroll works on comic pages (comic.json with "v": 2).');
+  const { run, root, script } = load(cwd, opts.run);
   const check = checkOptsFor(run, root);
   if (check.pinnedStyle && opts.style && opts.style !== check.pinnedStyle)
     throw new UserError(
       `This repo pins the style "${check.pinnedStyle}" (config style).`,
     );
-  const cast = used(script)
-    .map((id) => bible.cast.find((c) => c.id === id))
-    .filter((c): c is SeriesBible['cast'][number] => !!c);
-  let style = opts.style ? styleById(opts.style) : undefined;
-  if (opts.style && !style)
-    throw new UserError(
-      `Unknown style "${opts.style}". Use one of: ${STYLES.map((x) => x.id).join(', ')}`,
-    );
-  if (style) {
-    const clash = styleClash(style, cast, { allowAnimalAnime: check.allowAnimalAnime });
-    if (clash && check.pinnedStyle !== style.id) throw new UserError(clash);
-  } else if (check.pinnedStyle) {
-    throw new UserError(
-      `This repo pins the style "${check.pinnedStyle}"; there is nothing to reroll to.`,
-    );
-  } else {
-    const fresh = fittingStyles(
-      cast,
-      [script.style ?? '', ...(check.recentStyles ?? [])],
-      {
-        allowAnimalAnime: check.allowAnimalAnime,
-      },
-    ).filter((s) => s.id !== script.style);
+  let style = opts.style?.trim();
+  if (!style) {
+    if (check.pinnedStyle)
+      throw new UserError(
+        `This repo pins the style "${check.pinnedStyle}"; there is nothing to reroll to.`,
+      );
     // Some randomness among the freshest few, so rerolls don't always land on the same one.
-    const pool = fresh.slice(0, 4);
-    style = pool[Math.floor(Math.random() * pool.length)];
-    if (!style) throw new UserError('No other style suits this cast.');
+    const pool = freshStyles(check.recentStyles, script.style).slice(0, 4);
+    style = pool[Math.floor(Math.random() * pool.length)]!.id;
   }
-  const next: ComicScript = { ...script, style: style.id };
+  const next: ComicScript = { ...script, style };
   if (opts.format) {
     if (!formatById(opts.format))
       throw new UserError(
@@ -679,16 +500,19 @@ export async function comicRerollCmd(cwd: string, opts: RerollOpts): Promise<voi
     next.format = opts.format;
     if (opts.format !== 'custom') delete next.aspect;
   }
+  const idea = styleById(style);
   if (opts.palette) {
     if (!PALETTES.includes(opts.palette as Palette))
       throw new UserError(
         `Unknown palette "${opts.palette}". Use one of: ${PALETTES.join(', ')}`,
       );
     next.palette = opts.palette as Palette;
-  } else if (!next.palette || !style.palettes.includes(next.palette)) {
-    next.palette = style.palettes[0];
+  } else if (idea && (!next.palette || !idea.palettes.includes(next.palette))) {
+    next.palette = idea.palettes[0];
+  } else if (!idea) {
+    delete next.palette;
   }
-  const problems = errors(checkScript(next, bible, { ...check, recentStyles: [] }));
+  const problems = errors(checkScript(next, { ...check, recentStyles: [] }));
   if (problems.length)
     throw new UserError(`The rerolled comic has problems:\n${describe(problems)}`);
   writeJson(run, 'comic.json', next);

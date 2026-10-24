@@ -62,13 +62,3 @@ export function gh(cwd: string, args: string[]): ExecResult {
     env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' },
   });
 }
-
-/** Git command whose stdout is binary (e.g. `cat-file blob` of an image). */
-export function gitBytes(cwd: string, args: string[]): Uint8Array | undefined {
-  const r = spawnSync('git', args, {
-    cwd,
-    maxBuffer: 256 * 1024 * 1024,
-    windowsHide: true,
-  });
-  return r.status === 0 && r.stdout ? new Uint8Array(r.stdout) : undefined;
-}

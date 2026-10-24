@@ -5,7 +5,7 @@ import { findPrTemplate, detectAiPolicy } from '../github/repoContext.ts';
 import { decodeMeta, humanPart, regionContent, regionEdited } from '../github/body.ts';
 import { prTruth } from '../git/pr.ts';
 import { scan } from '../pipeline.ts';
-import { buildStory, loadBible, previousEpisodes } from '../story/story.ts';
+import { recentStyles } from '../github/history.ts';
 import { findRun, newRun, readJson, writeJson } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
@@ -131,20 +131,9 @@ export function contextCmd(
   const template = findPrTemplate(truth.toplevel);
   const policy = detectAiPolicy(truth.toplevel);
   const config = loadConfig(truth.toplevel);
-  const digest = readJson<TraceDigest>(run, 'digest.json');
-  const agents = digest?.disclosure.agents ?? [];
-  const { bible, isNew: bibleIsNew } = loadBible(truth, config.theme, agents, {
-    offline: opts.offline,
-  });
-  const story = buildStory({
-    truth,
-    series: bible.series,
-    episodes: previousEpisodes(truth, { offline: opts.offline }),
-    sessionRefs:
-      digest?.sessions.filter((s) => s.band === 'included').map((s) => s.ref) ?? [],
-    linkedPrs: digest?.linkedPrs ?? [],
-  });
-  writeJson(run, 'bible.json', bible);
+  // The only thing read back from earlier PRs: their comic styles, so this one
+  // differs. Skipped when comics are off.
+  const recent = config.comic ? recentStyles(truth, { offline: opts.offline }) : [];
   const ctx = {
     repo: truth.remote ? `${truth.remote.owner}/${truth.remote.name}` : null,
     head: truth.head,
@@ -168,15 +157,7 @@ export function contextCmd(
         }
       : null,
     config,
-    story,
-    bibleIsNew,
-    cast: bible.cast.map((c) => ({
-      id: c.id,
-      name: c.name,
-      role: c.role,
-      agent: c.agent,
-      species: c.species,
-    })),
+    comic: { recentStyles: recent },
   };
   writeJson(run, 'context.json', ctx);
   emit(
@@ -202,22 +183,14 @@ export function contextCmd(
         `Template: ${template ? template.path : 'none'}`,
         `AI policy: ${policy.verdict}${policy.excerpts.length ? ` (${policy.excerpts.length} mention(s))` : ''}`,
         ...policy.excerpts.slice(0, 5).map((e) => `  ${e.file}:${e.line}: ${e.text}`),
-        `Theme: ${config.theme} | yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting}`,
-        `Comic: "${bible.title}" episode ${story.episode}${story.saga ? `, saga with ${story.saga.prs.map((p) => `#${p.number}`).join(', ')}` : ''}`,
-        `Cast: ${bible.cast.map((c) => `${c.id} (${c.name}${c.agent ? `, ${c.agent}` : ''})`).join(', ')}`,
-        ...story.previously.map((p) => `Saga so far: ${p}`),
-        config.style && config.style !== 'auto'
-          ? `Style: pinned to ${config.style}`
-          : `Recent styles (pick something fresh): ${story.recentStyles?.join(', ') || 'none yet'}`,
-        ...(story.related?.length
-          ? [
-              'Related episodes (make this a sequel only if it really continues one; otherwise standalone):',
-              ...story.related.map(
-                (r) =>
-                  `  #${r.number} ${r.title} (${r.why}${r.style ? `; ${r.style}` : ''})${r.synopsis ? `: ${r.synopsis}` : ''}`,
-              ),
-            ]
-          : ['Related episodes: none, so make it standalone (or a new arc).']),
-      ].join('\n'),
+        `yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting} | comic: ${config.comic ? 'on' : 'off'}`,
+        !config.comic
+          ? ''
+          : config.style && config.style !== 'auto'
+            ? `Comic style: pinned to ${config.style}`
+            : `Comic: invent this PR's own characters, and pick a style unlike the recent ones (${recent.join(', ') || 'none yet'})`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
   );
 }

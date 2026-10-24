@@ -1,7 +1,5 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
-import { STYLES, styleById } from './comic/styles.ts';
-import { THEMES, type Theme } from './comic/types.ts';
 import {
   loadConfig,
   setUserConfig,
@@ -22,7 +20,6 @@ import {
   comicRenderCmd,
 } from './commands/comic.ts';
 import { exportCmd } from './commands/export.ts';
-import { seriesShowCmd } from './commands/series.ts';
 import {
   hookInstallCmd,
   hookUninstallCmd,
@@ -135,18 +132,20 @@ program
   .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
   .action((o) => publishCmd(cwd, { ...g(), ...o }));
 
-const comic = program.command('comic').description('make the 4-panel comic for this PR');
+const comic = program.command('comic').description("make this PR's comic");
 comic
   .command('check')
-  .description('validate comic.json against the series cast')
+  .description('check comic.json before any art is made')
   .option('--run <id>', 'run id (default: latest)')
   .action((o) => comicCheckCmd(cwd, { ...g(), ...o }));
 comic
   .command('prompts')
-  .description(
-    "print character-sheet and panel prompts for the host agent's own image tool",
-  )
+  .description("print the page (or panel) prompts for the host agent's own image tool")
   .option('--run <id>', 'run id (default: latest)')
+  .option(
+    '--lettering <how>',
+    'model (one whole page, default) or overlay (text-free panels)',
+  )
   .action((o) => comicPromptsCmd(cwd, { ...g(), ...o }));
 comic
   .command('art')
@@ -168,7 +167,10 @@ comic
     'redraw the page in a different style (or the one given), keeping the story',
   )
   .option('--run <id>', 'run id (default: latest)')
-  .option('--style <id>', 'use this style instead of picking a fresh one')
+  .option(
+    '--style <style>',
+    'use this style (an idea id or any description) instead of a fresh one',
+  )
   .option('--format <id>', 'also switch to this format')
   .option(
     '--palette <name>',
@@ -180,12 +182,6 @@ comic
   .description('lay out panels and speech bubbles into out/comic.png')
   .option('--run <id>', 'run id (default: latest)')
   .action((o) => comicRenderCmd(cwd, { ...g(), ...o }));
-
-program
-  .command('series')
-  .description("show this repo's comic series: cast, theme and earlier episodes")
-  .option('--offline', 'do not contact GitHub')
-  .action((o) => seriesShowCmd(cwd, { ...g(), ...o }));
 
 program
   .command('export')
@@ -243,12 +239,6 @@ config.command('set <key> <value>').action((key: string, value: string) => {
     throw new UserError(
       `Unknown setting "${key}". Known: ${Object.keys(DEFAULTS).join(', ')}`,
     );
-  if (key === 'style' && value !== 'auto' && !styleById(value))
-    throw new UserError(
-      `Unknown style "${value}". Use auto, or one of: ${STYLES.map((x) => x.id).join(', ')}`,
-    );
-  if (key === 'theme' && !THEMES.includes(value as Theme))
-    throw new UserError(`Unknown theme "${value}". Use one of: ${THEMES.join(', ')}`);
   const c = setUserConfig(key as keyof Config, value);
   emit(g(), c, () => `${key} = ${String(c[key as keyof Config])}`);
 });

@@ -1,13 +1,13 @@
 /**
- * The `tracetoon-assets` branch: an orphan branch in the repo that holds comic
- * images and the series bible. It is written with git plumbing only (blobs,
+ * The `tracetoon-assets` branch: an orphan branch in the repo that holds the
+ * comic images linked from PRs. Nothing is read back from it. It is written with git plumbing only (blobs,
  * trees, commits, push), so the user's working tree and branch never change.
  * Images are linked by commit, so a published PR always shows the exact file.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { git, gitBytes } from '../util/exec.ts';
+import { git } from '../util/exec.ts';
 
 export const ASSETS_BRANCH = 'tracetoon-assets';
 const LOCAL_REF = 'refs/tracetoon/assets';
@@ -33,17 +33,6 @@ export function fetchAssets(root: string, remote = 'origin'): boolean {
 export function assetsHead(root: string): string | undefined {
   const r = git(root, ['rev-parse', '--verify', '--quiet', `${LOCAL_REF}^{commit}`]);
   return r.ok ? r.stdout.trim() : undefined;
-}
-
-/** Read a file from the (already fetched) assets branch. */
-export function readAsset(root: string, path: string): Uint8Array | undefined {
-  if (!assetsHead(root)) return undefined;
-  return gitBytes(root, ['cat-file', 'blob', `${LOCAL_REF}:${path}`]);
-}
-
-export function readAssetText(root: string, path: string): string | undefined {
-  const b = readAsset(root, path);
-  return b ? new TextDecoder().decode(b) : undefined;
 }
 
 /** Add files on top of the assets branch and push. Returns the new commit. */

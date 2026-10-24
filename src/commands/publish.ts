@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
 import { transcript } from '../comic/script.ts';
-import type { ComicScript, SeriesBible } from '../comic/types.ts';
+import type { ComicScript } from '../comic/types.ts';
 import { loadConfig } from '../config.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { checkClaims, claimSummary, type ClaimFinding } from '../digest/claims.ts';
@@ -27,7 +27,7 @@ import type { AiPolicy } from '../github/repoContext.ts';
 import { defaultBase, prTruth, type PrTruth } from '../git/pr.ts';
 import { renderPreviewHtml } from '../preview/html.ts';
 import { findRun, readJson, readText, writeJson, type Run } from '../run.ts';
-import { biblePath, repoWeb, type Story } from '../story/story.ts';
+import { repoWeb } from '../github/history.ts';
 import { gh, git, run as exec } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { renderedComic } from './comic.ts';
@@ -40,8 +40,6 @@ const COMIC_MARKER = '{{tracetoon:comic}}';
 interface Context {
   aiPolicy: AiPolicy;
   existingPr: { number: number; url: string; title: string; body: string } | null;
-  story?: Story;
-  bibleIsNew?: boolean;
   config?: { disclosure?: 'assisted-by' | 'co-authored-by' | 'none' };
 }
 
@@ -122,33 +120,15 @@ function loadRun(cwd: string, runId?: string): { run: Run; truth: PrTruth } {
   return { run: findRun(truth.gitDir, runId), truth };
 }
 
-/**
- * The "previously" line. A page recaps only when the agent made it a sequel; a
- * 4-koma recaps its saga (stacked or linked PRs). Unrelated PRs never get one.
- */
-export function previouslyFor(script: ComicScript, story?: Story): string[] {
-  if (!story) return [];
-  if (script.v !== 2) return story.previously;
-  if (script.continuity?.mode !== 'sequel') return [];
-  return (script.continuity.of ?? []).map((n) => {
-    const r = story.related?.find((e) => e.number === n);
-    const saga = story.saga?.prs.find((p) => p.number === n);
-    const synopsis = r?.synopsis ?? saga?.synopsis;
-    return synopsis ? `#${n}: ${synopsis}` : `sequel to #${n}`;
-  });
-}
-
 /** The comic as it appears in the body: image, then a collapsed transcript. */
-function comicBlock(script: ComicScript, bible: SeriesBible, story?: Story): string {
-  const recap = previouslyFor(script, story);
-  const prev = recap.length ? `\n\n<sub>Previously: ${recap.join(' · ')}</sub>` : '';
+function comicBlock(script: ComicScript): string {
   const alt = script.altText.replace(/[\[\]\n]/g, ' ').trim();
-  return `<p align="center"><img src="${COMIC_SRC}" alt="${alt.replace(/"/g, "'")}" width="760"></p>${prev}
+  return `<p align="center"><img src="${COMIC_SRC}" alt="${alt.replace(/"/g, "'")}" width="760"></p>
 
 <details>
-<summary>Comic transcript${story ? ` (${bible.title}, episode ${story.episode})` : ''}</summary>
+<summary>Comic transcript</summary>
 
-${transcript(script, bible)}
+${transcript(script)}
 
 </details>`;
 }
@@ -178,14 +158,13 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     digest.pr.head;
 
   const script = readJson<ComicScript>(run, 'comic.json');
-  const bible = readJson<SeriesBible>(run, 'bible.json');
   const mediaBanned = ctx.aiPolicy.media === 'prohibited';
   const comic = opts.noComic || mediaBanned ? undefined : renderedComic(run);
   // The description comes first; the comic is the closing beat, unless the
   // writer placed it with the marker. A short disclosure goes last.
   let content = defuseMentions(bodyMd).replace(COMIC_MARKER, '');
-  if (comic && script && bible) {
-    const block = comicBlock(script, bible, ctx.story);
+  if (comic && script) {
+    const block = comicBlock(script);
     content = bodyMd.includes(COMIC_MARKER)
       ? defuseMentions(bodyMd).replace(COMIC_MARKER, block)
       : `${content.trim()}\n\n${block}`;
@@ -197,33 +176,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   );
   if (disclosure) content = `${content.trim()}\n\n${disclosure}`;
 
-  const story = ctx.story;
+  // Only what's read back later: the comic's style (so the next one differs)
+  // and a hash of the text as posted (to keep edits made on GitHub).
   const meta: PrMeta = {
     v: 1,
-    tool: `tracetoon@${TOOL_VERSION}`,
-    sessions: digest.sessions.filter((s) => s.band === 'included').map((s) => s.ref),
-    digest: digestHash(digest),
-    generatedAt: new Date().toISOString(),
-    ...(story && bible
-      ? {
-          series: story.series,
-          episode: story.episode,
-          theme: bible.theme,
-          ...(story.saga
-            ? { saga: story.saga.id, prev: story.saga.prs.map((p) => p.number) }
-            : {}),
-        }
-      : {}),
-    ...(script?.synopsis ? { synopsis: script.synopsis.slice(0, 280) } : {}),
-    ...(script?.v === 2
-      ? {
-          style: script.style,
-          format: script.format,
-          palette: script.palette,
-          continuity: script.continuity?.mode ?? 'standalone',
-        }
-      : {}),
-    ...(story?.areas?.length ? { areas: story.areas.slice(0, 12) } : {}),
+    ...(comic && script?.style ? { style: script.style } : {}),
     contentSha: contentHash(content),
   };
   const block = managedBlock(content, meta);
@@ -521,30 +478,10 @@ function hostComic(
       'Cannot work out the GitHub URL for this repo to host the comic. Set an `origin` GitHub remote.',
     );
   }
-  const ctx = readJson<Context>(run, 'context.json');
-  const script = readJson<ComicScript>(run, 'comic.json');
-  const bible = readJson<SeriesBible>(run, 'bible.json');
-  const series = ctx?.story?.series ?? bible?.series ?? 'series';
-  const folder = `episodes/${series}/${approval.prNumber ?? approval.head.replace(/[^\w.-]+/g, '-')}-${approval.comicSha.slice(0, 7)}`;
+  // Only the image goes on the assets branch: nothing a later PR reads back.
+  const folder = `comics/${approval.prNumber ?? approval.head.replace(/[^\w.-]+/g, '-')}-${approval.comicSha.slice(0, 7)}`;
   const ext = approval.comicFile.endsWith('.svg') ? 'svg' : 'png';
   const files: AssetFile[] = [{ path: `${folder}/comic.${ext}`, data }];
-  if (script)
-    files.push({ path: `${folder}/script.json`, data: JSON.stringify(script, null, 2) });
-  // Character sheets drawn in this run join the series, so later episodes reuse them.
-  const artDir = join(run.dir, 'art');
-  const castMade = (existsSync(artDir) ? readdirSync(artDir) : [])
-    .map((f) => /^cast-(.+)\.png$/.exec(f)?.[1])
-    .filter((id): id is string => !!id && !!bible && !bible.references?.[id]);
-  if (bible) {
-    for (const id of castMade) {
-      const local = join(artDir, `cast-${id}.png`);
-      const path = `bible/${bible.series}/cast/${id}.png`;
-      files.push({ path, data: readFileSync(local) });
-      bible.references = { ...bible.references, [id]: path };
-    }
-  }
-  if (bible && (ctx?.bibleIsNew || castMade.length))
-    files.push({ path: biblePath(bible.series), data: JSON.stringify(bible, null, 2) });
   try {
     const commit = publishAssets(truth.toplevel, files, `tracetoon: ${folder}`);
     return {

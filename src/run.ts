@@ -2,7 +2,14 @@
  * A run's scratch folder: `<git dir>/tracetoon/runs/<id>/`. Git never tracks it and
  * it is not a history: each run is self-contained and safe to delete.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 export interface Run {
@@ -24,8 +31,24 @@ export function newRun(gitDir: string): Run {
   let n = 1;
   while (existsSync(dir)) dir = join(runsDir(gitDir), `${id}-${n++}`);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(runsDir(gitDir), 'latest'), dir.split(/[\\/]/).pop()!, 'utf8');
-  return { id: dir.split(/[\\/]/).pop()!, dir };
+  const name = dir.split(/[\\/]/).pop()!;
+  writeFileSync(join(runsDir(gitDir), 'latest'), name, 'utf8');
+  pruneRuns(gitDir, name);
+  return { id: name, dir };
+}
+
+/** How many run folders to keep; older ones are scratch nobody reads. */
+export const KEEP_RUNS = 20;
+
+/** Delete all but the newest run folders (never `keep`). */
+export function pruneRuns(gitDir: string, keep?: string): void {
+  const base = runsDir(gitDir);
+  const runs = readdirSync(base, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && /^\d{8}-\d{6}(-\d+)?$/.test(d.name))
+    .map((d) => d.name)
+    .sort();
+  for (const name of runs.slice(0, Math.max(0, runs.length - KEEP_RUNS)))
+    if (name !== keep) rmSync(join(base, name), { recursive: true, force: true });
 }
 
 /** The named run, or the latest one. */

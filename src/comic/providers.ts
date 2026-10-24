@@ -19,15 +19,13 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { formatById } from './formats.ts';
-import { castKind, paletteText, styleById } from './styles.ts';
+import { paletteText, styleById, styleLettering, styleText } from './styles.ts';
 import {
   BEAT_MEANING,
   type Aspect,
-  type CastMember,
   type ComicScript,
   type Dialogue,
   type Panel,
-  type SeriesBible,
 } from './types.ts';
 
 export type ProviderId = 'openai' | 'gemini' | 'codex' | 'antigravity';
@@ -37,7 +35,7 @@ export const PROVIDERS: ProviderId[] = ['codex', 'antigravity', 'openai', 'gemin
 export interface Reference {
   mime: string;
   data: Uint8Array;
-  /** What the image shows, e.g. "Kit (character reference)". */
+  /** What the image shows, e.g. "the first panel of this comic". */
   label?: string;
 }
 
@@ -76,44 +74,36 @@ export type Readiness = 'ready' | 'not ready' | 'unknown';
 
 // ---------------------------------------------------------------- prompts
 
-/** Who a character is, species first, so a human never comes out as an animal. */
-function kind(c: CastMember): string {
-  return c.species === 'human' ? 'a human person, not an animal' : `a ${c.species}`;
+/** Things image models must avoid, on every comic. */
+export const NEGATIVE =
+  'no real people, no celebrity likenesses, no logos or brand marks, no watermarks, no signatures';
+
+function characterLine(script: ComicScript, name: string): string {
+  const c = script.characters?.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  return c ? `${c.name}: ${c.description}` : name;
 }
 
-function castLine(c: CastMember): string {
-  return `${c.name} (${kind(c)}): ${c.description}; main colors ${c.palette.slice(0, 2).join(' and ')}`;
-}
-
-function who(panel: Panel, bible: SeriesBible): string {
+function who(panel: Panel, script: ComicScript): string {
   return panel.characters
-    .map((pc) => {
-      const c = bible.cast.find((m) => m.id === pc.cast);
-      if (!c) return '';
-      return `${castLine(c)}, on the ${pc.position}${pc.expression ? `, looking ${pc.expression}` : ''}${pc.pose ? `, ${pc.pose}` : ''}`;
-    })
-    .filter(Boolean)
+    .map(
+      (pc) =>
+        `${characterLine(script, pc.name)}, on the ${pc.position}${pc.expression ? `, looking ${pc.expression}` : ''}${pc.pose ? `, ${pc.pose}` : ''}`,
+    )
     .join('; ');
 }
 
-/** The art style for a script: its own style and palette for a page, else the series style. */
-export function styleText(bible: SeriesBible, script?: ComicScript): string {
-  const style = script?.v === 2 ? styleById(script.style) : undefined;
-  if (!style) return bible.style;
-  return `${style.prompt}; ${paletteText(script!.palette ?? style.palettes[0]!, script!.accent)}`;
+/** The art style for a script, with its palette. */
+export function scriptStyle(script: ComicScript): string {
+  const palette = script.palette ?? styleById(script.style)?.palettes[0];
+  return `${styleText(script.style)}${palette ? `; ${paletteText(palette, script.accent)}` : ''}`;
 }
 
-/** One text-free panel; Tracetoon adds the bubbles (v1 scripts, or overlay lettering). */
-export function artPrompt(
-  panel: Panel,
-  bible: SeriesBible,
-  index: number,
-  script?: ComicScript,
-): string {
-  const people = who(panel, bible);
-  const count = script?.panels.length ?? 4;
+/** One text-free panel; Tracetoon adds the bubbles (overlay lettering). */
+export function artPrompt(panel: Panel, index: number, script: ComicScript): string {
+  const people = who(panel, script);
+  const count = script.panels.length;
   return [
-    `${styleText(bible, script)}.`,
+    `${scriptStyle(script)}.`,
     panel.beat
       ? `Panel ${index + 1} of ${count} (${BEAT_MEANING[panel.beat]}) of a comic.`
       : `Panel ${index + 1} of ${count} of a comic.`,
@@ -121,9 +111,9 @@ export function artPrompt(
     people ? `Characters: ${people}.` : '',
     panel.camera ? `Camera: ${panel.camera} shot.` : '',
     panel.artPrompt ? `${panel.artPrompt}.` : '',
-    'Square image. Keep the top third as plain, uncluttered background so speech bubbles can be added later.',
-    'Keep every character consistent with the reference images if any are given.',
-    `Strictly: ${bible.negative}.`,
+    'Square image. Keep the top third as plain, uncluttered background so speech bubbles can be added later. No text, no letters.',
+    'If a reference image is given, keep every character and the art style consistent with it.',
+    `Strictly: ${NEGATIVE}.`,
   ]
     .filter(Boolean)
     .join(' ');
@@ -136,12 +126,11 @@ const SHAPE: Record<Aspect, string> = {
   '3:4': 'portrait 3:4',
 };
 
-function textLine(d: Dialogue, bible: SeriesBible): string {
-  const name = bible.cast.find((c) => c.id === d.speaker)?.name ?? d.speaker;
+function textLine(d: Dialogue): string {
   const q = `"${d.text}"`;
   switch (d.kind) {
     case 'thought':
-      return `${name} thinks (thought bubble): ${q}`;
+      return `${d.speaker} thinks (thought bubble): ${q}`;
     case 'caption':
       return `caption box: ${q}`;
     case 'sfx':
@@ -151,7 +140,7 @@ function textLine(d: Dialogue, bible: SeriesBible): string {
     default:
       return d.speaker === 'caption'
         ? `caption box: ${q}`
-        : `${name} says (speech balloon): ${q}`;
+        : `${d.speaker} says (speech balloon): ${q}`;
   }
 }
 
@@ -159,21 +148,20 @@ function textLine(d: Dialogue, bible: SeriesBible): string {
  * One finished page, lettering included: the image model draws the panels, the
  * headline and every line of text, so the words are part of the art.
  */
-export function pagePrompt(
-  script: ComicScript,
-  bible: SeriesBible,
-  refLabels: string[] = [],
-): string {
-  const style = styleById(script.style);
+export function pagePrompt(script: ComicScript): string {
   const format = formatById(script.format);
   const aspect = script.aspect ?? format?.aspect ?? '4:3';
   const headline = script.headline ?? script.title;
+  const cast = (script.characters ?? []).map((c) => `${c.name}: ${c.description}`);
   const panels = script.panels.map((p, i) => {
-    const people = who(p, bible);
-    const text = (p.dialogue ?? []).map((d) => textLine(d, bible));
+    const people = p.characters.map(
+      (pc) =>
+        `${pc.name} on the ${pc.position}${pc.expression ? `, looking ${pc.expression}` : ''}${pc.pose ? `, ${pc.pose}` : ''}`,
+    );
+    const text = (p.dialogue ?? []).map(textLine);
     return [
       `Panel ${i + 1}: ${p.scene}.`,
-      people ? `Characters: ${people}.` : '',
+      people.length ? `Characters: ${people.join('; ')}.` : '',
       p.camera ? `${p.camera} shot.` : '',
       p.artPrompt ? `${p.artPrompt}.` : '',
       text.length ? `Text: ${text.join('; ')}.` : 'No text in this panel.',
@@ -183,44 +171,20 @@ export function pagePrompt(
   });
   return [
     `A finished comic page, ${SHAPE[aspect]} image.`,
-    `Art style: ${styleText(bible, script)}.`,
+    `Art style: ${scriptStyle(script)}.`,
     format && format.id !== 'custom' ? `Format: ${format.name}. ${format.layout}.` : '',
     script.layout ? `Layout: ${script.layout}.` : '',
+    cast.length
+      ? `Characters (draw each one the same way in every panel): ${cast.join('; ')}.`
+      : '',
     `Headline, lettered big and bold as part of the design: "${headline}".`,
     `${script.panels.length === 1 ? 'The scene' : `The ${script.panels.length} panels, in reading order`}:`,
     ...panels,
-    `Lettering: ${style?.lettering ?? 'clear comic lettering'}. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
-    refLabels.length
-      ? `Reference images: ${refLabels.join('; ')}. Keep each character's identity (face, hair, colors, outfit), redrawn in this page's art style; do not copy the reference images' drawing style.`
-      : '',
-    style &&
-    !style.anime &&
-    script.panels.some((p) =>
-      p.characters.some((c) => {
-        const m = bible.cast.find((x) => x.id === c.cast);
-        return m && castKind(m.species) === 'animal';
-      }),
-    )
-      ? `Draw the animal characters as classic cartoon animals true to the ${style.name} style: not anime, not furry, no human bodies.`
-      : '',
-    refLabels.length
-      ? ''
-      : "Draw every character fresh in this page's art style from their description.",
-    'Strictly: no real people, no logos, no watermarks.',
+    `Lettering: ${styleLettering(script.style)}. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
+    `Strictly: ${NEGATIVE}.`,
   ]
     .filter(Boolean)
     .join('\n');
-}
-
-/** A character reference portrait, made once per series and reused by every episode. */
-export function castPrompt(c: CastMember, bible: SeriesBible): string {
-  return [
-    `${bible.style}.`,
-    `Character reference portrait of ${castLine(c)}.`,
-    'Full body, facing the viewer, friendly neutral pose, centered, plain white background, nothing else in the image.',
-    'Square image.',
-    `Strictly: ${bible.negative}.`,
-  ].join(' ');
 }
 
 // ---------------------------------------------------------- availability

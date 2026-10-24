@@ -1,10 +1,9 @@
-/** Comic pages (v2): free formats, styles that suit the cast, model lettering. */
+/** Comic pages: free formats, made-up characters, any art style, model lettering. */
 import { describe, expect, test } from 'bun:test';
-import { defaultBible } from '../src/comic/bible.ts';
 import { composePage, imageSize, pageWithFooter } from '../src/comic/compose.ts';
-import { pagePrompt } from '../src/comic/providers.ts';
-import { checkScript, errors, pageText } from '../src/comic/script.ts';
-import { fittingStyles, styleById, styleClash } from '../src/comic/styles.ts';
+import { artPrompt, pagePrompt } from '../src/comic/providers.ts';
+import { checkScript, errors, pageText, transcript } from '../src/comic/script.ts';
+import { freshStyles, styleById } from '../src/comic/styles.ts';
 import { pageScript } from './pageScript.ts';
 
 // A 1x1 PNG.
@@ -14,80 +13,89 @@ const PNG = Buffer.from(
 );
 
 describe('page scripts', () => {
-  const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
-  const office = defaultBible('ser_test', 'office', ['Claude Code']);
-
-  test('a page in a free format passes', () => {
-    expect(errors(checkScript(pageScript(pets), pets))).toEqual([]);
+  test('a page in a free format, with its own characters, passes', () => {
+    expect(errors(checkScript(pageScript()))).toEqual([]);
   });
 
-  test('v1 4-koma rules still apply to v1 scripts only', () => {
-    const p = checkScript({ ...pageScript(pets), v: 1 }, pets);
-    expect(p.some((x) => x.problem.includes('exactly 4 panels'))).toBe(true);
+  test('the old fixed 4-panel format (v1) gets a clear error', () => {
+    const p = errors(checkScript({ ...pageScript(), v: 1 }));
+    expect(p[0]!.problem).toContain('was removed');
+  });
+
+  test("characters must be the comic's own, each described once", () => {
+    const stranger = pageScript();
+    stranger.panels[0]!.characters = [{ name: 'Kit', position: 'left' }];
+    stranger.panels[0]!.dialogue = [{ speaker: 'Kit', text: 'Hi!' }];
+    const p = errors(checkScript(stranger));
+    expect(p.map((x) => x.where)).toEqual([
+      'panels[0].characters[0].name',
+      'panels[0].dialogue[0].speaker',
+    ]);
+    expect(p[0]!.problem).toContain("isn't in this comic's characters (dev, link)");
+    const vague = pageScript({ characters: [{ name: 'Dev', description: '' }] });
+    expect(errors(checkScript(vague)).map((x) => x.where)).toContain(
+      'characters[0].description',
+    );
+    // No characters at all is fine: scenes and captions only.
+    const none = pageScript({ characters: [] });
+    none.panels.forEach((p) => {
+      p.characters = [];
+      p.dialogue = p.dialogue.filter((d) => d.speaker === 'caption');
+    });
+    expect(errors(checkScript(none))).toEqual([]);
   });
 
   test('panel count, headline and word limits', () => {
-    const many = pageScript(pets, {
+    const many = pageScript({
       format: 'custom',
-      panels: Array.from({ length: 7 }, () => pageScript(pets).panels[0]!),
+      panels: Array.from({ length: 7 }, () => pageScript().panels[0]!),
     });
-    expect(errors(checkScript(many, pets)).map((p) => p.where)).toContain('panels');
-    const loud = pageScript(pets, { headline: 'one two three four five six seven' });
-    expect(errors(checkScript(loud, pets)).map((p) => p.where)).toContain('headline');
-    const wordy = pageScript(pets);
+    expect(errors(checkScript(many)).map((p) => p.where)).toContain('panels');
+    const loud = pageScript({ headline: 'one two three four five six seven' });
+    expect(errors(checkScript(loud)).map((p) => p.where)).toContain('headline');
+    const wordy = pageScript();
     wordy.panels[0]!.dialogue = Array.from({ length: 4 }, () => ({
       speaker: 'caption',
       text: 'twelve words that go on and on and on and on still',
     }));
     expect(
-      errors(checkScript(wordy, pets)).some((p) =>
-        p.problem.includes('reads on a phone'),
-      ),
+      errors(checkScript(wordy)).some((p) => p.problem.includes('reads on a phone')),
     ).toBe(true);
     expect(
-      errors(checkScript(pageScript(pets, { format: 'custom', layout: '' }), pets))[0]!
-        .where,
+      errors(checkScript(pageScript({ format: 'custom', layout: '' })))[0]!.where,
     ).toBe('layout');
   });
 
-  test('animal casts never get anime styles unless the user opts in', () => {
-    const manga = pageScript(pets, { style: 'manga-ink', palette: 'bw-accent' });
-    const clash = errors(checkScript(manga, pets)).find((p) => p.where === 'style');
-    expect(clash?.problem).toContain('furries');
-    expect(errors(checkScript(manga, pets, { allowAnimalAnime: true }))).toEqual([]);
-    expect(errors(checkScript(manga, pets, { pinnedStyle: 'manga-ink' }))).toEqual([]);
-    // A human cast can have manga.
-    expect(
-      errors(
-        checkScript(
-          pageScript(office, { style: 'manga-ink', palette: 'bw-accent' }),
-          office,
-        ),
-      ),
-    ).toEqual([]);
-    expect(styleClash(styleById('ligne-claire')!, pets.cast)).toBeUndefined();
-    expect(fittingStyles(pets.cast).some((s) => s.anime)).toBe(false);
-  });
-
-  test('recent styles warn but do not block; a pinned style is required', () => {
-    const p = checkScript(pageScript(pets), pets, { recentStyles: ['sunday-strip'] });
+  test('any art style: an idea by id, or free text; recent ones warn', () => {
+    const own = pageScript({ style: '1970s Saturday-morning cel animation' });
+    expect(errors(checkScript(own))).toEqual([]);
+    expect(pagePrompt(own)).toContain('Art style: 1970s Saturday-morning cel animation');
+    expect(pagePrompt(pageScript())).toContain(styleById('sunday-strip')!.prompt);
+    expect(errors(checkScript(pageScript({ style: '' })))[0]!.where).toBe('style');
+    const p = checkScript(pageScript(), { recentStyles: ['Sunday-Strip'] });
     expect(p.find((x) => x.where === 'style')?.severity).toBe('warning');
     expect(errors(p)).toEqual([]);
-    expect(
-      errors(checkScript(pageScript(pets), pets, { pinnedStyle: 'noir' }))[0]!.where,
-    ).toBe('style');
-    expect(fittingStyles(pets.cast, ['sunday-strip']).at(-1)!.id).toBe('sunday-strip');
+    expect(errors(checkScript(pageScript(), { pinnedStyle: 'noir' }))[0]!.where).toBe(
+      'style',
+    );
+    expect(freshStyles(['noir'], 'sunday-strip').at(-1)!.id).toBe('noir');
+    expect(freshStyles([], 'sunday-strip').some((s) => s.id === 'sunday-strip')).toBe(
+      false,
+    );
   });
 
-  test('the page prompt carries every word verbatim, the layout and the style', () => {
-    const s = pageScript(pets);
-    const prompt = pagePrompt(s, pets, ['Kit (character reference)']);
+  test('the page prompt carries every word, the characters, the layout and the style', () => {
+    const s = pageScript();
+    const prompt = pagePrompt(s);
     for (const t of pageText(s)) expect(prompt).toContain(`"${t}"`);
     expect(prompt).toContain('BEFORE on the left, AFTER on the right');
-    expect(prompt).toContain(styleById('sunday-strip')!.prompt);
     expect(prompt).toContain('wide landscape 16:9');
-    expect(prompt).toContain('Kit (character reference)');
-    expect(prompt).not.toContain('no text, no letters');
+    expect(prompt).toContain('Dev: a tired developer in a hoodie, round glasses');
+    expect(prompt).not.toMatch(/\bKit\b|fox|character reference/);
+    expect(artPrompt(s.panels[1]!, 1, s)).toContain(
+      'Link: a cheerful glowing blue hyperlink with tiny arms, on the right',
+    );
+    expect(transcript(s)).toContain('**Dev:** Where is this file?');
   });
 
   test('a whole page gets an exact footer bar', () => {
@@ -99,12 +107,12 @@ describe('page scripts', () => {
 
   test('overlay lettering lays out any number of panels', () => {
     for (const n of [1, 2, 3, 5, 6]) {
-      const s = pageScript(pets, {
+      const s = pageScript({
         format: 'custom',
         layout: 'grid',
-        panels: Array.from({ length: n }, () => pageScript(pets).panels[0]!),
+        panels: Array.from({ length: n }, () => pageScript().panels[0]!),
       });
-      const svg = composePage(s, pets, [], { footer: 'acme/widgets #42' });
+      const svg = composePage(s, [], { footer: 'acme/widgets #42' });
       expect(svg.match(/<clipPath/g)?.length).toBe(n);
       expect(svg).toContain('CLICK HERE, HUMAN');
       expect(svg).toContain('acme/widgets #42');
@@ -113,7 +121,7 @@ describe('page scripts', () => {
 });
 
 describe('skill docs stay in sync', () => {
-  test('styles.md matches the style catalog', async () => {
+  test('styles.md matches the style ideas', async () => {
     const { readFileSync } = await import('node:fs');
     const { STYLES_MD } = await import('../scripts/gen-styles.ts');
     const doc = readFileSync(
@@ -132,14 +140,12 @@ describe('skill docs stay in sync', () => {
     const json = /```json\n(\{\n  "v": 2[\s\S]*?\n\})\n```/.exec(
       guide.replace(/\r\n/g, '\n'),
     )![1]!;
-    const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
-    expect(checkScript(JSON.parse(json), pets)).toEqual([]);
+    expect(checkScript(JSON.parse(json))).toEqual([]);
   });
 
   test('the share caption fits a post', async () => {
     const { shareCaption } = await import('../src/commands/publish.ts');
-    const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
-    const long = pageScript(pets, { synopsis: 'word '.repeat(200) });
+    const long = pageScript({ synopsis: 'word '.repeat(200) });
     const c = shareCaption(long, 'T', 'https://github.com/acme/widgets/pull/42');
     expect(c.length).toBeLessThanOrEqual(280);
     expect(c.startsWith('CLICK HERE, HUMAN — ')).toBe(true);
@@ -147,30 +153,11 @@ describe('skill docs stay in sync', () => {
   });
 });
 
-describe('character sheets and style', () => {
-  test('only sequels attach character sheets; standalone pages draw the cast fresh', async () => {
-    const { keepsCast } = await import('../src/commands/comic.ts');
-    const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
-    expect(keepsCast(pageScript(pets))).toBe(false);
-    expect(keepsCast(pageScript(pets, { continuity: { mode: 'sequel', of: [3] } }))).toBe(
-      true,
-    );
-    const fresh = pagePrompt(pageScript(pets, { style: 'pulp-scifi' }), pets);
-    expect(fresh).toContain('classic cartoon animals true to the Pulp sci-fi style');
-    expect(fresh).toContain('Draw every character fresh');
-    const office = defaultBible('ser_test', 'office', ['Claude Code']);
-    expect(pagePrompt(pageScript(office, { style: 'manga-ink' }), office)).not.toContain(
-      'cartoon animals',
-    );
-  });
-});
-
 describe('agent CLI wrapper prompt', () => {
   test('never forbids the lettering a page prompt asks for', async () => {
     const { agentBatchPrompt } = await import('../src/comic/providers.ts');
-    const pets = defaultBible('ser_test', 'pets', ['Claude Code']);
     const wrapped = agentBatchPrompt(
-      [{ prompt: pagePrompt(pageScript(pets), pets), refs: [] }],
+      [{ prompt: pagePrompt(pageScript()), refs: [] }],
       [],
     );
     expect(wrapped).not.toMatch(/do not add text|no text/i);

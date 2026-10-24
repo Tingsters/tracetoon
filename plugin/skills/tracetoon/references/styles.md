@@ -1,28 +1,31 @@
-# Art styles
+# Art style ideas
 
-Pick one per comic with `"style"`. `tracetoon comic check` blocks a style that
-doesn't suit the cast, and warns when the repo used it recently.
+A comic can use any art style. Set `"style"` to one of these ids (it expands to
+a tested prompt) or to your own description ("1970s Saturday-morning cel
+animation", "linocut print"). Pick what suits this PR's story, and something
+different from the repo's recent comics (`tracetoon context` lists them;
+`tracetoon comic check` warns on a repeat).
 
-| Style | Look | Good for | Palettes | Suits |
-|---|---|---|---|---|
-| `manga-ink` | Manga ink | dramatic, intense, heroic, victory | bw-accent, limited | people, robots, creatures (no animals) |
-| `shonen-action` | Shonen action | epic, battle, comeback, speed | full-color | people, robots, creatures (no animals) |
-| `mecha-anime` | Mecha anime | systems, infrastructure, launch, precision | full-color, bw-accent | people, robots, creatures (no animals) |
-| `chibi-anime` | Chibi anime | cozy, silly, small fix, wholesome | full-color | people, robots, creatures (no animals) |
-| `noir` | Film noir | mystery, debugging, investigation, suspense | bw-accent, limited | people, robots, creatures, animals |
-| `silver-age` | Silver-age comic | heroic, rescue, big win, retro | full-color, limited | people, robots, creatures, animals |
-| `ligne-claire` | Ligne claire | adventure, exploration, clever, travel | full-color | people, robots, creatures, animals |
-| `sunday-strip` | Sunday newspaper strip | gag, everyday, relatable, small fix | full-color, limited | people, robots, creatures, animals |
-| `rubber-hose` | 1930s rubber hose | slapstick, chaos, silly, retro | limited, duotone | people, robots, creatures, animals |
-| `storybook-watercolor` | Storybook watercolor | gentle, cleanup, care, wholesome | full-color | people, robots, creatures, animals |
-| `claymation` | Claymation | handmade, building, silly, craft | full-color | people, robots, creatures, animals |
-| `pixel-16bit` | 16-bit pixel art | quest, level up, boss fight, retro | limited, full-color | people, robots, creatures, animals |
-| `risograph` | Risograph zine | indie, tooling, docs, craft | duotone | people, robots, creatures, animals |
-| `pulp-scifi` | Pulp sci-fi | launch, future, bold claim, adventure | full-color, limited | people, robots, creatures, animals |
-| `ukiyo-e` | Ukiyo-e woodblock | calm, refactor, balance, migration | limited | people, robots, creatures (no animals) |
-| `atomic-flat` | Mid-century flat | optimistic, product, feature, clean | limited, full-color | people, robots, creatures, animals |
-| `blueprint` | Blueprint | architecture, internals, how it works, design | duotone | people, robots, creatures, animals |
-| `vaporwave` | Vaporwave | performance, speed, nostalgia, ui | full-color | people, robots, creatures, animals |
+| Style | Look | Good for | Palettes |
+|---|---|---|---|
+| `manga-ink` | Manga ink | dramatic, intense, heroic, victory | bw-accent, limited |
+| `shonen-action` | Shonen action | epic, battle, comeback, speed | full-color |
+| `mecha-anime` | Mecha anime | systems, infrastructure, launch, precision | full-color, bw-accent |
+| `chibi-anime` | Chibi anime | cozy, silly, small fix, wholesome | full-color |
+| `noir` | Film noir | mystery, debugging, investigation, suspense | bw-accent, limited |
+| `silver-age` | Silver-age comic | heroic, rescue, big win, retro | full-color, limited |
+| `ligne-claire` | Ligne claire | adventure, exploration, clever, travel | full-color |
+| `sunday-strip` | Sunday newspaper strip | gag, everyday, relatable, small fix | full-color, limited |
+| `rubber-hose` | 1930s rubber hose | slapstick, chaos, silly, retro | limited, duotone |
+| `storybook-watercolor` | Storybook watercolor | gentle, cleanup, care, wholesome | full-color |
+| `claymation` | Claymation | handmade, building, silly, craft | full-color |
+| `pixel-16bit` | 16-bit pixel art | quest, level up, boss fight, retro | limited, full-color |
+| `risograph` | Risograph zine | indie, tooling, docs, craft | duotone |
+| `pulp-scifi` | Pulp sci-fi | launch, future, bold claim, adventure | full-color, limited |
+| `ukiyo-e` | Ukiyo-e woodblock | calm, refactor, balance, migration | limited |
+| `atomic-flat` | Mid-century flat | optimistic, product, feature, clean | limited, full-color |
+| `blueprint` | Blueprint | architecture, internals, how it works, design | duotone |
+| `vaporwave` | Vaporwave | performance, speed, nostalgia, ui | full-color |
 
 Details (what the image model is asked for):
 

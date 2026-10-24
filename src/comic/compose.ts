@@ -1,12 +1,11 @@
 /**
  * Lays out comic pages. Two kinds:
  *  - `composePage`: text-free panel art in a grid, with Tracetoon's bubbles,
- *    a title band and a footer (v1 4-koma scripts and pages with overlay
- *    lettering);
+ *    a title band and a footer (pages drawn with overlay lettering);
  *  - `pageWithFooter`: a whole page the image model drew, lettering included,
  *    with Tracetoon's exact footer bar underneath.
  */
-import type { ComicScript, Dialogue, Panel, SeriesBible } from './types.ts';
+import type { ComicScript, Dialogue, Panel } from './types.ts';
 
 export const PAGE_W = 1600;
 const MARGIN = 30;
@@ -79,7 +78,9 @@ export function wrap(text: string, maxWidth: number, size: number): string[] {
 const XPOS = { left: 200, center: 400, right: 600 } as const;
 
 function speakerX(panel: Panel, speaker: string): number | undefined {
-  const c = panel.characters.find((pc) => pc.cast === speaker);
+  const c = panel.characters.find(
+    (pc) => pc.name.toLowerCase() === speaker.toLowerCase(),
+  );
   return c ? XPOS[c.position] : undefined;
 }
 
@@ -199,7 +200,6 @@ function dataUri(img: PanelImage): string {
 }
 
 export interface PageInfo {
-  episode?: number;
   /** Footer text, e.g. "acme/widgets #42". "made with Tracetoon" is added. */
   footer?: string;
 }
@@ -278,12 +278,11 @@ function columns(n: number): number {
 }
 
 /**
- * The full page as SVG, with Tracetoon's bubbles over text-free art: v1 4-koma
- * scripts and pages drawn with overlay lettering.
+ * The full page as SVG, with Tracetoon's bubbles over text-free art: pages
+ * drawn with overlay lettering.
  */
 export function composePage(
   script: ComicScript,
-  bible: SeriesBible,
   images: PanelImage[],
   info: PageInfo = {},
   layout?: Layout,
@@ -313,18 +312,12 @@ ${n > 1 ? `<circle cx="30" cy="${cell - 30}" r="18" fill="${INK}"/><text x="30" 
 </g>`;
     })
     .join('\n');
-  const cast = bible.cast
-    .filter((c) => script.panels.some((p) => p.characters.some((pc) => pc.cast === c.id)))
-    .map((c) => c.name)
-    .join(', ');
-  const ep = info.episode ? `Ep. ${info.episode} · ` : '';
   const footer = info.footer
     ? footerBar(bodyH, PAGE_W, info.footer)
-    : `<text x="${MARGIN}" y="${height - MARGIN - 12}" font-family="${FONT}" font-weight="700" font-size="26" fill="#6B6B78">${esc(`${bible.title} · ${ep}${cast}`)}</text>
-<text x="${PAGE_W - MARGIN}" y="${height - MARGIN - 12}" text-anchor="end" font-family="${FONT}" font-size="22" fill="#8A8A96">made with Tracetoon</text>`;
+    : `<text x="${PAGE_W - MARGIN}" y="${height - MARGIN - 12}" text-anchor="end" font-family="${FONT}" font-size="22" fill="#8A8A96">made with Tracetoon</text>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${height}" viewBox="0 0 ${PAGE_W} ${height}">
 <rect width="${PAGE_W}" height="${height}" fill="${look.paper}"/>
-<text x="${PAGE_W / 2}" y="72" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="52" fill="${INK}">${esc(script.v === 2 && script.headline ? script.headline : script.title)}</text>
+<text x="${PAGE_W / 2}" y="72" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="52" fill="${INK}">${esc(script.headline || script.title)}</text>
 ${cells}
 ${footer}
 </svg>`;

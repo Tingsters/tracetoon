@@ -11,10 +11,6 @@ import {
 
 const meta = (content: string): PrMeta => ({
   v: 1,
-  tool: 'tracetoon@test',
-  sessions: [],
-  digest: 'x',
-  generatedAt: '2026-10-24T00:00:00Z',
   contentSha: contentHash(content),
 });
 
