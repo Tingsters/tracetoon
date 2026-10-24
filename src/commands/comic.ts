@@ -37,7 +37,6 @@ import {
 } from '../comic/script.ts';
 import { PALETTES, type ComicScript, type Palette } from '../comic/types.ts';
 import { loadConfig, setUserConfig } from '../config.ts';
-import { repoWeb } from '../github/history.ts';
 import { prTruth } from '../git/pr.ts';
 import { findRun, readJson, writeJson, type Run } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
@@ -379,21 +378,6 @@ export function comicPromptsCmd(
   );
 }
 
-/** "owner/repo #N", or the branch while the PR doesn't exist yet. */
-function footerText(run: Run, root: string): string {
-  const ctx = readJson<{
-    repo?: string;
-    head?: string;
-    existingPr?: { number: number } | null;
-  }>(run, 'context.json');
-  const truth = prTruth(root, { noGh: true });
-  const web = repoWeb(truth)?.replace(/^https?:\/\/[^/]+\//, '');
-  const repo = ctx?.repo || web || truth.toplevel.split(/[\/]/).pop() || 'this repo';
-  if (ctx?.existingPr?.number) return `${repo} #${ctx.existingPr.number}`;
-  const head = ctx?.head ?? truth.head;
-  return head && head !== 'HEAD' ? `${repo} · ${head}` : repo;
-}
-
 export async function comicRenderCmd(
   cwd: string,
   opts: OutOpts & { run?: string },
@@ -403,10 +387,7 @@ export async function comicRenderCmd(
   const page = manifest?.mode !== 'panels' ? existingPage(run) : undefined;
   let svg: string;
   if (page) {
-    svg = pageWithFooter(
-      { mime: page.mime, data: readFileSync(page.path) },
-      footerText(run, root),
-    );
+    svg = pageWithFooter({ mime: page.mime, data: readFileSync(page.path) });
   } else {
     const found = script.panels.map((_, i) => existingPanel(run, i));
     const missing = found.flatMap((f, i) => (f ? [] : [i + 1]));
@@ -424,7 +405,7 @@ export async function comicRenderCmd(
       data: readFileSync(f!.path),
     }));
     const layout = readJson<Layout>(run, 'layout.json');
-    svg = composePage(script, images, { footer: footerText(run, root) }, layout);
+    svg = composePage(script, images, layout);
   }
   mkdirSync(join(run.dir, 'out'), { recursive: true });
   const svgPath = join(run.dir, 'out', 'comic.svg');
