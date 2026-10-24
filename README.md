@@ -8,8 +8,8 @@ AI-assisted. It adds a four-panel comic of the story, starring a recurring cast.
 You see the exact text and comic and approve them before anything is posted.
 
 - **Install after the fact.** Write your code first with any supported agent,
-  then add Tracetoon. It reads logs that already exist: no hooks, no background
-  capture, no history database.
+  then add Tracetoon. It reads logs that already exist: no background capture,
+  no history database.
 - **Preview first.** Posting requires an approval code tied to the exact text
   and image you previewed. An optional yolo mode skips the preview only when
   every safety check passes.
@@ -26,6 +26,7 @@ You see the exact text and comic and approve them before anything is posted.
 | Claude Code | supported |
 | Codex (CLI and app) | supported |
 | Antigravity (CLI and IDE) | supported |
+| Gemini CLI | runs the skill (its own logs aren't read yet) |
 | Copilot CLI | planned |
 
 ## Install
@@ -44,8 +45,29 @@ curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh
 irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
 ```
 
-Restart your agent, then in any repo with your work on a branch, ask:
+The installer also puts a `tracetoon` command on your PATH and ends with a
+line about comics: which image route it found and what to do next. Restart your
+agent, then in any repo with your work on a branch, ask:
 *"Open a PR for this branch with Tracetoon."*
+
+### Set up comics (optional)
+
+Comics are drawn by an image model you choose. Without one, PRs simply have no
+comic. Run `tracetoon images` to see what's on your machine:
+
+- **Codex CLI** (recommended if you have ChatGPT): install it and run
+  `codex login` with your ChatGPT account. Images count toward your plan's
+  Codex usage; no key needed. Codex set up for another model provider (in
+  `~/.codex/config.toml`, e.g. a LiteLLM proxy) has no image tool.
+- **Antigravity CLI** (experimental): signed in, it uses your Antigravity quota.
+- **OpenAI or Gemini API**: set `OPENAI_API_KEY` or `GEMINI_API_KEY`, billed
+  per image to your key. On Windows run `setx OPENAI_API_KEY "<key>"`; on macOS
+  or Linux add `export OPENAI_API_KEY="<key>"` to your shell profile. Then
+  restart your agent so it sees the key.
+
+Approve one route and check it really draws (one small test picture, no repo
+content): `tracetoon images --approve codex --test`. Your agent offers the same
+thing at the start of your first PR.
 
 Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
 again. Downloads are checked against the release's SHA-256 checksums.
@@ -157,25 +179,29 @@ the binary included are attached to each release.
 | `promptQuoting` | `paraphrase` | `verbatim` quotes your prompts in the PR |
 | `disclosure` | `assisted-by` | Trailer style to suggest |
 | `hosting` | `auto` | Where the comic goes: `branch`, `attach`, or `auto` |
-| `imageConsent` | `[]` | Image services you agreed to (set by `comic art --consent`) |
+| `imageConsent` | `[]` | Image services you agreed to (set by `tracetoon images --approve`; user config only) |
 | `budgetTokens` | `12000` | Digest size |
 
 ### Comic art
 
-`tracetoon comic art` picks the first route you have approved, in this order:
+`tracetoon comic art` picks the first route you have approved that can draw,
+in this order:
 
 | Route | Needs | Prompts go to |
 | --- | --- | --- |
-| `openai` | `OPENAI_API_KEY` (model `gpt-image-2.5-flare`, change with `TRACETOON_OPENAI_MODEL`) | OpenAI, billed to your key |
-| `gemini` | `GEMINI_API_KEY` (model `gemini-nano-banana-2.1`, change with `TRACETOON_GEMINI_MODEL`) | Google, billed to your key |
-| `codex` | the Codex CLI, signed in | OpenAI, counted against your Codex usage |
+| `codex` | the Codex CLI, signed in with ChatGPT (`codex login`) | OpenAI, counted against your Codex usage |
 | `antigravity` (experimental) | the Antigravity CLI, signed in | Google, counted against your Antigravity quota |
+| `openai` | `OPENAI_API_KEY` (model `gpt-image-2.5-flare`, change with `TRACETOON_OPENAI_MODEL`) | OpenAI, billed to your key |
+| `gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` (model `gemini-nano-banana-2.1`, change with `TRACETOON_GEMINI_MODEL`) | Google, billed to your key |
 
-Nothing is sent until you agree once per route; the agent asks you, then runs
-`tracetoon comic art --provider <route> --consent`. Prompts contain only the
-comic's scenes and character descriptions. `tracetoon doctor` shows which routes
-exist and which you have approved. To stop using one, remove it from
-`imageConsent` with `tracetoon config set imageConsent <list>`. With no
+Nothing is sent until you agree once per route, with `tracetoon images
+--approve <route>` (or the agent's `comic art --provider <route> --consent`).
+Only you can approve a route: a repo's `.github/tracetoon.json` can't. Prompts
+contain only the comic's scenes and character descriptions. `tracetoon images`
+shows which routes exist, whether each can draw, and which you have approved;
+`--test` draws one picture to check. To stop using one, remove it from
+`imageConsent` with `tracetoon config set imageConsent <list>`, or turn a CLI
+route off with `TRACETOON_CODEX_BIN=none` / `TRACETOON_AGY_BIN=none`. With no
 approved route, or if a route keeps failing, the PR is published without a
 comic.
 

@@ -18,8 +18,21 @@ if (a === 'pr' && b === 'list') {
   process.stdout.write(process.env.FAKE_GH_PRS ?? '[]');
   process.exit(0);
 }
+if (a === 'repo' && b === 'view' && args.some((x) => x.includes('viewerPermission'))) {
+  process.stdout.write(
+    JSON.stringify({
+      nameWithOwner: 'acme/demo',
+      viewerPermission: process.env.FAKE_GH_PERMISSION ?? 'WRITE',
+    }),
+  );
+  process.exit(0);
+}
 if (a === 'repo' && b === 'view') {
   process.stdout.write(`${process.env.FAKE_GH_VISIBILITY ?? 'PUBLIC'}\n`);
+  process.exit(0);
+}
+if (a === 'api' && b === 'user') {
+  process.stdout.write('octo-tester\n');
   process.exit(0);
 }
 if (a === '--version') {

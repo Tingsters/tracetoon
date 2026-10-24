@@ -1,6 +1,7 @@
 /** `tracetoon on|off|status` and `tracetoon hook install|uninstall`. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { onPath } from '../comic/providers.ts';
 import { repoConfigPath, setUserConfig } from '../config.ts';
 import {
   hookStatus,
@@ -68,9 +69,11 @@ export function setEnabledCmd(cwd: string, enabled: boolean, opts: ScopeOpts): v
 export function statusCmd(cwd: string, opts: OutOpts): void {
   const state = switchState(cwd);
   const hooks = hookStatus();
-  emit(opts, { ...state, hooks }, () =>
+  const command = userCommand();
+  emit(opts, { ...state, hooks, command }, () =>
     [
       `Tracetoon is ${state.enabled ? 'ON' : 'OFF'} here: ${state.why}.`,
+      `In your own terminal, run it as: ${command.run}`,
       'PR hook:',
       ...hooks
         .filter((h) => h.present)
@@ -85,6 +88,26 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
         : 'Turn on: tracetoon on [--repo | --local].',
     ].join('\n'),
   );
+}
+
+/**
+ * How the user can run Tracetoon in their own terminal: `tracetoon` when it's on
+ * PATH, otherwise the skill's launcher (agents run the launcher, not PATH).
+ */
+export function userCommand(): { onPath: boolean; run: string } {
+  if (onPath('tracetoon')) return { onPath: true, run: 'tracetoon' };
+  const quote = (p: string) => (/\s/.test(p) ? `"${p}"` : p);
+  const assets = process.env.TRACETOON_ASSETS;
+  const run = assets
+    ? quote(
+        join(
+          dirname(assets),
+          'bin',
+          process.platform === 'win32' ? 'tracetoon.cmd' : 'tracetoon',
+        ),
+      )
+    : selfProgram().map(quote).join(' ');
+  return { onPath: false, run };
 }
 
 /** The program agents should run for the hook: this binary, or bun + this script in development. */

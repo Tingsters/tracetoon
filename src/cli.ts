@@ -10,6 +10,7 @@ import {
   type Config,
 } from './config.ts';
 import { doctor } from './commands/doctor.ts';
+import { imagesCmd } from './commands/images.ts';
 import { contextCmd, digestCmd, expandCmd, scanCmd } from './commands/digest.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
 import { previewCmd, publishCmd, renderCmd } from './commands/publish.ts';
@@ -47,6 +48,23 @@ const program = new Command()
   .option('--json', 'print machine-readable JSON');
 
 const g = () => program.opts<{ json?: boolean }>();
+
+program
+  .command('images')
+  .description(
+    'image routes for comics: which can draw, which are approved, and what to do next',
+  )
+  .option(
+    '--approve <route>',
+    'record the user agreed to send comic prompts to this route',
+  )
+  .option(
+    '--test [route]',
+    'draw one small test picture (no repo content) with this route',
+  )
+  .option('--consent', 'with --test: the user agreed to this route')
+  .option('--brief', 'one line, for the installers')
+  .action((o) => imagesCmd({ ...g(), ...o }));
 
 program
   .command('doctor')

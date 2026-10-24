@@ -14,6 +14,11 @@ const PNG = Buffer.from(
 );
 
 const args = process.argv.slice(2);
+// `codex login status`: signed in with ChatGPT unless FAKE_CODEX_LOGIN says otherwise.
+if (args[0] === 'login') {
+  console.log(process.env.FAKE_CODEX_LOGIN ?? 'Logged in using ChatGPT');
+  process.exit(0);
+}
 const prompt = readFileSync(0, 'utf8');
 const images = args.flatMap((a, i) => (args[i - 1] === '--image' ? [a] : []));
 const wanted = (prompt.match(/^\d+\. /gm) ?? []).length;

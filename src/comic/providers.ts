@@ -6,7 +6,7 @@
  * Only story beats and character descriptions are sent, never code, paths or
  * prompts from the logs, and only after the user agrees once per provider.
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -31,7 +31,8 @@ import {
 } from './types.ts';
 
 export type ProviderId = 'openai' | 'gemini' | 'codex' | 'antigravity';
-export const PROVIDERS: ProviderId[] = ['openai', 'gemini', 'codex', 'antigravity'];
+/** In order of preference: routes covered by a plan the user has, then paid APIs. */
+export const PROVIDERS: ProviderId[] = ['codex', 'antigravity', 'openai', 'gemini'];
 
 export interface Reference {
   mime: string;
@@ -61,10 +62,17 @@ export interface ProviderInfo {
   label: string;
   /** Where the prompts go, for the consent question. */
   sendsTo: string;
+  /** Cost model, in words: covered by a plan, or billed per image. */
+  cost: string;
+  /** Found on this machine (program on PATH, key set). */
   available: boolean;
-  /** Why it isn't available, or how it is set up. */
+  /** Whether it can draw: checked for Codex; otherwise unknown until tested. */
+  ready: Readiness;
+  /** Why it isn't available or ready, or how it is set up. */
   detail: string;
 }
+
+export type Readiness = 'ready' | 'not ready' | 'unknown';
 
 // ---------------------------------------------------------------- prompts
 
@@ -232,8 +240,11 @@ export function onPath(name: string): string | undefined {
   return undefined;
 }
 
-const codexBin = () => process.env.TRACETOON_CODEX_BIN || onPath('codex');
-const agyBin = () => process.env.TRACETOON_AGY_BIN || onPath('agy');
+/** An agent CLI's path: the override ("none" turns the route off), else PATH. */
+const cliBin = (override: string | undefined, name: string) =>
+  override === 'none' ? undefined : override || onPath(name);
+const codexBin = () => cliBin(process.env.TRACETOON_CODEX_BIN, 'codex');
+const agyBin = () => cliBin(process.env.TRACETOON_AGY_BIN, 'agy');
 const geminiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const openaiKey = () => process.env.OPENAI_API_KEY;
 
@@ -242,32 +253,123 @@ export const OPENAI_MODEL = () =>
 export const GEMINI_MODEL = () =>
   process.env.TRACETOON_GEMINI_MODEL || 'gemini-nano-banana-2.1';
 
+/** Where Codex keeps its login and settings. */
+const codexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex');
+
+/**
+ * A model provider other than OpenAI set in Codex's config.toml (top level, or
+ * in the selected profile). Codex's image tool only exists with OpenAI, so a
+ * proxy such as LiteLLM can't draw.
+ */
+export function codexCustomProvider(toml: string): string | undefined {
+  const top = toml.split(/^\s*\[/m)[0] ?? '';
+  const value = (text: string, key: string) =>
+    new RegExp(`^\\s*${key}\\s*=\\s*["']([^"']+)["']`, 'm').exec(text)?.[1];
+  let provider = value(top, 'model_provider');
+  const profile = value(top, 'profile');
+  if (profile) {
+    const section = new RegExp(
+      `^\\s*\\[profiles\\.["']?${profile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']?\\]\\s*$([\\s\\S]*?)(?=^\\s*\\[|$(?![\\s\\S]))`,
+      'm',
+    ).exec(toml)?.[1];
+    provider = (section && value(section, 'model_provider')) || provider;
+  }
+  return provider && provider.toLowerCase() !== 'openai' ? provider : undefined;
+}
+
+const codexChecks = new Map<string, { ready: Readiness; why: string }>();
+/** Whether Codex can use its image tool: signed in with ChatGPT, OpenAI as the provider. */
+function codexReadiness(bin: string): { ready: Readiness; why: string } {
+  const cached = codexChecks.get(bin);
+  if (cached) return cached;
+  let result: { ready: Readiness; why: string };
+  const configPath = join(codexHome(), 'config.toml');
+  const custom = existsSync(configPath)
+    ? codexCustomProvider(readFileSync(configPath, 'utf8'))
+    : undefined;
+  if (custom) {
+    result = {
+      ready: 'not ready',
+      why: `Codex is set to use the model provider "${custom}" (${configPath}), which has no image tool; remove model_provider there (or switch profile) and sign in with \`codex login\``,
+    };
+  } else {
+    const script = /\.(ts|js|mjs)$/i.test(bin);
+    const r = spawnSync(
+      script ? process.execPath : bin,
+      script ? [bin, 'login', 'status'] : ['login', 'status'],
+      {
+        encoding: 'utf8',
+        timeout: 15_000,
+        windowsHide: true,
+        shell: !script && process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin),
+        input: '',
+      },
+    );
+    const said = `${r.stdout ?? ''}\n${r.stderr ?? ''}`;
+    result = /logged in using chatgpt|signed in with chatgpt/i.test(said)
+      ? { ready: 'ready', why: 'signed in with ChatGPT' }
+      : /not logged in|not signed in/i.test(said)
+        ? {
+            ready: 'not ready',
+            why: 'not signed in: run `codex login` and sign in with ChatGPT',
+          }
+        : /api key/i.test(said)
+          ? {
+              ready: 'not ready',
+              why: 'signed in with an API key; the image tool needs a ChatGPT login: run `codex login`',
+            }
+          : { ready: 'unknown', why: 'could not tell whether Codex is signed in' };
+  }
+  codexChecks.set(bin, result);
+  return result;
+}
+
 export function providerInfo(id: ProviderId): ProviderInfo {
   switch (id) {
-    case 'openai':
+    case 'openai': {
+      const key = openaiKey();
+      const proxy = process.env.OPENAI_BASE_URL;
       return {
         id,
         label: `OpenAI API (${OPENAI_MODEL()})`,
-        sendsTo: 'OpenAI, billed to your API key',
-        available: !!openaiKey(),
-        detail: openaiKey() ? 'OPENAI_API_KEY is set' : 'set OPENAI_API_KEY',
+        sendsTo: 'OpenAI, with your API key',
+        cost: 'billed per image to your OpenAI key',
+        available: !!key,
+        ready: 'unknown',
+        detail: key
+          ? `OPENAI_API_KEY is set${proxy ? ` (OPENAI_BASE_URL is set too, so the key may belong to ${proxy}, not OpenAI)` : ''}`
+          : 'set OPENAI_API_KEY',
       };
-    case 'gemini':
+    }
+    case 'gemini': {
+      const name = process.env.GEMINI_API_KEY
+        ? 'GEMINI_API_KEY'
+        : process.env.GOOGLE_API_KEY
+          ? 'GOOGLE_API_KEY'
+          : undefined;
       return {
         id,
         label: `Gemini API (${GEMINI_MODEL()})`,
-        sendsTo: 'Google, billed to your API key',
+        sendsTo: 'Google, with your API key',
+        cost: 'billed per image to your Google key',
         available: !!geminiKey(),
-        detail: geminiKey() ? 'GEMINI_API_KEY is set' : 'set GEMINI_API_KEY',
+        ready: 'unknown',
+        detail: name ? `${name} is set` : 'set GEMINI_API_KEY',
       };
+    }
     case 'codex': {
       const bin = codexBin();
+      const check = bin ? codexReadiness(bin) : undefined;
       return {
         id,
         label: 'Codex CLI image tool',
-        sendsTo: 'OpenAI through your Codex login (uses your Codex usage limits)',
+        sendsTo: 'OpenAI, through your Codex login',
+        cost: 'covered by your ChatGPT plan (counts toward Codex usage limits)',
         available: !!bin,
-        detail: bin ? `codex found` : 'install and sign in to the Codex CLI',
+        ready: check?.ready ?? 'not ready',
+        detail: bin
+          ? `codex found; ${check!.why}`
+          : 'install the Codex CLI and sign in with ChatGPT',
       };
     }
     case 'antigravity': {
@@ -275,16 +377,36 @@ export function providerInfo(id: ProviderId): ProviderInfo {
       return {
         id,
         label: 'Antigravity CLI image tool (experimental)',
-        sendsTo: 'Google through your Antigravity login (uses your Antigravity quota)',
+        sendsTo: 'Google, through your Antigravity login',
+        cost: 'covered by your Antigravity plan (counts toward its quota)',
         available: !!bin,
+        ready: 'unknown',
         detail: bin ? 'agy found' : 'install and sign in to the Antigravity CLI',
       };
     }
   }
 }
 
+/** Found, and not known to be unable to draw (e.g. Codex signed out). */
 export function providerAvailable(id: ProviderId): boolean {
-  return providerInfo(id).available;
+  const info = providerInfo(id);
+  return info.available && info.ready !== 'not ready';
+}
+
+/**
+ * The real cause of a failed draw, with what to do about it, so a user isn't
+ * left guessing (a Codex pointed at a proxy, a key for another service).
+ */
+export function explainFailure(id: ProviderId, message: string): string {
+  if (id === 'codex' && /Codex made 0 image/.test(message))
+    return `${message} Codex has no image tool here: sign in with ChatGPT (\`codex login\`), and check ${join(codexHome(), 'config.toml')} doesn't route Codex to another model provider.`;
+  if (id === 'antigravity' && /made 0 of/.test(message))
+    return `${message} Check that the Antigravity CLI is signed in and can generate images.`;
+  if (/\b(401|403)\b/.test(message))
+    return `${message} The API key was rejected: it may be wrong or expired, or belong to another service (such as a proxy) rather than ${id === 'gemini' ? 'Google' : 'OpenAI'}.`;
+  if (/\b429\b|quota|billing|insufficient/i.test(message))
+    return `${message} The account is out of quota or needs billing set up.`;
+  return message;
 }
 
 // ---------------------------------------------------------------- APIs
@@ -612,12 +734,16 @@ export async function generateImages(
       () => new Uint8Array(readFileSync(process.env.TRACETOON_FAKE_IMAGE!)),
     );
   }
-  if (id === 'codex') return codexBatch(jobs);
-  if (id === 'antigravity') return antigravityBatch(jobs);
-  const out: Uint8Array[] = [];
-  for (const job of jobs)
-    out.push(id === 'gemini' ? await gemini(job) : await openai(job));
-  return out;
+  try {
+    if (id === 'codex') return await codexBatch(jobs);
+    if (id === 'antigravity') return await antigravityBatch(jobs);
+    const out: Uint8Array[] = [];
+    for (const job of jobs)
+      out.push(id === 'gemini' ? await gemini(job) : await openai(job));
+    return out;
+  } catch (e) {
+    throw new Error(explainFailure(id, (e as Error).message));
+  }
 }
 
 /** Sniff an image's type from its first bytes. */

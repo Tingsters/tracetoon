@@ -27,6 +27,7 @@ import {
   type Reference,
 } from '../comic/providers.ts';
 import { svgToPng } from '../comic/raster.ts';
+import { routeStatuses, setupAdvice, usable } from '../comic/routes.ts';
 import {
   checkScript,
   errors,
@@ -161,23 +162,25 @@ function chooseProvider(
 }
 
 /** Why there's no art, and what the user can do instead. */
-function noArtist(): UserError {
-  const ready = PROVIDERS.filter(providerAvailable).map(providerInfo);
+function noArtist(root: string): UserError {
+  const routes = routeStatuses(root);
+  const ready = routes.filter(usable);
+  const broken = routes.filter((r) => r.available && !usable(r));
   const options = [
     ...(ready.length
       ? [
           `approve an image route: ${ready
             .map(
               (p) =>
-                `${p.id} (sends comic scenes and character descriptions to ${p.sendsTo})`,
+                `${p.id} (sends comic scenes and character descriptions to ${p.sendsTo}; ${p.cost})`,
             )
             .join(
               '; ',
             )}. After the user agrees, run: tracetoon comic art --provider ${ready[0]!.id} --consent`,
         ]
-      : [
-          'set up an image route: install the Codex or Antigravity CLI, or set OPENAI_API_KEY or GEMINI_API_KEY',
-        ]),
+      : []),
+    ...broken.map((r) => `fix ${r.id}: ${r.detail}`),
+    ...(ready.length || broken.length ? [] : [`set up an image route: ${setupAdvice()}`]),
     'draw it with your own image tool: `tracetoon comic prompts` prints the prompts and where to save the images; then run `tracetoon comic render`',
     'or skip the comic: the PR is published without one',
   ];
@@ -220,8 +223,8 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
   const provider = chooseProvider(opts.provider, config.imageConsent);
   if (provider) {
     const info = providerInfo(provider);
-    if (!info.available)
-      throw new UserError(`${info.label} is not available: ${info.detail}.`);
+    if (!info.available || info.ready === 'not ready')
+      throw new UserError(`${info.label} can't draw: ${info.detail}.`);
     if (!config.imageConsent.includes(provider)) {
       if (!opts.consent) {
         throw new UserError(
@@ -261,7 +264,7 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
         );
       }
     } else {
-      throw noArtist();
+      throw noArtist(root);
     }
     finish('page', 'model');
     return;
@@ -278,7 +281,7 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       results.push({ panel: i + 1, file: have.path, source: 'existing' });
   }
   if (todo.length) {
-    if (!provider) throw noArtist();
+    if (!provider) throw noArtist(root);
     try {
       castMade = await makeCast(run, root, script, bible, provider);
       await makePanels(run, root, script, bible, provider, todo, results);
