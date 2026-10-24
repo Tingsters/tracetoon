@@ -1,0 +1,68 @@
+{
+  "v": 2,
+  "title": "The Stand-In Retires",
+  "headline": "THE STAND-IN RETIRES",
+  "synopsis": "The little stand-in artist who drew every comic nobody asked for gets a retirement party. No art now means no comic.",
+  "altText": "Panel 1: a tiny robot with a crayon proudly shows Kit the fox a wobbly stick-figure drawing labeled KIT?; Kit looks worried. Panel 2: a retirement party under a HAPPY RETIREMENT banner; the robot holds a small suitcase while Kit cheerfully waves. Panel 3: the robot relaxes in a beach chair, doodling just for fun.",
+  "format": "strip",
+  "layout": "three panels left to right, the party panel slightly wider",
+  "style": "rubber-hose",
+  "palette": "full-color",
+  "continuity": {
+    "mode": "standalone"
+  },
+  "panels": [
+    {
+      "scene": "A tiny boxy robot holding a giant crayon proudly holds up a wobbly stick-figure drawing of a fox; Kit the fox stares at it",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "worried"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "KIT?"
+        },
+        {
+          "speaker": "kit",
+          "text": "Is that... me?"
+        }
+      ]
+    },
+    {
+      "scene": "A small retirement party with balloons; the tiny robot holds a little suitcase under a banner; Kit waves cheerfully",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "HAPPY RETIREMENT"
+        },
+        {
+          "speaker": "kit",
+          "text": "No art? Then no comic. That's fine!"
+        }
+      ]
+    },
+    {
+      "scene": "The tiny robot lounges in a beach chair under an umbrella, doodling happily in a sketchbook",
+      "characters": [],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "Now it only draws for fun."
+        }
+      ]
+    }
+  ]
+}
