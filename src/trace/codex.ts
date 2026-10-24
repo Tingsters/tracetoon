@@ -12,7 +12,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { codex } from '@showtail/agent-traces';
 import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
-import { linesFromUnifiedDiff, parseApplyPatch, splitLines } from './diffLines.ts';
+import {
+  headTail,
+  linesFromUnifiedDiff,
+  parseApplyPatch,
+  splitLines,
+} from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
 import type { SessionRef, TraceAdapter, TraceSession } from './types.ts';
 
@@ -213,10 +218,10 @@ export function parseCodexLines(content: string, into: TraceSession): void {
             const cmd = commandText(it.command);
             if (!cmd) break;
             const exit = typeof it.exit_code === 'number' ? it.exit_code : undefined;
-            const output = (
+            const output = headTail(
               str(it.aggregated_output) ??
-              `${str(it.stdout) ?? ''}\n${str(it.stderr) ?? ''}`
-            ).slice(0, 4000);
+                `${str(it.stdout) ?? ''}\n${str(it.stderr) ?? ''}`,
+            );
             into.records.push({
               kind: 'command',
               cmd,
@@ -298,7 +303,7 @@ export function parseCodexLines(content: string, into: TraceSession): void {
           kind: 'command',
           cmd,
           isError: exit !== undefined ? exit !== '0' : undefined,
-          output: out.slice(0, 4000),
+          output: headTail(out),
           ...where(call.ts, isObj(args) ? str(args.workdir) : undefined),
         });
       }

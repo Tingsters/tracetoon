@@ -147,12 +147,59 @@ export class ClaudeLog {
       },
     );
   }
-  bash(command: string, stdout = '', isError = false): this {
+  bash(command: string, stdout = '', isError = false, tool = 'Bash'): this {
     return this.tool(
-      'Bash',
+      tool,
       { command },
       { content: stdout, isError, toolUseResult: { stdout, stderr: '' } },
     );
+  }
+  /** A PowerShell tool call (handled like Bash). */
+  shell(command: string, stdout = ''): this {
+    return this.bash(command, stdout, false, 'PowerShell');
+  }
+  /** A shell command that changed files (sed, a script): Claude Code records `bashEditDiff`. */
+  bashEdit(command: string, files: { filePath: string; added: string[] }[]): this {
+    return this.tool(
+      'Bash',
+      { command },
+      {
+        content: '',
+        toolUseResult: {
+          stdout: '',
+          stderr: '',
+          bashEditDiff: {
+            files: files.map((f) => ({
+              filePath: f.filePath,
+              hunks: [
+                {
+                  oldStart: 1,
+                  oldLines: 0,
+                  newStart: 1,
+                  newLines: f.added.length,
+                  lines: f.added.map((l) => `+${l}`),
+                },
+              ],
+            })),
+          },
+        },
+      },
+    );
+  }
+  /** A tool call still running: its result isn't in the log yet. */
+  pending(command: string): this {
+    this.lines.push({
+      type: 'assistant',
+      ...this.base(),
+      message: {
+        id: `m${this.n}`,
+        model: 'claude-test-1',
+        content: [
+          { type: 'tool_use', id: `t${this.n}`, name: 'Bash', input: { command } },
+        ],
+      },
+    });
+    return this;
   }
   /** `submitted`: the plan text Claude Code records in the result (can differ from the input). */
   plan(plan: string, approved = true, submitted?: string): this {

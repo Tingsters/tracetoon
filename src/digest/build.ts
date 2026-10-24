@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import {
   attribute,
   evidenceLine,
+  isGeneratedPath,
   prLineIndex,
   repoRel,
   type SessionMatch,
@@ -198,12 +199,7 @@ export type FileRole = 'behavior' | 'tests' | 'docs' | 'config' | 'generated' | 
 /** A rough role for a changed file, from its path. */
 export function fileRole(path: string): FileRole {
   const p = path.toLowerCase();
-  if (
-    /(^|\/)(dist|build|vendor|node_modules)\/|\.min\.(js|css)$|(^|\/)(bun\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|cargo\.lock|poetry\.lock)$/.test(
-      p,
-    )
-  )
-    return 'generated';
+  if (isGeneratedPath(p)) return 'generated';
   if (/(^|\/)(version|version\.txt)$|(^|\/)src\/version\.ts$/.test(p)) return 'version';
   if (
     /(^|\/)(tests?|__tests__|spec|specs)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rs)$|(^|\/)test_[^/]+\.py$/.test(
@@ -695,6 +691,17 @@ export function buildDigest(
   if (sessions.some((s) => s.band === 'ambiguous')) {
     notes.push(
       'Some sessions are ambiguous: confirm with the user before describing them as part of this PR.',
+    );
+  }
+  // Sessions left out that did work in this repo while the commits were made:
+  // say so, rather than dropping them without a word.
+  for (const m of matches) {
+    if (chosen.includes(m) || m.score <= 0) continue;
+    const s = m.signals;
+    if (!(s.cwdInRepo || s.commandsTouchRepo) || s.timeOverlap <= 0) continue;
+    const ref = hashId(salt, m.session.sessionId);
+    notes.push(
+      `Left out: ${m.session.agent} session "${scrub.text(m.session.title ?? 'untitled')}" (${ref}) worked in this repo while the commits were made, but no edits or commits of this PR were matched to it (score ${m.score}). If it belongs, ask the user and add it with --include ${ref}.`,
     );
   }
 
