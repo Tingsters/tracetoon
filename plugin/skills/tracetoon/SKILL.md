@@ -52,6 +52,15 @@ that bypass on your own initiative.
    "previously on").
    - If `aiPolicy.verdict` is `prohibited`, show the user the excerpts and stop
      unless they explicitly want to continue.
+   - `aiPolicy.text` is `author-written-recommended` (e.g. LLVM, Swift): tell the
+     user the repo asks for author-written PR text and offer `evidence-notes.md`
+     (written at render) as an outline to write from. A draft is still fine if
+     they want one to edit.
+   - `aiPolicy.media` is `prohibited`: skip the comic (step 5); render leaves it
+     out anyway.
+   - `aiPolicy.noPullRequests` (agent instructions say never to open a PR):
+     tell the user; only they can decide to post anyway (`--ack-policy`).
+   - `aiPolicy.prInstructions`: follow these repo instructions about PR text.
    - If it is `disclosure-required`, keep Tracetoon's disclosure line (`config.disclosure` must not be `none`) and add any extra disclosure the policy asks for at the end of `body.md`.
 4. **Write the description.** Read `digest.json` (and `tracetoon expand <ref>`
    for detail). Write `body.md` in the run folder following
@@ -66,8 +75,8 @@ that bypass on your own initiative.
      what the evidence contradicts and add what's missing.
    - When asked for changes, edit `body.md` in place; don't regenerate it from
      scratch unless the user asks for a fresh draft.
-5. **Write and draw the comic** (skip if `config.comic` is false or the user
-   doesn't want one). Follow
+5. **Write and draw the comic** (skip if `config.comic` is false, the user
+   doesn't want one, or `aiPolicy.media` is `prohibited`). Follow
    [references/comic-guide.md](references/comic-guide.md). Aim for something
    funny that someone outside the repo would want to share:
    - find the joke in the digest; pick a format, a style that fits the cast
@@ -93,6 +102,17 @@ that bypass on your own initiative.
    to a relative path, so they can Ctrl+click it to see the page with the comic.
    You can also offer `tracetoon preview --open`. Ask them to approve or say what
    to change; for changes, edit and go back to step 5 or 6.
+   - Render prints **optional notes** (also in the preview, under the draft):
+     facts a reviewer may want that weren't captured, e.g. "no browser check
+     was captured; add one if you did". Offer them in one short list as things
+     the user *may* add. Never ask before drafting, and never treat them as
+     required.
+   - If the user supplies context (a manual check, the reason for a choice),
+     add it to `author.md` in the run folder in their words, update `body.md`,
+     and render again. The claim check treats it as author-reported.
+   - The claim check marks sentences that are contradicted or not established
+     by the evidence. Fix contradicted ones; for not-established ones, reword or
+     keep them if the user confirms (it may have happened outside the logs).
 8. **Publish.** Only after the user approves:
    `tracetoon publish --code <approval code>`.
    - If the branch is not on GitHub yet, ask before adding `--push`.

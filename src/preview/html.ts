@@ -3,6 +3,8 @@ import { marked } from 'marked';
 import type { Approval } from '../commands/publish.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { claimSummary, type ClaimFinding } from '../digest/claims.ts';
+import type { ContextNote } from '../digest/notes.ts';
+import type { AiPolicy } from '../github/repoContext.ts';
 
 const esc = (s: string) =>
   s
@@ -83,8 +85,27 @@ export function renderPreviewHtml(input: {
   share?: { image: string; caption: string };
   /** Advisory claim-check findings, shown beside the sentences they're about. */
   claims?: ClaimFinding[];
+  /** Optional, skippable notes about facts a reviewer may want. */
+  notes?: ContextNote[];
+  /** The repo's AI policy, read heuristically. */
+  policy?: AiPolicy;
+  /** An outline of the evidence, for authors who write the text themselves. */
+  outline?: string;
+  /** The comic exists but the repo doesn't allow AI-generated images. */
+  comicHeldBack?: boolean;
 }): string {
-  const { title, body, approval, digest, share, claims = [] } = input;
+  const {
+    title,
+    body,
+    approval,
+    digest,
+    share,
+    claims = [],
+    notes = [],
+    policy,
+    outline,
+    comicHeldBack,
+  } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
   const marked_ = annotateClaims(body, claims);
   const html = marked_.place(
@@ -93,7 +114,7 @@ export function renderPreviewHtml(input: {
   const findings = approval.findings.length
     ? `<p class="warn">Leak scan: ${approval.findings.map((f) => `${esc(f.kind)}×${f.count}`).join(', ')}</p>`
     : '<p class="ok">Leak scan: clean</p>';
-  const policy =
+  const policyWarn =
     approval.policy === 'prohibited'
       ? '<p class="warn">This repository appears to prohibit AI-assisted contributions.</p>'
       : '';
@@ -118,6 +139,7 @@ aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var
 .evidence ul{margin:4px 0;padding-left:20px}.evidence li{margin:2px 0}.evidence .n{color:var(--muted)}
 .claim{font-size:11px;font-weight:600;padding:0 4px;border-radius:8px;margin-left:2px;vertical-align:super;text-decoration:none}
 .claim.contradicted{background:#ffebe9;color:#cf222e}.claim.not-established{background:#fff8c5;color:#9a6700}
+.policy{border:1px solid var(--border);border-left:4px solid var(--warn);border-radius:6px;padding:8px 12px;margin:0 0 12px;font-size:14px}
 .checks{margin-top:12px;font-size:14px;color:var(--muted)}.checks li{margin:4px 0}.checks b{color:var(--fg)}
 .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;color:var(--fg)}
 .social{margin-top:24px}.social h2{font-size:16px;margin:0 0 8px}
@@ -126,8 +148,19 @@ aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var
 </style></head><body><main>
 <h1 class="title">${esc(title)}</h1>
 <div class="meta">${approval.mode === 'edit' ? `Updates PR #${approval.prNumber}` : 'New pull request'} | ${esc(approval.head)} -> ${esc(approval.base)}</div>
+${policyHtml(policy, comicHeldBack)}
 <div class="card">${html}</div>
 ${marked_.notes}
+${
+  notes.length
+    ? `<section class="checks"><p><b>Optional additions</b> (skip any that don't apply; "not captured" doesn't mean "not done"):</p><ul>${notes.map((n) => `<li>${esc(n.text)}</li>`).join('')}</ul></section>`
+    : ''
+}
+${
+  outline
+    ? `<section class="checks outline"><p><b>Notes to write from</b>: this repository asks for author-written text, so here are the facts as an outline.</p>${marked.parse(outline, { async: false, gfm: true }) as string}</section>`
+    : ''
+}
 ${
   share
     ? `<section class="social"><h2>On a phone, shared</h2><div class="phone"><img src="${esc(share.image)}" alt="comic at phone size"><p>${esc(share.caption)}</p></div>
@@ -135,7 +168,7 @@ ${
     : ''
 }
 <aside>
-${findings}${policy}
+${findings}${policyWarn}
 ${evidence}
 <p>Approval code: <span class="code">${esc(approval.code)}</span></p>
 <p>Nothing has been posted. Tell your agent to publish with this code once you're happy.</p>
@@ -236,4 +269,42 @@ export function annotateClaims(
       ? `<section class="checks"><p><b>Checks on the text:</b> ${summary}</p></section>`
       : '';
   return { body: out, place, notes };
+}
+
+/** A compact notice of what the repo's AI policy means for this PR, with the lines it comes from. */
+function policyHtml(policy: AiPolicy | undefined, comicHeldBack?: boolean): string {
+  if (
+    !policy ||
+    (policy.verdict === 'none' &&
+      !policy.noPullRequests &&
+      !policy.prInstructions?.length)
+  )
+    return '';
+  const points: string[] = [];
+  if (policy.text === 'prohibited')
+    points.push(
+      'This repository appears to prohibit AI-written contributions. Treat the draft as notes, not something to post as is.',
+    );
+  else if (policy.text === 'author-written-recommended')
+    points.push(
+      'This repository asks authors to write PR text themselves. The outline below the draft has the facts to write from.',
+    );
+  if (comicHeldBack || policy.media === 'prohibited')
+    points.push("AI-generated images aren't allowed here, so the comic is left out.");
+  if (policy.noPullRequests)
+    points.push(
+      "The repo's agent instructions say never to open a PR. Only you can decide to post anyway.",
+    );
+  if (policy.disclosure && policy.disclosure !== 'unspecified')
+    points.push(
+      `A disclosure in the form the repo asks for (${policy.disclosure}) is added at the end.`,
+    );
+  if (!points.length)
+    points.push('This repository mentions AI in its contribution docs.');
+  const lines = [...policy.excerpts, ...(policy.prInstructions ?? [])].slice(0, 8);
+  return `<div class="policy"><b>Repository policy:</b> ${points.map(esc).join(' ')}${
+    lines.length
+      ? `<details><summary>The lines this comes from</summary><ul>${lines.map((l) => `<li><code>${esc(l.file)}:${l.line}</code> ${esc(l.text)}</li>`).join('')}</ul></details>`
+      : ''
+  }</div>`;
 }
