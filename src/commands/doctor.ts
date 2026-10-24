@@ -8,22 +8,32 @@ import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { emit, type OutOpts } from './output.ts';
-import { PROVIDERS, providerInfo } from '../comic/providers.ts';
-import { loadConfig } from '../config.ts';
+import { nextStep, routeStatuses } from '../comic/routes.ts';
 
-/** AI image routes on this machine, and whether the user has approved each. */
-function imageProviders(root: string | undefined) {
-  const approved = loadConfig(root).imageConsent;
-  return PROVIDERS.map((id) => {
-    const info = providerInfo(id);
-    return {
-      id,
-      label: info.label,
-      available: info.available,
-      approved: approved.includes(id),
-      detail: info.detail,
+/**
+ * Whether the signed-in gh account can push to this repo, so a 403 shows up
+ * before any work instead of at publish. Undefined when it can't be told.
+ */
+export function pushAccess(
+  cwd: string,
+): { repo: string; account?: string; canPush: boolean } | undefined {
+  const view = gh(cwd, ['repo', 'view', '--json', 'nameWithOwner,viewerPermission']);
+  if (!view.ok) return undefined;
+  try {
+    const { nameWithOwner, viewerPermission } = JSON.parse(view.stdout) as {
+      nameWithOwner?: string;
+      viewerPermission?: string;
     };
-  });
+    if (!nameWithOwner || !viewerPermission) return undefined;
+    const who = gh(cwd, ['api', 'user', '--jq', '.login']);
+    return {
+      repo: nameWithOwner,
+      account: who.ok ? who.stdout.trim() || undefined : undefined,
+      canPush: ['ADMIN', 'MAINTAIN', 'WRITE'].includes(viewerPermission.toUpperCase()),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function version(out: string): string | undefined {
@@ -136,9 +146,11 @@ export function doctor(
     switch: switchState(cwd),
     prHook: hookStatus().filter((h) => h.present),
     ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
-    imageProviders: imageProviders(top.ok ? top.stdout.trim() : undefined),
+    imageProviders: routeStatuses(top.ok ? top.stdout.trim() : undefined),
+    push: top.ok && ghAuth ? (pushAccess(cwd) ?? null) : null,
   };
-  emit(opts, report, () => {
+  const comics = nextStep(report.imageProviders);
+  emit(opts, { ...report, comics }, () => {
     const yes = (b: boolean) => (b ? 'yes' : 'no');
     const lines = [
       `${report.tool} on ${runtime}`,
@@ -181,16 +193,22 @@ export function doctor(
       }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
       ...report.prHook.filter((h) => h.problem).map((h) => `  ${h.label}: ${h.problem}`),
     );
-    const ready = report.imageProviders.filter((p) => p.available);
+    const found = report.imageProviders.filter((p) => p.available);
     lines.push(
       `comic art: ${
-        ready.length
-          ? ready
-              .map((p) => `${p.id}${p.approved ? ' (approved)' : ' (needs your OK)'}`)
-              .join(', ')
-          : 'no image route, so PRs get no comic (install Codex or Antigravity, or set OPENAI_API_KEY or GEMINI_API_KEY)'
+        found
+          .map(
+            (p) =>
+              `${p.id} (${p.ready === 'not ready' ? "can't draw" : p.approved ? 'approved' : 'needs your OK'})`,
+          )
+          .join(', ') || 'no image route'
       }`,
+      `  next: ${comics.text}`,
     );
+    if (report.push && !report.push.canPush)
+      lines.push(
+        `push access: ${report.push.account ?? 'this gh account'} can't push to ${report.push.repo}. Publishing will fail: switch accounts (gh auth switch), or push to a fork.`,
+      );
     if (!ghV) lines.push('Install the GitHub CLI (gh) to create or update PRs.');
     else if (!ghAuth) lines.push('Run `gh auth login` to let Tracetoon post PRs.');
     return lines.join('\n');

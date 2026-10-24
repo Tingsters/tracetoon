@@ -24,7 +24,7 @@ import {
   type PrMeta,
 } from '../github/body.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
-import { prTruth, type PrTruth } from '../git/pr.ts';
+import { defaultBase, prTruth, type PrTruth } from '../git/pr.ts';
 import { renderPreviewHtml } from '../preview/html.ts';
 import { findRun, readJson, readText, writeJson, type Run } from '../run.ts';
 import { biblePath, repoWeb, type Story } from '../story/story.ts';
@@ -91,6 +91,31 @@ export interface Approval {
 const sha = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex');
 const codeFor = (title: string, body: string, comicSha = '') =>
   approvalCode(`${title}\n\0${body}\n\0${comicSha}`);
+
+/**
+ * The branch to open the PR against. A digest can compare with a commit (to
+ * tell the story of the whole history, say), but a PR targets a branch: then
+ * it's the repo's default branch.
+ */
+export function prBase(root: string, base: string): string {
+  const branch = (name: string) =>
+    git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`]).ok ||
+    git(root, ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${name}`]).ok;
+  return branch(base) ? base : defaultBase(root);
+}
+
+/** Commits added since the digest, which its checks can't see. */
+export function digestStale(
+  root: string,
+  digest: Pick<TraceDigest, 'pr'>,
+): string | undefined {
+  if (digest.pr.usedWorkingTree) return undefined;
+  const last = digest.pr.commits[digest.pr.commits.length - 1]?.sha;
+  const head = git(root, ['rev-parse', `${digest.pr.head}^{commit}`]).stdout.trim();
+  if (!last || !head || head.startsWith(last)) return undefined;
+  const added = git(root, ['rev-list', '--count', `${last}..${head}`]).stdout.trim();
+  return `${added && added !== '0' ? `${added} commit(s) were` : 'Commits were'} added after the digest; run \`tracetoon digest\` again so the description and checks see them.`;
+}
 
 function loadRun(cwd: string, runId?: string): { run: Run; truth: PrTruth } {
   const truth = prTruth(cwd, { noGh: true });
@@ -217,7 +242,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     allowFindings: !!opts.allowFindings,
     mode: ctx.existingPr ? 'edit' : 'create',
     prNumber: ctx.existingPr?.number,
-    base: digest.pr.base,
+    base: prBase(truth.toplevel, digest.pr.base),
     head: digest.pr.head,
     policy: ctx.aiPolicy.verdict,
     ...(ctx.aiPolicy.noPullRequests ? { noPullRequests: true } : {}),
@@ -244,9 +269,12 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     ctx.aiPolicy.text === 'author-written-recommended';
   const outline = evidenceNotes(digest);
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
-  const previewBody = comic
-    ? body.replaceAll(COMIC_SRC, `./out/${comic.path.split(/[\\/]/).pop()}`)
-    : body;
+  // The comic is embedded, so the preview shows it in any browser and from any
+  // folder (sandboxed browsers can't read files inside .git).
+  const comicData = comic
+    ? `data:${comic.mime};base64,${comic.data.toString('base64')}`
+    : '';
+  const previewBody = comic ? body.replaceAll(COMIC_SRC, comicData) : body;
   writeFileSync(
     join(run.dir, 'preview.html'),
     renderPreviewHtml({
@@ -261,7 +289,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       digest,
       share: comic
         ? {
-            image: `./out/${comic.path.split(/[\\/]/).pop()}`,
+            image: comicData,
             caption: shareCaption(script, title, '(link to the PR)'),
           }
         : undefined,
@@ -271,6 +299,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   writeJson(run, 'approval.json', approval);
 
   const previewPath = join(run.dir, 'preview.html');
+  const stale = digestStale(truth.toplevel, digest);
   emit(
     opts,
     {
@@ -288,6 +317,10 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     () =>
       [
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
+        approval.mode === 'create'
+          ? `PR base: ${approval.base}${approval.base !== digest.pr.base ? ` (the story covers changes since ${digest.pr.base.slice(0, 12)})` : ''}`
+          : '',
+        stale ? `Warning: ${stale}` : '',
         `Preview (Ctrl+click to open): ${fileUrl(previewPath)}`,
         findings.length
           ? `Leak scan found: ${findings.map((f) => `${f.kind} x${f.count}`).join(', ')}. ${

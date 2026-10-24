@@ -69,10 +69,15 @@ function readJson(p: string): Partial<Config> {
 }
 
 export function loadConfig(root?: string): Config {
+  const user = readJson(userConfigPath());
+  // Only the user can approve sending prompts to an image service: a repo's
+  // config file can't do it for them.
+  const { imageConsent: _ignored, ...repo } = root ? readJson(repoConfigPath(root)) : {};
   return {
     ...DEFAULTS,
-    ...readJson(userConfigPath()),
-    ...(root ? readJson(repoConfigPath(root)) : {}),
+    ...user,
+    ...repo,
+    imageConsent: user.imageConsent ?? DEFAULTS.imageConsent,
   };
 }
 

@@ -287,6 +287,9 @@ describe('comic end to end', () => {
       FAKE_GH_LOG: ghLog,
       GEMINI_API_KEY: '',
       OPENAI_API_KEY: '',
+      // Real agent CLIs on the machine stay out of the tests.
+      TRACETOON_CODEX_BIN: 'none',
+      TRACETOON_AGY_BIN: 'none',
     };
   });
   const cli = (cwd: string, ...args: string[]) => {
@@ -359,7 +362,7 @@ describe('comic end to end', () => {
       synopsis: 'Kit adds a greeting helper and the tests turn green.',
     });
     expect(readFileSync(join(runDir, 'preview.html'), 'utf8')).toContain(
-      'src="./out/comic.png"',
+      'src="data:image/png;base64,',
     );
 
     // Swapping the image after approval is refused.

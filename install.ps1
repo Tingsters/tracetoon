@@ -44,6 +44,11 @@ if ($env:TRACETOON_UNINSTALL -eq '1') {
     if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir; Write-Host "removed from $($t.Name) ($($t.Dir))" }
   }
   if (Test-Path $homeRoot) { Remove-Item -Recurse -Force $homeRoot }
+  $binDir = Split-Path -Parent $stable
+  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+  if ($userPath -and (($userPath -split ';') -contains $binDir)) {
+    [Environment]::SetEnvironmentVariable('Path', (($userPath -split ';') | Where-Object { $_ -and $_ -ne $binDir }) -join ';', 'User')
+  }
   Write-Host 'Tracetoon uninstalled.'
   return
 }
@@ -108,6 +113,19 @@ try {
     & $exe hook install
     if ($LASTEXITCODE -ne 0) { Write-Host '  could not add the PR hook; the skill still works' }
   }
+
+  # A `tracetoon` command for your own terminal: the bin folder on the user PATH.
+  $binDir = Split-Path -Parent $stable
+  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+  if (-not (($userPath -split ';') -contains $binDir)) {
+    [Environment]::SetEnvironmentVariable('Path', (@($userPath, $binDir) | Where-Object { $_ }) -join ';', 'User')
+    Write-Host "Command: tracetoon (added $binDir to your PATH; new terminals will see it)"
+  } else {
+    Write-Host 'Command: tracetoon'
+  }
+
+  # Comics need an image route: say what's there and what to do next.
+  & $exe images --brief
   Write-Host 'Done. Restart your agent, then ask it to open a PR.'
 }
 finally {

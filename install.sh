@@ -94,6 +94,10 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
     if [ -d "$dir" ]; then rm -rf "$dir" && say "removed from $name ($dir)"; fi
   done
   rm -rf "$home_root" "$cache_root"
+  # The terminal command, only if it's our link.
+  if [ -L "$HOME/.local/bin/tracetoon" ] && [ "$(readlink "$HOME/.local/bin/tracetoon")" = "$stable" ]; then
+    rm -f "$HOME/.local/bin/tracetoon"
+  fi
   say "Tracetoon uninstalled."
   exit 0
 fi
@@ -148,4 +152,17 @@ else
   say "PR hook (routes gh pr create through Tracetoon; turn off with: tracetoon off):"
   "$stable" hook install || say "  could not add the PR hook; the skill still works"
 fi
+
+# A `tracetoon` command for your own terminal (Git Bash on Windows uses install.ps1's PATH).
+if [ "$os" != windows ]; then
+  user_bin="$HOME/.local/bin"
+  mkdir -p "$user_bin" && ln -sf "$stable" "$user_bin/tracetoon"
+  case ":$PATH:" in
+    *":$user_bin:"*) say "Command: tracetoon (in $user_bin)" ;;
+    *) say "Command: $user_bin/tracetoon. To type just 'tracetoon', add this to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+  esac
+fi
+
+# Comics need an image route: say what's there and what to do next.
+"$stable" images --brief 2>/dev/null || true
 say "Done. Restart your agent, then ask it to open a PR."

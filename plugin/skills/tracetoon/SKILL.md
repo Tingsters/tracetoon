@@ -38,8 +38,29 @@ that bypass on your own initiative.
 
 ## Workflow
 
-1. **Check.** `tracetoon status`, then `tracetoon doctor`. If `gh` is missing or
-   not signed in, tell the user; you can still prepare everything.
+1. **Check.** `tracetoon status`, then `tracetoon doctor --json`. If `gh` is
+   missing or not signed in, tell the user; you can still prepare everything.
+   - If `push.canPush` is false, tell the user now: their gh account can't push
+     to this repo, so publishing will fail. They can switch accounts
+     (`gh auth switch`) or use a fork.
+   - **Comics, settled before any writing.** If a comic is wanted
+     (`config.comic` is true and the repo doesn't ban AI images) and
+     `comics.kind` isn't `ready`, raise it once, in one short message, using
+     `comics.text` and `imageProviders`:
+     - `approve`: say which route was found, what it sends where, and what it
+       costs; ask once. On yes: `tracetoon images --approve <route> --test`.
+       If the test fails, tell the user the error (it names the cause) and
+       continue without a comic unless they fix it.
+     - `fix`: the route is installed but can't draw (e.g. Codex not signed in
+       with ChatGPT, or set to another model provider); pass on the fix.
+     - `setup`: no route; pass on how to add one (they'll need to restart the
+       agent after setting a key).
+     - Either way, offer "skip comics for this PR" and, if they never want
+       them, `tracetoon config set comic false`. Don't ask again in this
+       session once they've declined.
+   - When you suggest a command for the user to run themselves, use
+     `command.run` from `tracetoon status --json` (the launcher's full path if
+     `tracetoon` isn't on their PATH).
 2. **Digest.** `tracetoon digest --json`. It prints the run folder and the
    digest path.
    - If `ambiguous` is not empty, show the user those sessions (title, agent,
@@ -104,6 +125,13 @@ that bypass on your own initiative.
    them the preview link exactly as printed (`previewUrl` in `--json`): a full
    `file:///…/preview.html` URL on its own line, not in backticks, not shortened
    to a relative path, so they can Ctrl+click it to see the page with the comic.
+   The comic is embedded in the page, so it shows in any browser.
+   - If render warns that commits were added after the digest, run
+     `tracetoon digest` again (and context, body, render) before asking for
+     approval.
+   - Render prints the PR base for a new PR. If the story covers more than the
+     branch (e.g. the whole history), check the base is the branch the user
+     expects.
    You can also offer `tracetoon preview --open`. Ask them to approve or say what
    to change; for changes, edit and go back to step 5 or 6.
    - Render prints **optional notes** (also in the preview, under the draft):
@@ -138,6 +166,8 @@ contributions. In that case, fall back to the preview.
 - `tracetoon series`: the repo's comic cast and earlier episodes.
 - `tracetoon export --agent-trace`: line-level attribution as an Agent Trace
   record, if the user asks for one.
+- `tracetoon images`: image routes for comics, whether each can draw, and the
+  next step; `--approve <route>` (after the user agrees) and `--test`.
 - `tracetoon config set <key> <value>`: `theme` (pets, mecha, scifi, office,
   heist, fantasy), `style` (pin a house style, or `auto`), `yolo`, `comic`,
   `promptQuoting`, `hosting`.
