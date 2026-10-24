@@ -301,6 +301,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`
           : '',
         policyLines(ctx.aiPolicy, mediaBanned),
+        !comic && !opts.noComic && !mediaBanned && existsSync(join(run.dir, 'comic.json'))
+          ? 'No comic: comic.json exists but no comic was drawn, so this PR has none.'
+          : '',
         approval.policy === 'prohibited'
           ? 'WARNING: this repository appears to prohibit AI-assisted contributions. Read the policy before posting.'
           : '',

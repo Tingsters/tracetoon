@@ -133,14 +133,10 @@ comic
 comic
   .command('art')
   .description(
-    'make the panel art: AI (Codex, Antigravity, OpenAI or Gemini, after consent) or the built-in artist',
+    'make the comic art with Codex, Antigravity, OpenAI or Gemini, after consent (exit code 5: no approved route)',
   )
   .option('--run <id>', 'run id (default: latest)')
-  .option(
-    '--provider <name>',
-    'auto, builtin, codex, antigravity, openai or gemini',
-    'auto',
-  )
+  .option('--provider <name>', 'auto, codex, antigravity, openai or gemini', 'auto')
   .option('--consent', 'the user agreed to send comic prompts to this provider')
   .option('--force', 'redraw panels that already exist')
   .option(

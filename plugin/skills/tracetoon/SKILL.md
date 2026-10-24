@@ -86,9 +86,13 @@ that bypass on your own initiative.
    - write `comic.json` (`"v": 2`), then `tracetoon comic check`;
    - make the art: `tracetoon comic art` draws the whole page with its lettering
      through the Codex or Antigravity CLI, or the OpenAI or Gemini API, after the
-     user agrees once (exit code 4 means: ask them, then add `--consent`).
-     Otherwise it uses the built-in artist. Or use your own image tool with
-     `tracetoon comic prompts`;
+     user agrees once (exit code 4 means: ask them, then add `--consent`). Or
+     use your own image tool with `tracetoon comic prompts`;
+   - exit code **5** means no approved image route: offer the user the options
+     it prints (approve a route, or your own image tool). If they want none,
+     skip the comic and go on to step 6; the PR is published without one. If a
+     route fails, retry with `--force` or another `--provider`; if it keeps
+     failing, skip the comic;
    - `tracetoon comic render`, then **look at `out/comic.png` and proofread** the
      lettering against the printed list. Redraw with `comic art --force` (up to 2
      times), then fall back to `--lettering overlay`. Offer

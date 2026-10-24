@@ -8,7 +8,7 @@
 export type Theme = 'pets' | 'mecha' | 'scifi' | 'office' | 'heist' | 'fantasy';
 export const THEMES: Theme[] = ['pets', 'mecha', 'scifi', 'office', 'heist', 'fantasy'];
 
-/** Body shapes the built-in SVG artist can draw. */
+/** The cast's body shapes, used in image prompts and to check style fit. */
 export type Species =
   | 'fox'
   | 'cat'
