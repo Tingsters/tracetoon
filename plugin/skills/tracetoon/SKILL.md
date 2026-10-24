@@ -91,7 +91,9 @@ that bypass on your own initiative.
 4. **Write the description.** Read `digest.json` (and `tracetoon expand <ref>`
    for detail). Write `body.md` in the run folder following
    [references/writing-guide.md](references/writing-guide.md). For a new PR,
-   also write a one-line `title.txt`.
+   also write a one-line `title.txt` following the guide's "The title" section
+   and `titleRules` from context. For an existing PR, keep its title unless the
+   scope changed.
    - Draft it straight away from what's available; don't ask the user questions
      first. Only ask when the draft can't be written without an answer (for
      example, it's unclear which change the PR is meant to describe).

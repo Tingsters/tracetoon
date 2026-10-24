@@ -108,6 +108,7 @@ program
   .option('--run <id>', 'run id (default: latest)')
   .option('--allow-findings', 'allow posting even though the leak scan found something')
   .option('--no-comic', 'leave the comic out even if one was rendered')
+  .option('--retitle', 'replace a title a person chose (only after the user agrees)')
   .action((o) => {
     o.noComic = o.comic === false;
     renderCmd(cwd, { ...g(), ...o });

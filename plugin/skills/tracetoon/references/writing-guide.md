@@ -13,6 +13,73 @@ Write a complete, useful draft from what's available. Don't wait for, or ask
 for, more input. (The preview offers the user optional notes about missing
 facts; see "Missing facts" below.)
 
+## The title
+
+The title is a compact, accurate identifier for the change. Its job is smaller
+than the body's: it lets the right maintainer recognize the area, understand the
+main action or effect, and tell this PR apart from other changes to the same
+code. The body explains.
+
+**What to keep** (a way to decide what earns a place, not a template):
+required metadata + the main change + the affected object + the qualifier that
+prevents a wrong reading. A feature name, a version requirement, a revert and a
+bug fix all take different shapes.
+
+- "Keep a PR's own work when the base branch is merged into it": the
+  behavior, and the situation it applies to.
+- "Commands quoted inside scripts and heredocs no longer count as test runs":
+  the object, the condition, the effect.
+- "Fix ICE when multiple RegionOriginNotes add the same diagnostic arg": the
+  failure, the affected object, the trigger.
+
+**Rules:**
+
+- **Name what the PR actually does**, not the goal it serves or the issue's
+  broader wish. Comment-only work is an explanation, not a behavior change.
+  Performance or safety claims need their scope ("for short non-ASCII
+  strings") and evidence; with no captured measurement, leave the claim out.
+- **Keep the one qualifier that separates this change** (the trigger, the
+  condition, the operation). "Fix timeout" is a neighborhood; "Fix connect
+  timeout during the TLS handshake" is the change. Keep a word that rules out
+  a likely wrong reading ("workspace package" so nobody expects an npm
+  release). Beyond that, detail goes in the body: provider lists, version
+  numbers, counts and secondary effects.
+- **Use the code's real names**: the API, option, error, file or command a
+  maintainer would search for. A bare code (an issue number, a rule ID, a CWE)
+  doesn't explain anything on its own; pair it with the behavior.
+- **The change that matters most, not the biggest diff.** Cover the whole PR
+  at the level of its main change, not the latest commit. Read the commit
+  subjects; reuse a good one if it fits. The main change is usually what the
+  user asked for: if they asked for something visible (a clickable link, a new
+  option), it belongs in the title even when fixes found along the way touched
+  more code. Name what's **new**, not what already existed ("draw with Codex
+  or Antigravity", not "draw with AI" if AI drawing was already there).
+- **Two separate changes:** when a PR has two that a maintainer would both want
+  to know about, a short "X, and Y" is better than hiding one, if it fits the
+  budget. Small fixes that came along go in the body. Three or more separate
+  changes mean the PR covers too much: tell the user and title the main one.
+- **No taglines or headlines** ("Better PRs: X, Y and Z"), no "This PR…", no
+  marketing words, and no trailing period unless the repo wants one.
+- **Length:** follow the repo's limit if it has one. Otherwise treat about 72
+  characters as the budget: if a draft is longer, move detail into the body
+  (lists, numbers, secondary effects, explanations of why) until it fits. Only
+  go over when the one essential qualifier can't be said shorter, and never cut
+  that qualifier to save space.
+- **Repo conventions come first.** `titleRules` in `context.json` lists what the
+  repo asks for: a Conventional Commits type (`feat:`, `fix:`) when a check
+  enforces it, an issue prefix (`gh-1234: `), a length limit, and whether the
+  title becomes a squash commit subject or a release-note line. Follow written
+  and enforced rules. Recent titles are only examples. Don't add a type prefix
+  the repo doesn't use. A correct prefix doesn't make a vague title good.
+
+**Existing PRs:** keep the current title unless the change's scope has moved.
+Tracetoon keeps a title a person edited on GitHub; replace it only if the user
+agrees (`tracetoon render --retitle`).
+
+`render` runs an advisory title check (distinction, shape, truth, scope, repo
+rules) and lists anything to revise beside the title in the preview. Fix what
+applies; it never blocks publishing.
+
 ## If the user already wrote something
 
 If `body.md` already has text the user wrote, or the PR already has a

@@ -14,6 +14,8 @@ export interface PrMeta {
   style?: string;
   /** Hash of the block's text as posted, to notice later edits on GitHub. */
   contentSha?: string;
+  /** Hash of the title as posted, so a title someone edits on GitHub is kept. */
+  titleSha?: string;
 }
 
 /** JSON that can never end an HTML comment early (no `--`, no `>`). */
@@ -68,6 +70,14 @@ export function regionContent(body: string): string | undefined {
 }
 
 /** A short, stable hash of region text, ignoring line-ending and edge whitespace. */
+/** Hash of a title, ignoring spacing. */
+export function titleHash(title: string): string {
+  return createHash('sha256')
+    .update(title.replace(/\s+/g, ' ').trim())
+    .digest('hex')
+    .slice(0, 16);
+}
+
 export function contentHash(text: string): string {
   // Image sources are filled in at publish (the comic's hosted URL), after the
   // hash is taken, so they don't count as edits.

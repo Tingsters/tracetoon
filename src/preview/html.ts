@@ -4,6 +4,7 @@ import type { Approval } from '../commands/publish.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { claimSummary, type ClaimFinding } from '../digest/claims.ts';
 import type { ContextNote } from '../digest/notes.ts';
+import type { TitleFinding } from '../digest/titleCheck.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
 
 const esc = (s: string) =>
@@ -93,6 +94,10 @@ export function renderPreviewHtml(input: {
   outline?: string;
   /** The comic exists but the repo doesn't allow AI-generated images. */
   comicHeldBack?: boolean;
+  /** Advisory checks on the title. */
+  titleFindings?: TitleFinding[];
+  /** Why the title shown isn't the one proposed (a person's title kept). */
+  titleNote?: string;
 }): string {
   const {
     title,
@@ -105,6 +110,8 @@ export function renderPreviewHtml(input: {
     policy,
     outline,
     comicHeldBack,
+    titleFindings = [],
+    titleNote,
   } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
   const marked_ = annotateClaims(body, claims);
@@ -147,7 +154,13 @@ aside{margin-top:24px;font-size:14px;color:var(--muted);border-top:1px solid var
 .phone img{width:100%;border-radius:8px;display:block}.phone p{margin:8px 2px 0;font-size:14px;white-space:pre-wrap}
 </style></head><body><main>
 <h1 class="title">${esc(title)}</h1>
-<div class="meta">${approval.mode === 'edit' ? `Updates PR #${approval.prNumber}` : 'New pull request'} | ${esc(approval.head)} -> ${esc(approval.base)}</div>
+<div class="meta">${approval.mode === 'edit' ? `Updates PR #${approval.prNumber}` : 'New pull request'} | ${esc(approval.head)} -> ${esc(approval.base)} | ${title.length} characters</div>
+${titleNote ? `<p class="checks">${esc(titleNote)}</p>` : ''}
+${
+  titleFindings.length
+    ? `<section class="checks"><p><b>Title check</b> (advisory):</p><ul>${titleFindings.map((f) => `<li>${esc(f.state)} (${esc(f.check)}): ${esc(f.reason)}</li>`).join('')}</ul></section>`
+    : ''
+}
 ${policyHtml(policy, comicHeldBack)}
 <div class="card">${html}</div>
 ${marked_.notes}

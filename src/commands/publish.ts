@@ -18,6 +18,8 @@ import { contextNotes, evidenceNotes } from '../digest/notes.ts';
 import { assetUrl, publishAssets, type AssetFile } from '../github/assets.ts';
 import {
   contentHash,
+  decodeMeta,
+  titleHash,
   defuseMentions,
   managedBlock,
   mergeIntoBody,
@@ -28,6 +30,8 @@ import { defaultBase, prTruth, type PrTruth } from '../git/pr.ts';
 import { renderPreviewHtml } from '../preview/html.ts';
 import { findRun, readJson, readText, writeJson, type Run } from '../run.ts';
 import { repoWeb } from '../github/history.ts';
+import type { TitleRules } from '../github/titleRules.ts';
+import { checkTitle, titleLine } from '../digest/titleCheck.ts';
 import { gh, git, run as exec } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { renderedComic } from './comic.ts';
@@ -41,6 +45,7 @@ interface Context {
   aiPolicy: AiPolicy;
   existingPr: { number: number; url: string; title: string; body: string } | null;
   config?: { disclosure?: 'assisted-by' | 'co-authored-by' | 'none' };
+  titleRules?: TitleRules;
 }
 
 /**
@@ -137,6 +142,8 @@ export interface RenderOpts extends OutOpts {
   run?: string;
   allowFindings?: boolean;
   noComic?: boolean;
+  /** Replace a title a person chose (only after the user agrees). */
+  retitle?: boolean;
 }
 
 export function renderCmd(cwd: string, opts: RenderOpts): Approval {
@@ -151,11 +158,30 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   if (!bodyMd?.trim()) {
     throw new UserError(`Write the PR description to ${join(run.dir, 'body.md')} first.`);
   }
-  const title =
-    readText(run, 'title.txt')?.trim() ||
-    ctx.existingPr?.title ||
-    digest.pr.commits[digest.pr.commits.length - 1]?.subject ||
-    digest.pr.head;
+  // The title: a person's choice is kept. A title edited on GitHub since
+  // Tracetoon posted it, or written by someone on a PR Tracetoon didn't title,
+  // stays unless the user agrees to replace it (--retitle).
+  const proposed = readText(run, 'title.txt')?.trim();
+  const current = ctx.existingPr?.title;
+  const postedTitle = ctx.existingPr
+    ? decodeMeta(ctx.existingPr.body)?.titleSha
+    : undefined;
+  const chosenByPerson =
+    !!current && (postedTitle ? postedTitle !== titleHash(current) : true);
+  let titleNote: string | undefined;
+  let title: string;
+  if (proposed && current && proposed !== current && chosenByPerson && !opts.retitle) {
+    title = current;
+    titleNote = `Kept the PR's current title "${current}" (${postedTitle ? 'edited on GitHub' : 'chosen by a person'}); title.txt proposes "${proposed}". Re-render with --retitle only if the user agrees.`;
+  } else {
+    title =
+      proposed ||
+      current ||
+      digest.pr.commits[digest.pr.commits.length - 1]?.subject ||
+      digest.pr.head;
+  }
+  const titleFindings = checkTitle({ title, rules: ctx.titleRules, digest });
+  writeJson(run, 'title-checks.json', titleFindings);
 
   const script = readJson<ComicScript>(run, 'comic.json');
   const mediaBanned = ctx.aiPolicy.media === 'prohibited';
@@ -182,6 +208,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     v: 1,
     ...(comic && script?.style ? { style: script.style } : {}),
     contentSha: contentHash(content),
+    titleSha: titleHash(title),
   };
   const block = managedBlock(content, meta);
   const body = mergeIntoBody(ctx.existingPr?.body, block);
@@ -239,6 +266,8 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       body: previewBody,
       approval,
       claims,
+      titleFindings,
+      titleNote,
       notes,
       policy: ctx.aiPolicy,
       outline: writeYourself ? outline : undefined,
@@ -264,6 +293,8 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ...approval,
       previewPath,
       previewUrl: fileUrl(previewPath),
+      titleChecks: titleFindings,
+      ...(titleNote ? { titleNote } : {}),
       claims: {
         ...claimSummary(claims),
         findings: claims.filter(
@@ -286,6 +317,8 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
                 : 'Fix body.md and render again.'
             }`
           : 'Leak scan: clean.',
+        titleNote ? `Note: ${titleNote}` : '',
+        titleLine(titleFindings),
         claimLine(claims),
         notes.length
           ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`

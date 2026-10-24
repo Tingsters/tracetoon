@@ -155,9 +155,9 @@ describe('comic end to end', () => {
     expect(finalBody.indexOf('Adds a greeting helper')).toBeLessThan(
       finalBody.indexOf('{{tracetoon:comic-src}}'),
     );
-    // Only what a later run reads back: the style, and the edit-detection hash.
+    // Only what a later run reads back: the style, and the edit-detection hashes.
     const meta = decodeMeta(finalBody)!;
-    expect(Object.keys(meta).sort()).toEqual(['contentSha', 'style', 'v']);
+    expect(Object.keys(meta).sort()).toEqual(['contentSha', 'style', 'titleSha', 'v']);
     expect(meta.style).toBe('sunday-strip');
     expect(readFileSync(join(runDir, 'preview.html'), 'utf8')).toContain(
       'src="data:image/png;base64,',
