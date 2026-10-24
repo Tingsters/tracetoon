@@ -257,6 +257,10 @@ describe('false alarms found on real descriptions', () => {
   const root = tempDir('tracetoon-claims2-');
   mkdirSync(join(root, 'scripts'), { recursive: true });
   writeFileSync(join(root, 'scripts', 'eval-summaries.ts'), '');
+  writeFileSync(
+    join(root, 'scripts', 'render.ts'),
+    "writeFileSync(join(dir, 'evidence-notes.md'), notes);",
+  );
   // Bare filenames are looked up among the repository's tracked files.
   spawnSync('git', ['init', '-q'], { cwd: root });
   spawnSync('git', ['add', '.'], { cwd: root });
@@ -276,6 +280,12 @@ describe('false alarms found on real descriptions', () => {
       check('Printing `eval-summaries.ts`, which contains a SHA, did both.', digest([]), {
         root,
       }),
+    ).toEqual([]);
+  });
+
+  test("a file the code writes (a run-folder output) isn't a stale reference", () => {
+    expect(
+      check('Render also writes `evidence-notes.md`, an outline.', digest([]), { root }),
     ).toEqual([]);
   });
 });

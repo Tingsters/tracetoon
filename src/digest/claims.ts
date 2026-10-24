@@ -274,8 +274,16 @@ function repoHas(root: string, ref: string): boolean {
     const r = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
     tracked.set(root, r.status === 0 ? r.stdout.split('\n') : []);
   }
-  return tracked.get(root)!.some((p) => p === ref || p.endsWith(`/${ref}`));
+  if (tracked.get(root)!.some((p) => p === ref || p.endsWith(`/${ref}`))) return true;
+  // A file the code writes or reads (a run-folder output, a config name) is named
+  // in the repository's text even though it isn't a tracked file.
+  if (!mentioned.has(`${root}|${ref}`)) {
+    const g = spawnSync('git', ['grep', '-q', '-F', '--', ref], { cwd: root });
+    mentioned.set(`${root}|${ref}`, g.status === 0);
+  }
+  return mentioned.get(`${root}|${ref}`)!;
 }
+const mentioned = new Map<string, boolean>();
 
 function checkReferences(s: string, input: ClaimInput): ClaimFinding[] {
   const changed = new Set(input.digest.files.map((f) => f.path));
