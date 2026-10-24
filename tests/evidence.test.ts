@@ -130,3 +130,14 @@ describe('commit detection needs a real commit line', () => {
     expect(re.test('Updating 1b2c3d4..0723dbf\nFast-forward')).toBe(true);
   });
 });
+
+describe('plans', () => {
+  test('the submitted plan text wins over a stale input', async () => {
+    const { ClaudeLog } = await import('./helpers.ts');
+    const { parseClaudeLines } = await import('../src/trace/claude.ts');
+    const log = new ClaudeLog('/repo').plan('# Old draft', true, '# Final plan');
+    const s = { records: [] as any[], unknownTypes: {} } as any;
+    parseClaudeLines(log.text(), s);
+    expect(s.records.find((r: any) => r.kind === 'plan')?.markdown).toBe('# Final plan');
+  });
+});

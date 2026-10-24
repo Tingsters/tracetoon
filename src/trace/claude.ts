@@ -268,9 +268,11 @@ export function parseClaudeLines(
             : textOfToolResult(c.content).slice(0, 4000);
           if (cmd) into.records.push({ kind: 'command', cmd, isError, output, ...where });
         } else if (call.name === 'ExitPlanMode') {
+          // The result holds the plan as submitted; the call's input can be a
+          // version behind (the plan file before the agent's last edit).
           const markdown =
-            str(call.input.plan) ??
-            (isObj(o.toolUseResult) ? str(o.toolUseResult.plan) : undefined);
+            (isObj(o.toolUseResult) ? str(o.toolUseResult.plan) : undefined) ??
+            str(call.input.plan);
           if (markdown) {
             const { approved } = resolvePlanResult(textOfToolResult(c.content));
             into.records.push({ kind: 'plan', markdown, approved, ...where });
