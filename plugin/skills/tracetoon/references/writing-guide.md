@@ -50,8 +50,10 @@ a template.
 ## A flexible default (when there's no template)
 
 ```markdown
-<One paragraph: the problem and the result. What was wrong or missing, and what
-is different now. A concrete before/after example when it helps.>
+<One paragraph: the problem and the result. Where it came from when the trace
+shows it (what the user reported or asked for, a failure seen while testing,
+found while dogfooding another PR), what was wrong or missing, and what is
+different now. A concrete before/after example when it helps.>
 
 <Approach, when it isn't obvious: why this way. Mention an alternative only if
 it was really considered and explains the choice. Say who decided only when the
@@ -85,7 +87,8 @@ Use headings only when the description is long enough to need them.
   claim to match: "`bun test` passed (96 pass, 0 fail) after the last edits
   captured" is supported by an `R#` with `outcome: passed` and
   `revision: no later edits seen`. If `revision` is `before later edits`, say it
-  passed before the final changes. If `outcome` is `unknown`, don't claim a
+  passed before the final changes. Skip runs marked `after later work`: they
+  tested code that isn't in this PR. If `outcome` is `unknown`, don't claim a
   result. If `pr.dirty` is true, a run may have covered code that isn't in the
   PR.
 - If a run failed and a later one passed, you can say so when it helps the
@@ -101,6 +104,16 @@ Use headings only when the description is long enough to need them.
 - **Don't put words in anyone's mouth.** "I chose X because…" claims who decided
   and why. Write it only when a prompt, a recorded decision or the user's own
   text supports it. Otherwise state the reason neutrally, or leave it out.
+- **Where the change came from is context only the trace has.** The user's
+  report or request ("a Codex test showed the preview link couldn't be
+  clicked") tells a reviewer why the change exists; put it in a sentence,
+  paraphrased per `promptQuoting`. When the user asked for an outcome and no
+  plan or decision about *how* was recorded, a short neutral note helps the
+  reviewer know which choices are open to push back on, e.g. "The approach (a
+  quote-aware splitter) wasn't discussed in the session."
+- **Facts that only a commit message states** ("fixes the gap noted in #8",
+  "found while dogfooding", a showcase result) can be used, attributed: "per
+  the commit message" or "the commit notes…". Don't present them as observed.
 - **Decisions:** a recorded decision tells you what was *chosen*. An option that
   wasn't picked isn't automatically "rejected", and a plan sent back isn't proof
   its design was wrong. Give a reason only when the source gives one.

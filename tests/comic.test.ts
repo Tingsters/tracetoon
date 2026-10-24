@@ -586,6 +586,36 @@ describe('comic end to end', () => {
     );
   });
 
+  test("follows the repo's AI policy: no comic when AI images are banned, its disclosure form, and a no-PR rule", () => {
+    const { repo, runDir } = prepared();
+    writeFileSync(
+      join(repo.root, 'AI_POLICY.md'),
+      'All AI usage must be disclosed: name the tool and model and say how it was used.\n' +
+        'AI-generated media (images, art, video) is not allowed for outside contributions.\n',
+    );
+    writeFileSync(join(repo.root, 'AGENTS.md'), 'Agents: never create a PR.\n');
+    expect(
+      cli(repo.root, 'context', '--offline', '--run', runDir.split(/[\\/]/).pop()!).code,
+    ).toBe(0);
+    expect(cli(repo.root, 'comic', 'art').code).toBe(0);
+    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+
+    const r = cli(repo.root, 'render');
+    expect(r.code).toBe(0);
+    expect(r.json.noPullRequests).toBe(true);
+    const body = readFileSync(join(runDir, 'final-body.md'), 'utf8');
+    expect(body).not.toContain('{{tracetoon:comic-src}}');
+    expect(body).toContain('AI use:');
+    const preview = readFileSync(join(runDir, 'preview.html'), 'utf8');
+    expect(preview).toContain('Repository policy:');
+    expect(preview).toContain('comic is left out');
+    expect(existsSync(join(runDir, 'evidence-notes.md'))).toBe(true);
+
+    const blocked = cli(repo.root, 'publish', '--code', r.json.code, '--push');
+    expect(blocked.code).toBe(1);
+    expect(blocked.json.error).toContain('never to open a PR');
+  });
+
   test('exports an Agent Trace record with line ranges', () => {
     const { repo } = prepared();
     const r = cli(repo.root, 'export', '--offline');

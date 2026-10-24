@@ -13,6 +13,8 @@ import { transcript } from '../comic/script.ts';
 import type { ComicScript, SeriesBible } from '../comic/types.ts';
 import { loadConfig } from '../config.ts';
 import type { TraceDigest } from '../digest/build.ts';
+import { checkClaims, claimSummary, type ClaimFinding } from '../digest/claims.ts';
+import { contextNotes, evidenceNotes } from '../digest/notes.ts';
 import { assetUrl, publishAssets, type AssetFile } from '../github/assets.ts';
 import {
   contentHash,
@@ -50,11 +52,17 @@ interface Context {
 export function disclosureLine(
   digest: Pick<TraceDigest, 'disclosure'>,
   mode: 'assisted-by' | 'co-authored-by' | 'none' = 'assisted-by',
+  form?: AiPolicy['disclosure'],
 ): string {
   if (mode === 'none') return '';
   const trailers = digest.disclosure.suggestedTrailers;
   if (!trailers.length) return '';
   const tools = digest.disclosure.agents.join(', ');
+  if (form === 'tool-and-use') {
+    // e.g. Django, Ghostty: name the tool and model, and say what it was used for.
+    const models = digest.disclosure.models.join(', ');
+    return `<sub>AI use: ${tools}${models ? ` (${models})` : ''} assisted with the code; this description was drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon) and reviewed by the author.</sub>`;
+  }
   const trailer =
     mode === 'assisted-by' ? trailers.join(' · ') : `AI-assisted with ${tools}`;
   return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon) and reviewed by the author</sub>`;
@@ -74,6 +82,8 @@ export interface Approval {
   base: string;
   head: string;
   policy: AiPolicy['verdict'];
+  /** The repo's agent instructions say never to open a PR. */
+  noPullRequests?: boolean;
   ambiguousSessions: string[];
   renderedAt: string;
 }
@@ -125,7 +135,7 @@ export interface RenderOpts extends OutOpts {
 }
 
 export function renderCmd(cwd: string, opts: RenderOpts): Approval {
-  const { run } = loadRun(cwd, opts.run);
+  const { run, truth } = loadRun(cwd, opts.run);
   const digest = readJson<TraceDigest>(run, 'digest.json');
   if (!digest)
     throw new UserError('This run has no digest.json. Run `tracetoon digest` first.');
@@ -144,7 +154,8 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
 
   const script = readJson<ComicScript>(run, 'comic.json');
   const bible = readJson<SeriesBible>(run, 'bible.json');
-  const comic = opts.noComic ? undefined : renderedComic(run);
+  const mediaBanned = ctx.aiPolicy.media === 'prohibited';
+  const comic = opts.noComic || mediaBanned ? undefined : renderedComic(run);
   // The description comes first; the comic is the closing beat, unless the
   // writer placed it with the marker. A short disclosure goes last.
   let content = defuseMentions(bodyMd).replace(COMIC_MARKER, '');
@@ -154,7 +165,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ? defuseMentions(bodyMd).replace(COMIC_MARKER, block)
       : `${content.trim()}\n\n${block}`;
   }
-  const disclosure = disclosureLine(digest, ctx.config?.disclosure);
+  const disclosure = disclosureLine(
+    digest,
+    ctx.config?.disclosure,
+    ctx.aiPolicy.disclosure,
+  );
   if (disclosure) content = `${content.trim()}\n\n${disclosure}`;
 
   const story = ctx.story;
@@ -205,12 +220,30 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     base: digest.pr.base,
     head: digest.pr.head,
     policy: ctx.aiPolicy.verdict,
+    ...(ctx.aiPolicy.noPullRequests ? { noPullRequests: true } : {}),
     ambiguousSessions: digest.sessions
       .filter((s) => s.band === 'ambiguous')
       .map((s) => s.ref),
     renderedAt: new Date().toISOString(),
   };
   writeFileSync(join(run.dir, 'final-body.md'), body, 'utf8');
+  // Advisory: check the description's claims against the captured evidence.
+  const claims = checkClaims({
+    title,
+    body: bodyMd,
+    digest,
+    root: truth.toplevel,
+    authorText: readText(run, 'author.md'),
+  });
+  writeJson(run, 'claims.json', claims);
+  const notes = contextNotes(digest, bodyMd, claims);
+  writeJson(run, 'notes.json', notes);
+  // Authors who write the text themselves (or must, by policy) get the facts as an outline.
+  const writeYourself =
+    ctx.aiPolicy.text === 'prohibited' ||
+    ctx.aiPolicy.text === 'author-written-recommended';
+  const outline = evidenceNotes(digest);
+  writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
   const previewBody = comic
     ? body.replaceAll(COMIC_SRC, `./out/${comic.path.split(/[\\/]/).pop()}`)
     : body;
@@ -220,6 +253,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       title,
       body: previewBody,
       approval,
+      claims,
+      notes,
+      policy: ctx.aiPolicy,
+      outline: writeYourself ? outline : undefined,
+      comicHeldBack: mediaBanned && !!renderedComic(run),
       digest,
       share: comic
         ? {
@@ -235,7 +273,18 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const previewPath = join(run.dir, 'preview.html');
   emit(
     opts,
-    { run: run.id, ...approval, previewPath, previewUrl: fileUrl(previewPath) },
+    {
+      run: run.id,
+      ...approval,
+      previewPath,
+      previewUrl: fileUrl(previewPath),
+      claims: {
+        ...claimSummary(claims),
+        findings: claims.filter(
+          (c) => c.state === 'contradicted' || c.state === 'not established',
+        ),
+      },
+    },
     () =>
       [
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
@@ -247,6 +296,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
                 : 'Fix body.md and render again.'
             }`
           : 'Leak scan: clean.',
+        claimLine(claims),
+        notes.length
+          ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`
+          : '',
+        policyLines(ctx.aiPolicy, mediaBanned),
         approval.policy === 'prohibited'
           ? 'WARNING: this repository appears to prohibit AI-assisted contributions. Read the policy before posting.'
           : '',
@@ -256,6 +310,47 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         .join('\n'),
   );
   return approval;
+}
+
+/** What the repo's AI policy means for this PR, in a few lines. */
+function policyLines(policy: AiPolicy, mediaBanned: boolean): string {
+  const out: string[] = [];
+  if (policy.text === 'prohibited')
+    out.push(
+      'Policy: this repository appears to prohibit AI-written contributions. The draft is notes, not ready to post; see evidence-notes.md. Publishing needs --ack-policy.',
+    );
+  else if (policy.text === 'author-written-recommended')
+    out.push(
+      'Policy: this repository asks authors to write PR text themselves. Offer evidence-notes.md as an outline to write from; the draft is optional.',
+    );
+  if (mediaBanned)
+    out.push(
+      'Policy: AI-generated images are not allowed here, so the comic is left out.',
+    );
+  if (policy.noPullRequests)
+    out.push(
+      "Policy: the repo's agent instructions say never to open a PR. Only post if the user explicitly decides to (--ack-policy).",
+    );
+  if (policy.disclosure && policy.disclosure !== 'unspecified')
+    out.push(
+      `Policy: disclosure in the form the repo asks for (${policy.disclosure}) is added.`,
+    );
+  for (const i of policy.prInstructions ?? [])
+    out.push(`Repo instruction (${i.file}:${i.line}): ${i.text}`);
+  return out.join('\n');
+}
+
+/** One advisory line about the claim check, with the claims worth a look. */
+function claimLine(claims: ClaimFinding[]): string {
+  if (!claims.length) return '';
+  const c = claimSummary(claims);
+  const look = claims.filter(
+    (x) => x.state === 'contradicted' || x.state === 'not established',
+  );
+  return [
+    `Claim check (advisory): ${c.observed} supported, ${c['author-reported']} author-reported, ${c['not established']} not established, ${c.contradicted} contradicted.`,
+    ...look.map((x) => `  - ${x.state}: "${x.quote.slice(0, 90)}" (${x.detail})`),
+  ].join('\n');
 }
 
 export function previewCmd(
@@ -463,6 +558,11 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
       'This repository appears to prohibit AI-assisted contributions. Re-run with --ack-policy only if the user has read the policy and still wants to post.',
     );
   }
+  if (approval.noPullRequests && !opts.ackPolicy) {
+    throw new UserError(
+      "This repository's agent instructions say never to open a PR. Re-run with --ack-policy only if the user has read them and decides to post anyway.",
+    );
+  }
   const config = loadConfig(truth.toplevel);
   if (opts.yolo) {
     const blockers = [
@@ -471,6 +571,7 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
       approval.ambiguousSessions.length > 0 && 'some sessions are ambiguous',
       approval.policy === 'prohibited' &&
         'the repository policy may prohibit AI contributions',
+      approval.noPullRequests && "the repo's agent instructions say never to open a PR",
     ].filter(Boolean);
     if (blockers.length) {
       throw new UserError(

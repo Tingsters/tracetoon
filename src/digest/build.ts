@@ -81,6 +81,9 @@ export interface DigestSession {
  *  - `before later edits`: files in the PR were edited after this run;
  *  - `no later edits seen`: no edit to PR files was captured after it (edits
  *    outside the logs, or a dirty tree, are still possible);
+ *  - `after later work`: it ran after the PR's last commit and after further
+ *    edits to PR files, so it tested code that isn't this PR (the session kept
+ *    going); it is not evidence about this PR either way;
  *  - `unknown`: no timestamp to compare.
  */
 export interface Run {
@@ -92,7 +95,7 @@ export interface Run {
   basis: 'exit status' | 'output' | 'none';
   /** Up to three result lines from the output, e.g. "96 pass", "0 fail". */
   summary: string[];
-  revision: 'before later edits' | 'no later edits seen' | 'unknown';
+  revision: 'before later edits' | 'no later edits seen' | 'after later work' | 'unknown';
 }
 
 export interface TraceDigest {
@@ -245,6 +248,33 @@ export function verificationSegment(
   return undefined;
 }
 
+/**
+ * The verification run in one shell command, if any. Several test commands in
+ * one shell command share one output, so it can't say which one failed: they
+ * are listed together and the outcome is left unknown.
+ */
+export function commandRun(
+  cmd: string,
+  isError: boolean | undefined,
+  output: string | undefined,
+): Omit<Run, 'id' | 't' | 'revision'> | undefined {
+  const verify = verificationSegment(cmd);
+  if (!verify) return undefined;
+  const tests = splitCommands(cmd)
+    .map((s) => s.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
+    .filter((s) => TEST_RUNNERS.some((re) => re.test(s)));
+  const result = runOutcome(cmd, verify.seg, isError, output, verify.kind);
+  if (tests.length > 1)
+    return {
+      cmd: tests.join(' ; '),
+      kind: 'test',
+      ...result,
+      outcome: 'unknown',
+      basis: 'none',
+    };
+  return { cmd: verify.seg, kind: verify.kind, ...result };
+}
+
 const RESULT_LINE =
   /(\b\d+\s+(pass|passed|passing|fail|failed|failing|errors?|warnings?)\b|\b\d+\/\d+\s+checks?\b|^Tests?:\s|\btest result:|All matched files use|Found \d+ errors?)/i;
 
@@ -278,7 +308,7 @@ export function runOutcome(
     return { outcome: 'failed', basis: 'exit status', summary };
   if (!masked) return { outcome: 'passed', basis: 'exit status', summary };
   // Type checkers print nothing when they pass.
-  if (kind === 'typecheck' && !/error/i.test(output ?? ''))
+  if (kind === 'typecheck' && !/\berror\b/i.test(output ?? ''))
     return { outcome: 'passed', basis: 'output', summary };
   if (
     summary.length &&
@@ -408,16 +438,14 @@ function sessionDigest(
         break;
       }
       case 'command': {
-        const verify = verificationSegment(r.cmd);
-        if (verify) {
+        const run = commandRun(r.cmd, r.isError, r.output);
+        if (run)
           runs.push({
             t: r.ts,
-            cmd: clip(scrub.text(verify.seg), 120),
-            kind: verify.kind,
-            ...runOutcome(r.cmd, verify.seg, r.isError, r.output, verify.kind),
+            ...run,
+            cmd: clip(scrub.text(run.cmd), 120),
             revision: 'unknown',
           });
-        }
         const seg = testSegment(r.cmd);
         const test = seg !== undefined;
         const key = clip(scrub.text(commandKey(seg ?? r.cmd)), 60);
@@ -453,12 +481,21 @@ function sessionDigest(
       return !!rel && prSets.has(rel);
     })
     .map((r) => Date.parse(r.ts!));
+  // The PR's last commit, when it is a committed range (not the working tree).
+  const headTime = truth.usedWorkingTree
+    ? undefined
+    : Math.max(0, ...truth.commits.map((c) => c.commitTime ?? 0)) || undefined;
   for (const run of runs) {
     if (!run.t) continue;
     const at = Date.parse(run.t);
-    run.revision = prEditTimes.some((e) => e > at)
-      ? 'before later edits'
-      : 'no later edits seen';
+    run.revision =
+      headTime !== undefined &&
+      at > headTime &&
+      prEditTimes.some((e) => e > headTime && e < at)
+        ? 'after later work'
+        : prEditTimes.some((e) => e > at)
+          ? 'before later edits'
+          : 'no later edits seen';
   }
   if (files.size) milestones.push(`edited ${files.size} file(s)`);
   if (m.commitsMade.length)

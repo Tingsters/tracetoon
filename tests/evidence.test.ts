@@ -1,6 +1,11 @@
 /** The evidence record: decisions as recorded, runs with honest outcomes, file roles. */
 import { describe, expect, test } from 'bun:test';
-import { fileRole, runOutcome, verificationSegment } from '../src/digest/build.ts';
+import {
+  commandRun,
+  fileRole,
+  runOutcome,
+  verificationSegment,
+} from '../src/digest/build.ts';
 import { decisionQuestions } from '../src/trace/claude.ts';
 
 describe('decisions', () => {
@@ -68,6 +73,39 @@ describe('verification runs', () => {
       outcome: 'failed',
       basis: 'exit status',
     });
+  });
+
+  test('two test commands sharing one output: both listed, outcome unknown', () => {
+    const r = commandRun(
+      'git stash -q; bun test tests/a.test.ts -t x 2>&1 | grep fail; git stash pop -q && bun test > out.log 2>&1; grep pass out.log',
+      false,
+      ' 0 pass\n 1 fail\n 147 pass\n 0 fail',
+    );
+    expect(r).toMatchObject({ kind: 'test', outcome: 'unknown', basis: 'none' });
+    expect(r!.cmd).toContain('bun test tests/a.test.ts');
+    expect(r!.cmd).toContain(' ; bun test');
+    expect(commandRun('bun test', false, '96 pass\n0 fail')).toMatchObject({
+      cmd: 'bun test',
+      outcome: 'passed',
+    });
+  });
+
+  test('a type check with a hidden status passes only when it printed no errors', () => {
+    const piped = 'bun x tsc --noEmit 2>&1 | head -5';
+    expect(runOutcome(piped, 'bun x tsc --noEmit', false, '', 'typecheck')).toMatchObject(
+      {
+        outcome: 'passed',
+      },
+    );
+    expect(
+      runOutcome(
+        piped,
+        'bun x tsc --noEmit',
+        false,
+        "src/a.ts(3,1): error TS2304: Cannot find name 'x'.",
+        'typecheck',
+      ).outcome,
+    ).not.toBe('passed');
   });
 
   test('a pipe or ; hides the status: judge by output, or admit we do not know', () => {

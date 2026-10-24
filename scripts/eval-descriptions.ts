@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { buildDigest } from '../src/digest/build.ts';
+import { checkClaims, claimSummary } from '../src/digest/claims.ts';
 import { scan } from '../src/pipeline.ts';
 import { git, gh } from '../src/util/exec.ts';
 
@@ -242,6 +243,8 @@ function score(): void {
       preferred: number;
       rubric: number;
       rubricN: number;
+      contradicted: number;
+      notEstablished: number;
     }
   > = {};
   for (const c of CASES) {
@@ -255,12 +258,25 @@ function score(): void {
       : undefined;
     lines.push(`## ${c.name}${c.heldOut ? ' (held out)' : ''}`, '');
     lines.push(
-      '| variant | words | errors | unsupported | claims | context | uncertainty | traps | rubric | signals |',
-      '|---|---|---|---|---|---|---|---|---|---|',
+      '| variant | words | errors | unsupported | claims | context | uncertainty | traps | rubric | check (contradicted / not established) | signals |',
+      '|---|---|---|---|---|---|---|---|---|---|---|',
     );
     for (const f of readdirSync(outDir).filter((x) => x.endsWith('.md'))) {
       const variant = f.replace(/\.md$/, '');
-      const sig = textSignals(readFileSync(join(outDir, f), 'utf8'));
+      const text = readFileSync(join(outDir, f), 'utf8');
+      const sig = textSignals(text);
+      // The advisory claim check, run against the packet's evidence.
+      const packetDigest = JSON.parse(
+        readFileSync(join(ROOT, 'packets', c.id, 'digest.json'), 'utf8'),
+      );
+      const check = claimSummary(
+        checkClaims({
+          title: /^# (.*)/.exec(text)?.[1] ?? '',
+          body: text.replace(/^# .*\n/, ''),
+          digest: packetDigest,
+          root: c.repo,
+        }),
+      );
       const label =
         judgment && Object.entries(judgment.labels).find(([, v]) => v === variant)?.[0];
       const s = label ? judgment!.scores[label] : undefined;
@@ -282,8 +298,12 @@ function score(): void {
         preferred: 0,
         rubric: 0,
         rubricN: 0,
+        contradicted: 0,
+        notEstablished: 0,
       });
       t.n++;
+      t.contradicted += check.contradicted;
+      t.notEstablished += check['not established'];
       t.words += sig.words;
       if (s) {
         t.errors += s.factualErrors.length;
@@ -306,13 +326,14 @@ function score(): void {
       if (sig.reviewPointer) flags.push('+reviewPointer');
       if (sig.reviewerQuestion) flags.push('+reviewerQuestion');
       lines.push(
-        `| ${variant} | ${sig.words} | ${s ? s.factualErrors.length : '–'} | ${s ? s.unsupportedClaims.length : '–'} | ${s ? `${s.coveredClaims}/${facts.claims.length}` : '–'} | ${s ? `${s.coveredContext}/${facts.context.length}` : '–'} | ${s ? `${s.honestUncertainty}/${facts.uncertainties.length}` : '–'} | ${s ? s.trapsHit.length : '–'} | ${Number.isNaN(rubric) ? '–' : rubric.toFixed(2)} | ${flags.join(', ')} |`,
+        `| ${variant} | ${sig.words} | ${s ? s.factualErrors.length : '–'} | ${s ? s.unsupportedClaims.length : '–'} | ${s ? `${s.coveredClaims}/${facts.claims.length}` : '–'} | ${s ? `${s.coveredContext}/${facts.context.length}` : '–'} | ${s ? `${s.honestUncertainty}/${facts.uncertainties.length}` : '–'} | ${s ? s.trapsHit.length : '–'} | ${Number.isNaN(rubric) ? '–' : rubric.toFixed(2)} | ${check.contradicted} / ${check['not established']} | ${flags.join(', ')} |`,
       );
       rows.push({
         case: c.id,
         heldOut: !!c.heldOut,
         variant,
         ...sig,
+        check,
         ...(s ?? {}),
         rubricMean: rubric,
       });
@@ -327,11 +348,11 @@ function score(): void {
   lines.splice(
     2,
     0,
-    '| variant | cases | errors | unsupported | claims % | context % | uncertainty % | traps | rubric | words | preferred |',
-    '|---|---|---|---|---|---|---|---|---|---|---|',
+    '| variant | cases | errors | unsupported | claims % | context % | uncertainty % | traps | rubric | words | check C / NE | preferred |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
     ...Object.entries(totals).map(
       ([v, t]) =>
-        `| ${v} | ${t.n} | ${t.errors} | ${t.unsupported} | ${Math.round((t.claims / t.n) * 100)} | ${Math.round((t.context / t.n) * 100)} | ${Math.round((t.uncertainty / t.n) * 100)} | ${t.traps} | ${t.rubricN ? (t.rubric / t.rubricN).toFixed(2) : '–'} | ${Math.round(t.words / t.n)} | ${t.preferred} |`,
+        `| ${v} | ${t.n} | ${t.errors} | ${t.unsupported} | ${Math.round((t.claims / t.n) * 100)} | ${Math.round((t.context / t.n) * 100)} | ${Math.round((t.uncertainty / t.n) * 100)} | ${t.traps} | ${t.rubricN ? (t.rubric / t.rubricN).toFixed(2) : '–'} | ${Math.round(t.words / t.n)} | ${t.contradicted} / ${t.notEstablished} | ${t.preferred} |`,
     ),
     '',
   );
