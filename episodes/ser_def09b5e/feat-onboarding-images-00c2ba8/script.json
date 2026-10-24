@@ -1,0 +1,122 @@
+{
+  "v": 2,
+  "title": "The Artist With No Brush",
+  "headline": "THE ARTIST WITH NO BRUSH",
+  "synopsis": "Setting up an artist, step by step: Kit finds Pixel ready to paint, but the brush is just a stick. One test sketch later, the comic can happen.",
+  "altText": "A four-step manual page. Step 1: Kit the fox finds Pixel the cat in a beret. Step 2: Pixel holds a brush with no bristles under a sign reading NO IMAGE TOOL. Step 3: Pixel, with a real brush, paints a tiny robot on a test card marked TEST: PASSED. Step 4: Kit and Pixel stand proudly by an easel holding a finished comic page.",
+  "format": "manual-page",
+  "layout": "four numbered steps in a 2x2 grid, like an instruction manual",
+  "style": "blueprint",
+  "palette": "duotone",
+  "continuity": {
+    "mode": "standalone"
+  },
+  "panels": [
+    {
+      "scene": "Kit the fox shines a flashlight into a cupboard and finds Pixel the cat wearing a painter's beret",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "excited"
+        },
+        {
+          "cast": "pixel",
+          "position": "right",
+          "expression": "surprised"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "STEP 1: FIND AN ARTIST"
+        },
+        {
+          "speaker": "kit",
+          "text": "Found one!"
+        }
+      ]
+    },
+    {
+      "scene": "Pixel proudly raises a paintbrush that has no bristles at all, just a bare stick; a small sign hangs nearby",
+      "characters": [
+        {
+          "cast": "pixel",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "worried"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "STEP 2: CHECK THE BRUSH"
+        },
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "NO IMAGE TOOL"
+        },
+        {
+          "speaker": "kit",
+          "text": "That brush is just a stick."
+        }
+      ]
+    },
+    {
+      "scene": "Pixel, now holding a real brush, paints a tiny robot on a small test card; Kit gives a thumbs-up",
+      "characters": [
+        {
+          "cast": "pixel",
+          "position": "left",
+          "expression": "determined"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "STEP 3: ONE TEST SKETCH"
+        },
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "TEST: PASSED"
+        }
+      ]
+    },
+    {
+      "scene": "Kit and Pixel stand proudly beside an easel holding a big finished comic page",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        },
+        {
+          "cast": "pixel",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "text": "STEP 4: COMIC TIME"
+        },
+        {
+          "speaker": "kit",
+          "text": "Now the PR gets a comic."
+        }
+      ]
+    }
+  ]
+}
