@@ -283,6 +283,32 @@ describe('false alarms found on real descriptions', () => {
     ).toEqual([]);
   });
 
+  test('a sentence about claims, or a quoted example, is not itself a claim', () => {
+    const failed = digest([run({ outcome: 'failed', summary: ['1 fail'] })]);
+    expect(
+      check(
+        'At render, each sentence that claims a check passed is compared with the digest.',
+        failed,
+        { root },
+      ),
+    ).toEqual([]);
+    expect(
+      check(
+        'A contradicted claim, such as "tests pass" when the last run failed, is shown.',
+        failed,
+        { root },
+      ),
+    ).toEqual([]);
+  });
+
+  test('a file the code names, described without a change, gets no note', () => {
+    expect(
+      check('Context the author adds goes into `evidence-notes.md`.', digest([]), {
+        root,
+      }),
+    ).toEqual([]);
+  });
+
   test("a file the code writes (a run-folder output) isn't a stale reference", () => {
     expect(
       check('Render also writes `evidence-notes.md`, an outline.', digest([]), { root }),

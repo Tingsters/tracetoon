@@ -1,6 +1,11 @@
 /** The evidence record: decisions as recorded, runs with honest outcomes, file roles. */
 import { describe, expect, test } from 'bun:test';
-import { fileRole, runOutcome, verificationSegment } from '../src/digest/build.ts';
+import {
+  commandRun,
+  fileRole,
+  runOutcome,
+  verificationSegment,
+} from '../src/digest/build.ts';
 import { decisionQuestions } from '../src/trace/claude.ts';
 
 describe('decisions', () => {
@@ -67,6 +72,21 @@ describe('verification runs', () => {
     ).toMatchObject({
       outcome: 'failed',
       basis: 'exit status',
+    });
+  });
+
+  test('two test commands sharing one output: both listed, outcome unknown', () => {
+    const r = commandRun(
+      'git stash -q; bun test tests/a.test.ts -t x 2>&1 | grep fail; git stash pop -q && bun test > out.log 2>&1; grep pass out.log',
+      false,
+      ' 0 pass\n 1 fail\n 147 pass\n 0 fail',
+    );
+    expect(r).toMatchObject({ kind: 'test', outcome: 'unknown', basis: 'none' });
+    expect(r!.cmd).toContain('bun test tests/a.test.ts');
+    expect(r!.cmd).toContain(' ; bun test');
+    expect(commandRun('bun test', false, '96 pass\n0 fail')).toMatchObject({
+      cmd: 'bun test',
+      outcome: 'passed',
     });
   });
 

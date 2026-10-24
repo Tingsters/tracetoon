@@ -103,7 +103,17 @@ function checkVerification(
   input: ClaimInput,
   runs: Run[],
 ): ClaimFinding | undefined {
-  if (!VERIFY.test(s)) return undefined;
+  // Quoted text is an example, not a claim ("tests pass" when the run failed), and
+  // a sentence about claims ("each sentence that claims a check passed") isn't one.
+  const bare = s.replace(/"[^"]*"|“[^”]*”/g, '""');
+  const hit = VERIFY.exec(bare);
+  if (!hit) return undefined;
+  if (
+    /\b(claims?|claiming|says?|such as)\b/i.test(
+      bare.slice(Math.max(0, hit.index - 40), hit.index),
+    )
+  )
+    return undefined;
   const author = AUTHOR.test(s) || mentionedBy(input.authorText, s);
   // A named command narrows the runs: `bun test tests/x.test.ts`, `prettier --check`.
   const named = [...s.matchAll(/`([^`]+)`/g)].map((m) => m[1]!.trim());
@@ -266,22 +276,26 @@ const CHANGE_VERB =
   /\b(adds?|added|changes?|changed|updates?|updated|fix(es|ed)?|modif(y|ies|ied)|edits?|edited|moves?|moved|refactor\w*|rewrites?|rewrote|implements?|introduces?)\b/i;
 
 const tracked = new Map<string, string[]>();
-/** Whether the repository has this file: a path, or a bare filename anywhere in it. */
-function repoHas(root: string, ref: string): boolean {
-  if (existsSync(join(root, ref))) return true;
-  if (ref.includes('/')) return false;
-  if (!tracked.has(root)) {
-    const r = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
-    tracked.set(root, r.status === 0 ? r.stdout.split('\n') : []);
+/**
+ * Whether the repository has this file (a path, or a bare filename anywhere in
+ * it), or only names it in its text: a file the code writes or reads, such as a
+ * run-folder output or a config name, isn't tracked but isn't stale either.
+ */
+function repoHas(root: string, ref: string): 'file' | 'mentioned' | false {
+  if (existsSync(join(root, ref))) return 'file';
+  if (!ref.includes('/')) {
+    if (!tracked.has(root)) {
+      const r = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
+      tracked.set(root, r.status === 0 ? r.stdout.split('\n') : []);
+    }
+    if (tracked.get(root)!.some((p) => p === ref || p.endsWith(`/${ref}`))) return 'file';
   }
-  if (tracked.get(root)!.some((p) => p === ref || p.endsWith(`/${ref}`))) return true;
-  // A file the code writes or reads (a run-folder output, a config name) is named
-  // in the repository's text even though it isn't a tracked file.
-  if (!mentioned.has(`${root}|${ref}`)) {
+  const key = `${root}|${ref}`;
+  if (!mentioned.has(key)) {
     const g = spawnSync('git', ['grep', '-q', '-F', '--', ref], { cwd: root });
-    mentioned.set(`${root}|${ref}`, g.status === 0);
+    mentioned.set(key, g.status === 0);
   }
-  return mentioned.get(`${root}|${ref}`)!;
+  return mentioned.get(key) ? 'mentioned' : false;
 }
 const mentioned = new Map<string, boolean>();
 
@@ -301,7 +315,7 @@ function checkReferences(s: string, input: ClaimInput): ClaimFinding[] {
     if (changed.has(ref) || [...changed].some((p) => p.endsWith(`/${ref}`))) continue;
     const exists = input.root ? repoHas(input.root, ref) : undefined;
     if (ALTERNATIVE.test(s)) continue; // alternatives, renames and removals may name other files
-    if (exists === true && CHANGE_VERB.test(s))
+    if (exists === 'file' && CHANGE_VERB.test(s))
       out.push(
         finding(
           s,

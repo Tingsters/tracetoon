@@ -248,6 +248,33 @@ export function verificationSegment(
   return undefined;
 }
 
+/**
+ * The verification run in one shell command, if any. Several test commands in
+ * one shell command share one output, so it can't say which one failed: they
+ * are listed together and the outcome is left unknown.
+ */
+export function commandRun(
+  cmd: string,
+  isError: boolean | undefined,
+  output: string | undefined,
+): Omit<Run, 'id' | 't' | 'revision'> | undefined {
+  const verify = verificationSegment(cmd);
+  if (!verify) return undefined;
+  const tests = splitCommands(cmd)
+    .map((s) => s.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
+    .filter((s) => TEST_RUNNERS.some((re) => re.test(s)));
+  const result = runOutcome(cmd, verify.seg, isError, output, verify.kind);
+  if (tests.length > 1)
+    return {
+      cmd: tests.join(' ; '),
+      kind: 'test',
+      ...result,
+      outcome: 'unknown',
+      basis: 'none',
+    };
+  return { cmd: verify.seg, kind: verify.kind, ...result };
+}
+
 const RESULT_LINE =
   /(\b\d+\s+(pass|passed|passing|fail|failed|failing|errors?|warnings?)\b|\b\d+\/\d+\s+checks?\b|^Tests?:\s|\btest result:|All matched files use|Found \d+ errors?)/i;
 
@@ -411,16 +438,14 @@ function sessionDigest(
         break;
       }
       case 'command': {
-        const verify = verificationSegment(r.cmd);
-        if (verify) {
+        const run = commandRun(r.cmd, r.isError, r.output);
+        if (run)
           runs.push({
             t: r.ts,
-            cmd: clip(scrub.text(verify.seg), 120),
-            kind: verify.kind,
-            ...runOutcome(r.cmd, verify.seg, r.isError, r.output, verify.kind),
+            ...run,
+            cmd: clip(scrub.text(run.cmd), 120),
             revision: 'unknown',
           });
-        }
         const seg = testSegment(r.cmd);
         const test = seg !== undefined;
         const key = clip(scrub.text(commandKey(seg ?? r.cmd)), 60);
