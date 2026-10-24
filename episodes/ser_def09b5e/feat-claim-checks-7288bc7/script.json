@@ -1,0 +1,79 @@
+{
+  "v": 2,
+  "title": "The Checker Checked Itself",
+  "headline": "THE CHECKER CHECKED ITSELF",
+  "synopsis": "Kit builds a fact-checker for PR descriptions. Its first case is its own PR, and it objects four times.",
+  "altText": "Panel 1: Kit the fox proudly shows off a small magnifying-glass robot that checks PR descriptions. Panel 2: the robot stamps Kit's own PR again and again under a sign reading CONTRADICTED x4 while Kit sweats. Panel 3: Kit adjusts gears in the robot's back; the sign now reads 0 CONTRADICTED.",
+  "format": "strip",
+  "layout": "three wide panels left to right; the stamps in panel 2 spill over the panel border",
+  "style": "ligne-claire",
+  "palette": "full-color",
+  "continuity": {
+    "mode": "standalone"
+  },
+  "panels": [
+    {
+      "scene": "A tidy workshop. Kit the fox proudly presents a small round robot with a magnifying glass for a face, standing on a desk beside a printed pull request",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "proud"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "kit",
+          "text": "Meet the claim checker. It catches made-up PR claims!"
+        }
+      ]
+    },
+    {
+      "scene": "The robot reads the printed pull request through its magnifying glass and slams a big rubber stamp on it again and again; Kit sweats nervously",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "worried"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "CONTRADICTED ×4"
+        },
+        {
+          "speaker": "caption",
+          "kind": "sfx",
+          "text": "STAMP!"
+        },
+        {
+          "speaker": "kit",
+          "text": "That's... my PR."
+        }
+      ]
+    },
+    {
+      "scene": "Kit, sleeves rolled up, adjusts a gear inside the robot's open back panel; the robot calmly stamps the same page with a small stamp",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "left",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "0 CONTRADICTED"
+        },
+        {
+          "speaker": "kit",
+          "text": "Turns out it was the checker."
+        }
+      ]
+    }
+  ]
+}
