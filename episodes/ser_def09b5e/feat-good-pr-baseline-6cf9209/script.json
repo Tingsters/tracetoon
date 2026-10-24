@@ -1,0 +1,88 @@
+{
+  "v": 2,
+  "title": "Says Who?",
+  "headline": "SAYS WHO?",
+  "synopsis": "Glitch stamps '96 tests, all passing!' on a PR; Kit asks for proof and now the digest keeps the run that shows it.",
+  "altText": "A three-panel Sunday strip. Panel 1: Glitch the beetle proudly stamps 'ALL TESTS PASS!' on a PR page while Kit the fox raises an eyebrow. Panel 2: Kit pulls a receipt from a filing cabinet labeled RUNS showing '109 pass, 0 fail'. Panel 3: Glitch, surprised, holds the receipt; Kit grins.",
+  "format": "strip",
+  "style": "sunday-strip",
+  "palette": "full-color",
+  "continuity": {
+    "mode": "standalone"
+  },
+  "panels": [
+    {
+      "scene": "Glitch the beetle proudly slams a big rubber stamp onto a pull request page; Kit the fox watches, one eyebrow raised",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "excited"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "ALL TESTS PASS!"
+        },
+        {
+          "speaker": "kit",
+          "text": "Says who?"
+        }
+      ]
+    },
+    {
+      "scene": "Kit pulls a long receipt out of a filing cabinet drawer labeled RUNS",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "RUNS"
+        },
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "109 pass, 0 fail"
+        }
+      ]
+    },
+    {
+      "scene": "Glitch holds the receipt, surprised; Kit grins and points at it",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "surprised"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "happy"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "Wait, I was right?"
+        },
+        {
+          "speaker": "kit",
+          "text": "Now we can prove it."
+        }
+      ]
+    }
+  ]
+}
