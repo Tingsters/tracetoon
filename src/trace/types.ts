@@ -18,6 +18,20 @@ interface Base {
   model?: string;
 }
 
+/**
+ * One question the user answered. The answer is recorded exactly; nothing is
+ * inferred about options that weren't picked (unselected is not "rejected").
+ */
+export interface DecisionQuestion {
+  question: string;
+  /** The offered options' labels. */
+  options: string[];
+  /** What the user answered: an option label, several, or their own words. */
+  answer?: string;
+  /** True when the answer matches none of the options (the user wrote their own). */
+  ownWords?: boolean;
+}
+
 export type TraceRecord =
   | (Base & {
       kind: 'prompt';
@@ -29,7 +43,12 @@ export type TraceRecord =
     })
   | (Base & { kind: 'assistant'; text: string })
   | (Base & { kind: 'plan'; markdown: string; approved?: boolean })
-  | (Base & { kind: 'decision'; text: string })
+  | (Base & {
+      kind: 'decision';
+      text: string;
+      /** Structured questions, when the agent's log has them. */
+      questions?: DecisionQuestion[];
+    })
   | (Base & {
       kind: 'edit';
       /** Absolute path of the edited file. */

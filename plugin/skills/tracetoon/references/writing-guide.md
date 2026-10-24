@@ -80,8 +80,16 @@ Use headings only when the description is long enough to need them.
 | The user said they checked something | "Checked in Safari (reported by the author)" | "Verified" |
 | Nothing recorded | (say nothing, or "no result was captured for X") | "not tested" (it may have been, outside the logs) |
 
-- `commands` with `isTest` give run counts and failures. If a run failed and a
-  later one passed, you can say so when it helps the reviewer.
+- `runs` (see `digest-schema.md`) list each test, build, lint and type check
+  with its outcome, how that's known, and how it relates to later edits. Word a
+  claim to match: "`bun test` passed (96 pass, 0 fail) after the last edits
+  captured" is supported by an `R#` with `outcome: passed` and
+  `revision: no later edits seen`. If `revision` is `before later edits`, say it
+  passed before the final changes. If `outcome` is `unknown`, don't claim a
+  result. If `pr.dirty` is true, a run may have covered code that isn't in the
+  PR.
+- If a run failed and a later one passed, you can say so when it helps the
+  reviewer.
 - Never invent a test count, a pass, or a measurement. Never turn missing
   evidence into a claim that something wasn't done.
 

@@ -28,21 +28,71 @@ export interface DigestSession {
   score: number;
   band: 'included' | 'ambiguous';
   reasons: string[];
-  /** What the user typed. */
-  prompts: { t?: string; text: string; ledToEdits: boolean }[];
+  /**
+   * What the user typed. `id` (S1, S2…) lets text cite it. `ledToEdits`: led to
+   * edits that survive in the PR. `pushback`: typed while rejecting the agent's
+   * action, so it steers or corrects what the agent was doing.
+   */
+  prompts: {
+    id?: string;
+    t?: string;
+    text: string;
+    ledToEdits: boolean;
+    pushback?: boolean;
+  }[];
   /** Tasks the agent handed to its own subagents. */
   delegations: { t?: string; text: string }[];
   /** Short SHAs of PR commits made during this session. */
   commitsMade: string[];
-  plans: { t?: string; approved?: boolean; excerpt: string }[];
+  /** `approved: false` means sent back; that alone doesn't mean its design was rejected. */
+  plans: { id?: string; t?: string; approved?: boolean; excerpt: string }[];
   /** Documents the agent kept for the session (Antigravity task, plan, walkthrough). */
   artifacts: { name: string; summary?: string; excerpt: string }[];
-  decisions: { t?: string; text: string }[];
+  /**
+   * Questions the user answered. `questions` (when the log has them) keeps the
+   * options and the exact answer. An option that wasn't picked is only that:
+   * not picked. `ownWords`: the user answered in their own words.
+   */
+  decisions: {
+    id?: string;
+    t?: string;
+    text: string;
+    questions?: {
+      question: string;
+      options: string[];
+      answer?: string;
+      ownWords?: boolean;
+    }[];
+  }[];
   commands: { cmd: string; count: number; failures: number; isTest: boolean }[];
+  /** Individual verification runs (tests, builds, linters, type checks, evals). */
+  runs: Run[];
   milestones: string[];
   filesEdited: string[];
   discardedEdits: number;
   unknownRecordTypes: Record<string, number>;
+}
+
+/**
+ * One verification run, as captured. `outcome` says what the log shows and
+ * `basis` how we know: the command's exit status, its output, or neither (e.g.
+ * a pipe hid the status). `revision` relates the run to the final change and is
+ * never certified by timestamps alone:
+ *  - `before later edits`: files in the PR were edited after this run;
+ *  - `no later edits seen`: no edit to PR files was captured after it (edits
+ *    outside the logs, or a dirty tree, are still possible);
+ *  - `unknown`: no timestamp to compare.
+ */
+export interface Run {
+  id?: string;
+  t?: string;
+  cmd: string;
+  kind: 'test' | 'build' | 'lint' | 'typecheck' | 'eval' | 'other';
+  outcome: 'passed' | 'failed' | 'unknown';
+  basis: 'exit status' | 'output' | 'none';
+  /** Up to three result lines from the output, e.g. "96 pass", "0 fail". */
+  summary: string[];
+  revision: 'before later edits' | 'no later edits seen' | 'unknown';
 }
 
 export interface TraceDigest {
@@ -58,7 +108,14 @@ export interface TraceDigest {
     head: string;
     mergeBase: string;
     usedWorkingTree: boolean;
-    commits: { sha: string; subject: string; trailers: Record<string, string[]> }[];
+    /** Uncommitted changes existed when the digest was made: runs may have tested code that isn't in the PR. */
+    dirty?: boolean;
+    commits: {
+      sha: string;
+      subject: string;
+      trailers: Record<string, string[]>;
+      time?: string;
+    }[];
   };
   stats: {
     filesChanged: number;
@@ -74,6 +131,8 @@ export interface TraceDigest {
   sessions: DigestSession[];
   files: {
     path: string;
+    /** What the file is for, to help point reviewers at the logic first. */
+    role?: FileRole;
     added: number;
     removed: number;
     sessions: { ref: string; lines: number }[];
@@ -131,6 +190,104 @@ export function testOutputFailed(output: string | undefined): boolean {
   );
 }
 
+export type FileRole = 'behavior' | 'tests' | 'docs' | 'config' | 'generated' | 'version';
+
+/** A rough role for a changed file, from its path. */
+export function fileRole(path: string): FileRole {
+  const p = path.toLowerCase();
+  if (
+    /(^|\/)(dist|build|vendor|node_modules)\/|\.min\.(js|css)$|(^|\/)(bun\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|cargo\.lock|poetry\.lock)$/.test(
+      p,
+    )
+  )
+    return 'generated';
+  if (/(^|\/)(version|version\.txt)$|(^|\/)src\/version\.ts$/.test(p)) return 'version';
+  if (
+    /(^|\/)(tests?|__tests__|spec|specs)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rs)$|(^|\/)test_[^/]+\.py$/.test(
+      p,
+    )
+  )
+    return 'tests';
+  if (/\.(md|mdx|rst|txt|adoc)$|(^|\/)docs?\//.test(p)) return 'docs';
+  if (
+    /\.(json|ya?ml|toml|ini|cfg|lock)$|(^|\/)\.github\/|(^|\/)\.[a-z]+rc(\.[a-z]+)?$/.test(
+      p,
+    )
+  )
+    return 'config';
+  return 'behavior';
+}
+
+const VERIFY: [Run['kind'], RegExp][] = [
+  ['typecheck', /^((bun|npx|pnpm|yarn)\s+(x\s+)?)?(tsc|mypy|pyright)\b/],
+  [
+    'lint',
+    /^((bun|npx|pnpm|yarn)\s+(x\s+)?)?(eslint|prettier\s+--check|ruff\s+(check|format\s+--check)|biome\s+(check|lint)|clippy|golangci-lint)\b|^cargo\s+clippy\b|^go\s+vet\b/,
+  ],
+  [
+    'build',
+    /^((bun|npm|pnpm|yarn)\s+run\s+(build|bundle|compile)\b|cargo\s+build\b|go\s+build\b|make(\s|$)|bun\s+build\b)/,
+  ],
+  ['eval', /^(bun|node|python3?|deno)\s+(run\s+)?\S*(eval|bench)\S*/],
+];
+
+/** The part of a command that verifies something, and what kind of check it is. */
+export function verificationSegment(
+  cmd: string,
+): { seg: string; kind: Run['kind'] } | undefined {
+  const test = testSegment(cmd);
+  if (test) return { seg: test, kind: 'test' };
+  for (const s of splitCommands(cmd).map((x) =>
+    x.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''),
+  )) {
+    for (const [kind, re] of VERIFY) if (re.test(s)) return { seg: s, kind };
+  }
+  return undefined;
+}
+
+const RESULT_LINE =
+  /(\b\d+\s+(pass|passed|passing|fail|failed|failing|errors?|warnings?)\b|\b\d+\/\d+\s+checks?\b|^Tests?:\s|\btest result:|All matched files use|Found \d+ errors?)/i;
+
+/** What a captured run shows, and how we know. */
+export function runOutcome(
+  cmd: string,
+  seg: string,
+  isError: boolean | undefined,
+  output: string | undefined,
+  kind: Run['kind'],
+): Pick<Run, 'outcome' | 'basis' | 'summary'> {
+  const summary = (output ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => RESULT_LINE.test(l))
+    .slice(-3)
+    .map((l) => l.slice(0, 120));
+  const isTest = kind === 'test';
+  if (isTest && testOutputFailed(output))
+    return { outcome: 'failed', basis: 'output', summary };
+  // A failing check stops an && chain, so the tool reports an error. After
+  // `;` or a pipe, the exit status belongs to a later command.
+  const after = cmd
+    .slice(cmd.indexOf(seg) + seg.length)
+    .replace(/\d*>&\d+/g, '') // redirections like 2>&1 aren't separators
+    .trimStart();
+  const masked = /^(;|\|(?!\|))/.test(after) || /^[^&|;]*(;|\|(?!\|))/.test(after);
+  // With the status masked, an error belongs to a later command (e.g. a grep
+  // that found nothing), so judge by the output instead.
+  if (isError === true && !masked)
+    return { outcome: 'failed', basis: 'exit status', summary };
+  if (!masked) return { outcome: 'passed', basis: 'exit status', summary };
+  // Type checkers print nothing when they pass.
+  if (kind === 'typecheck' && !/error/i.test(output ?? ''))
+    return { outcome: 'passed', basis: 'output', summary };
+  if (
+    summary.length &&
+    !summary.some((l) => /\b[1-9]\d*\s+(fail|failed|failing|errors?)\b/i.test(l))
+  )
+    return { outcome: 'passed', basis: 'output', summary };
+  return { outcome: 'unknown', basis: 'none', summary };
+}
+
 /** A short grouping key for a shell command: the program and its first argument. */
 export function commandKey(cmd: string): string {
   const segments = splitCommands(cmd).filter((s) => !/^(cd|set|export|pushd)\b/.test(s));
@@ -174,6 +331,7 @@ function sessionDigest(
     { count: number; failures: number; isTest: boolean }
   >();
   const milestones: string[] = [];
+  const runs: Run[] = [];
   const files = new Set<string>();
   let testFailedEarlier = false;
   let current: { ledToEdits: boolean } | undefined;
@@ -186,7 +344,12 @@ function sessionDigest(
           delegations.push({ t: r.ts, text: clip(scrub.text(r.text), 200) });
           break;
         }
-        const p = { t: r.ts, text: clip(scrub.text(r.text), 400), ledToEdits: false };
+        const p: DigestSession['prompts'][number] = {
+          t: r.ts,
+          text: clip(scrub.text(r.text), 400),
+          ledToEdits: false,
+          ...(r.feedback ? { pushback: true } : {}),
+        };
         prompts.push(p);
         current = p;
         break;
@@ -211,7 +374,22 @@ function sessionDigest(
         if (r.approved) milestones.push('plan approved');
         break;
       case 'decision':
-        decisions.push({ t: r.ts, text: clip(scrub.text(r.text), 300) });
+        decisions.push({
+          t: r.ts,
+          text: clip(scrub.text(r.text), 300),
+          ...(r.questions?.length
+            ? {
+                questions: r.questions.map((q) => ({
+                  question: clip(scrub.text(q.question), 200),
+                  options: q.options.map((o) => clip(scrub.text(o), 80)),
+                  ...(q.answer !== undefined
+                    ? { answer: clip(scrub.text(q.answer), 400) }
+                    : {}),
+                  ...(q.ownWords !== undefined ? { ownWords: q.ownWords } : {}),
+                })),
+              }
+            : {}),
+        });
         break;
       case 'edit': {
         const rel = repoRel({ roots: m.roots }, r.file);
@@ -230,6 +408,16 @@ function sessionDigest(
         break;
       }
       case 'command': {
+        const verify = verificationSegment(r.cmd);
+        if (verify) {
+          runs.push({
+            t: r.ts,
+            cmd: clip(scrub.text(verify.seg), 120),
+            kind: verify.kind,
+            ...runOutcome(r.cmd, verify.seg, r.isError, r.output, verify.kind),
+            revision: 'unknown',
+          });
+        }
         const seg = testSegment(r.cmd);
         const test = seg !== undefined;
         const key = clip(scrub.text(commandKey(seg ?? r.cmd)), 60);
@@ -256,6 +444,21 @@ function sessionDigest(
         });
         break;
     }
+  }
+  // Relate each run to later edits of files in the PR (never certifies a revision).
+  const prEditTimes = recs
+    .filter((r) => r.kind === 'edit' && r.ts)
+    .filter((r) => {
+      const rel = repoRel({ roots: m.roots }, (r as { file: string }).file);
+      return !!rel && prSets.has(rel);
+    })
+    .map((r) => Date.parse(r.ts!));
+  for (const run of runs) {
+    if (!run.t) continue;
+    const at = Date.parse(run.t);
+    run.revision = prEditTimes.some((e) => e > at)
+      ? 'before later edits'
+      : 'no later edits seen';
   }
   if (files.size) milestones.push(`edited ${files.size} file(s)`);
   if (m.commitsMade.length)
@@ -284,6 +487,7 @@ function sessionDigest(
     plans,
     artifacts,
     decisions,
+    runs: runs.slice(-25),
     commands: [...cmdGroups.entries()]
       .map(([cmd, g]) => ({ cmd, ...g }))
       .sort((a, b) => Number(b.isTest) - Number(a.isTest) || b.count - a.count)
@@ -319,6 +523,10 @@ function fitBudget(d: TraceDigest, budget: number): void {
     ],
     ['delegations dropped', () => shrink((s) => (s.delegations = []))],
     ['decisions dropped', () => shrink((s) => (s.decisions = []))],
+    [
+      'runs limited to the last 10 per session',
+      () => shrink((s) => (s.runs = s.runs.slice(-10))),
+    ],
     [
       'commands limited to 5 per session',
       () => shrink((s) => (s.commands = s.commands.slice(0, 5))),
@@ -361,6 +569,17 @@ function dedupeAcrossSessions(sessions: DigestSession[]): void {
   }
 }
 
+/** Give prompts, decisions, plans and runs short ids (S1, D1, P1, R1) the text can cite. */
+function numberFacts(sessions: DigestSession[]): void {
+  const n = { S: 0, D: 0, P: 0, R: 0 };
+  for (const s of sessions) {
+    for (const p of s.prompts) p.id = `S${++n.S}`;
+    for (const d of s.decisions) d.id = `D${++n.D}`;
+    for (const p of s.plans) p.id = `P${++n.P}`;
+    for (const r of s.runs) r.id = `R${++n.R}`;
+  }
+}
+
 export interface BuildOptions {
   budgetTokens?: number;
   /** Session ids the user chose to include or exclude, overriding the bands. */
@@ -395,6 +614,7 @@ export function buildDigest(
     return s;
   });
   dedupeAcrossSessions(sessions);
+  numberFacts(sessions);
   const commitsInSessions = new Set(chosen.flatMap((m) => m.commitsMade));
 
   const attribution = attribute(truth, prLines, chosen);
@@ -431,6 +651,10 @@ export function buildDigest(
   if (truth.usedWorkingTree)
     notes.push('No commits ahead of base yet; the digest describes uncommitted changes.');
   if (!sessions.length) notes.push('No agent sessions matched this change.');
+  if (truth.dirty && !truth.usedWorkingTree)
+    notes.push(
+      'The working tree had uncommitted changes: a run in the session may have tested code that is not in the PR.',
+    );
   if (sessions.some((s) => s.band === 'ambiguous')) {
     notes.push(
       'Some sessions are ambiguous: confirm with the user before describing them as part of this PR.',
@@ -450,10 +674,12 @@ export function buildDigest(
       head: truth.head,
       mergeBase: truth.mergeBase.slice(0, 12),
       usedWorkingTree: truth.usedWorkingTree,
+      ...(truth.dirty ? { dirty: true } : {}),
       commits: truth.commits.map((c) => ({
         sha: c.sha.slice(0, 12),
         subject: scrub.text(c.subject),
         trailers: c.trailers,
+        ...(c.commitTime ? { time: new Date(c.commitTime).toISOString() } : {}),
       })),
     },
     stats: {
@@ -469,6 +695,7 @@ export function buildDigest(
     sessions,
     files: attribution.map((f) => ({
       path: scrub.text(f.path),
+      role: fileRole(f.path),
       added: f.added,
       removed: f.removed,
       sessions: [...f.bySession].map(([id, lines]) => ({ ref: refOf.get(id)!, lines })),
