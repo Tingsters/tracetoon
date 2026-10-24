@@ -10,26 +10,8 @@ const META_RE = /<!-- tracetoon:meta (\{[\s\S]*?\}) -->/;
 
 export interface PrMeta {
   v: 1;
-  tool: string;
-  /** Salted hashes of the session ids that went into this description. */
-  sessions: string[];
-  /** Short hash of the digest the description was written from. */
-  digest: string;
-  generatedAt: string;
-  /** Filled in by later milestones (comic series, sagas). */
-  series?: string;
-  episode?: number;
-  saga?: string;
-  theme?: string;
-  synopsis?: string;
-  /** Art style, format and palette of the comic (to keep later ones varied). */
+  /** The comic's art style, so later comics in the repo pick a different one. */
   style?: string;
-  format?: string;
-  palette?: string;
-  /** Top-level areas of the repo the PR touched (to suggest related episodes). */
-  areas?: string[];
-  /** standalone, sequel or new-arc. */
-  continuity?: string;
   /** Hash of the block's text as posted, to notice later edits on GitHub. */
   contentSha?: string;
 }

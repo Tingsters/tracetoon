@@ -17,8 +17,7 @@ bun test
 | `src/git/` | What the PR is (base, commits, added lines), interop with Entire and git-ai |
 | `src/correlate/` | Which sessions and records belong to this PR, and line attribution |
 | `src/digest/` | The redacted, budgeted digest the agent writes from |
-| `src/comic/` | Script format, casts, bubbles, rasterizing, image providers |
-| `src/story/` | Series, episodes and sagas |
+| `src/comic/` | Script format, style ideas, bubbles, rasterizing, image providers |
 | `src/github/` | PR body region and metadata, assets branch, repo templates and policy |
 | `src/hook/` | The agent PR hook (`hook pre-pr`), its install/uninstall into each agent's config, and the on/off switches |
 | `src/commands/` | The CLI commands |

@@ -27,6 +27,6 @@ the PR.
 | `disclosure` | Agents, models, suggested and existing AI trailers |
 | `interop` | Provenance other tools recorded: Entire checkpoints in commit trailers, git-ai notes |
 | `privacy` | Redaction count and records dropped because they belonged to other repos |
-| `linkedPrs` | Other PRs the sessions linked themselves to (feeds saga detection) |
+| `linkedPrs` | Other PRs the sessions linked themselves to (context for the writer) |
 | `notes` | Things to tell the user or reflect in the text |
 | `truncated` | What was trimmed to fit the budget; use `tracetoon expand <ref>` for full detail |

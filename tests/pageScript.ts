@@ -1,11 +1,7 @@
-/** A small v2 page script for tests. */
-import type { ComicScript, SeriesBible } from '../src/comic/types.ts';
+/** A small page script for tests, with its own made-up characters. */
+import type { ComicScript } from '../src/comic/types.ts';
 
-export function pageScript(
-  bible: SeriesBible,
-  over: Partial<ComicScript> = {},
-): ComicScript {
-  const id = (role: string) => bible.cast.find((c) => c.role === role)!.id;
+export function pageScript(over: Partial<ComicScript> = {}): ComicScript {
   return {
     v: 2,
     title: 'The Link You Can Click',
@@ -16,18 +12,22 @@ export function pageScript(
     layout: 'BEFORE on the left, AFTER on the right',
     style: 'sunday-strip',
     palette: 'full-color',
+    characters: [
+      { name: 'Dev', description: 'a tired developer in a hoodie, round glasses' },
+      { name: 'Link', description: 'a cheerful glowing blue hyperlink with tiny arms' },
+    ],
     panels: [
       {
-        scene: 'Sam squints at a terminal path',
-        characters: [{ cast: id('human'), position: 'left', expression: 'worried' }],
+        scene: 'Dev squints at a terminal path',
+        characters: [{ name: 'Dev', position: 'left', expression: 'worried' }],
         dialogue: [
           { speaker: 'caption', text: 'BEFORE' },
-          { speaker: id('human'), text: 'Where is this file?' },
+          { speaker: 'Dev', text: 'Where is this file?' },
         ],
       },
       {
-        scene: 'Kit points at a glowing link',
-        characters: [{ cast: id('agent'), position: 'right', expression: 'proud' }],
+        scene: 'Link waves from the screen, glowing',
+        characters: [{ name: 'Link', position: 'right', expression: 'proud' }],
         dialogue: [
           { speaker: 'caption', text: 'AFTER' },
           { speaker: 'caption', kind: 'sign', text: 'file:///preview.html' },

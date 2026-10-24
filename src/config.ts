@@ -1,4 +1,3 @@
-import type { Theme } from './comic/types.ts';
 /**
  * Settings: user-level (`~/.config/tracetoon/config.json`, or
  * `%APPDATA%\tracetoon\config.json` on Windows) overlaid by the repo's
@@ -11,8 +10,6 @@ import { dirname, join } from 'node:path';
 export interface Config {
   /** Skip the preview step when every safety check passes. Default false. */
   yolo: boolean;
-  /** Comic theme for later milestones. */
-  theme: Theme;
   /** Quote the user's prompts verbatim in the PR ("verbatim") or paraphrase ("paraphrase"). */
   promptQuoting: 'verbatim' | 'paraphrase';
   /** Trailer style to suggest: kernel-style Assisted-by, Co-Authored-By, or none. */
@@ -25,10 +22,8 @@ export interface Config {
   imageConsent: string[];
   /** Make a comic at all. */
   comic: boolean;
-  /** Pin one art style for every comic (a style id), or `auto` to vary. */
+  /** Pin one art style for every comic (a style idea id or any description), or `auto` to vary. */
   style: string;
-  /** Allow animal casts in anime/manga styles (off: they read as furry). */
-  allowAnimalAnime: boolean;
   /** Use Tracetoon for PRs at all. Off here, or in any other switch, wins. */
   enabled: boolean;
 }
@@ -36,7 +31,6 @@ export interface Config {
 export const DEFAULTS: Config = {
   enabled: true,
   yolo: false,
-  theme: 'pets',
   promptQuoting: 'paraphrase',
   disclosure: 'assisted-by',
   budgetTokens: 12000,
@@ -44,7 +38,6 @@ export const DEFAULTS: Config = {
   imageConsent: [],
   comic: true,
   style: 'auto',
-  allowAnimalAnime: false,
 };
 
 export function userConfigPath(): string {
@@ -60,9 +53,14 @@ export function repoConfigPath(root: string): string {
   return join(root, '.github', 'tracetoon.json');
 }
 
+/** A config file's known settings; anything else (old `theme`, say) is ignored. */
 function readJson(p: string): Partial<Config> {
   try {
-    return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as Partial<Config>) : {};
+    if (!existsSync(p)) return {};
+    const raw = JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(raw).filter(([k]) => k in DEFAULTS),
+    ) as Partial<Config>;
   } catch {
     return {};
   }

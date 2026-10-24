@@ -4,7 +4,8 @@
 reads the session logs your AI coding agents already keep on your machine, finds
 the sessions that produced your branch, and helps your agent write a PR
 description covering the plan, the decisions, what was tested, and how much was
-AI-assisted. It adds a four-panel comic of the story, starring a recurring cast.
+AI-assisted. It adds a one-off comic of the story, with characters and an art
+style made up for that PR.
 You see the exact text and comic and approve them before anything is posted.
 
 - **Install after the fact.** Write your code first with any supported agent,
@@ -17,9 +18,9 @@ You see the exact text and comic and approve them before anything is posted.
   personal data, your home path and username are redacted, and a second scanner
   checks the final text before it can be posted. Image services only ever see
   the comic's scenes, and only after you agree.
-- **A story that continues.** Each repo gets a series: the same characters
-  return, episodes are numbered, and related PRs (stacked branches, shared
-  sessions) are linked as a saga with a "previously on" recap.
+- **Every comic is its own.** No mascots or recurring cast: each PR's comic
+  invents its own characters, and picks an art style the repo hasn't used
+  lately. The only thing read back from earlier PRs is which styles they used.
 
 | Agent | Status |
 |---|---|
@@ -122,23 +123,21 @@ Turn it off at whichever level you need. Any "off" wins:
    PR link, the branch, timing and working folder. Subagents fold into their
    parent session. The result is a redacted digest sized for an LLM.
 2. **`tracetoon context`** reads the PR template, any AI-contribution policy, the
-   existing PR, your settings, and the comic series (cast, episode number,
-   saga).
+   existing PR, your settings, and the art styles of the repo's recent comics.
 3. **Your agent writes** `body.md` and a comic brief (`comic.json`) from the
    digest. It finds the funny part of how the work went, then picks:
    - a format: a gag strip, a before/after, a splash page, a mission briefing, a
      movie poster, an instruction manual and more;
-   - one of 18 art styles that suits the cast and the mood (manga ink with one
-     red accent, noir, silver-age comics, ligne claire, claymation, 16-bit pixel
-     art and more). It's a different style each time, and anime is never paired
-     with animal characters.
+   - characters invented for this PR's joke;
+   - any art style that suits the mood: one of 18 ideas (manga ink with one red
+     accent, noir, silver-age comics, ligne claire, claymation, 16-bit pixel art
+     and more) or its own description, different from the recent ones.
 4. **`tracetoon comic art` / `comic render`** draw the whole page, lettering
    included, with an AI image model you allow: your agent's own image tool, the
    Codex or Antigravity CLI already on your machine (your own login, no key), or
    OpenAI or Gemini with an API key. Tracetoon adds a footer bar (`owner/repo
-   #N · made with Tracetoon`). Character sheets keep the cast recognizable, and
-   a comic recaps an earlier one only when it's a real sequel. Without an image
-   route, the PR simply has no comic. `tracetoon comic reroll` redraws it in
+   #N · made with Tracetoon`). Without an image route, the PR simply has no
+   comic. `tracetoon comic reroll` redraws it in
    another style.
 5. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text in an existing PR is kept), scans it for leaks and
@@ -148,7 +147,7 @@ Turn it off at whichever level you need. Any "off" wins:
    creates or updates the PR with `gh`.
 
 Other commands: `status`, `on`/`off`, `hook install`/`uninstall`, `scan`,
-`expand`, `preview`, `series`, `export --agent-trace`
+`expand`, `preview`, `images`, `export --agent-trace`
 ([Agent Trace](https://agent-trace.dev) line attribution), `doctor --probe`,
 `config`. Every command takes `--json`.
 
@@ -171,9 +170,7 @@ the binary included are attached to each release.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
-| `theme` | `pets` | Cast and setting for a new series: `pets`, `mecha`, `scifi`, `office`, `heist` or `fantasy` |
-| `style` | `auto` | Pin one art style for every comic (see `references/styles.md`), or `auto` to vary |
-| `allowAnimalAnime` | `false` | Allow animal characters in anime/manga styles |
+| `style` | `auto` | Pin one art style for every comic (an idea from `references/styles.md` or any description), or `auto` to vary |
 | `comic` | `true` | Make a comic at all |
 | `yolo` | `false` | Allow `publish --yolo` to skip the preview when all checks pass |
 | `promptQuoting` | `paraphrase` | `verbatim` quotes your prompts in the PR |

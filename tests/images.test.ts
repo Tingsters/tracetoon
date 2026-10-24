@@ -161,11 +161,11 @@ describe('route checks and messages', () => {
       mkdirSync(join(repo, '.github'), { recursive: true });
       writeFileSync(
         join(repo, '.github', 'tracetoon.json'),
-        JSON.stringify({ imageConsent: ['openai'], theme: 'mecha' }),
+        JSON.stringify({ imageConsent: ['openai'], hosting: 'attach' }),
       );
       const c = loadConfig(repo);
       expect(c.imageConsent).toEqual([]);
-      expect(c.theme).toBe('mecha');
+      expect(c.hosting).toBe('attach');
     } finally {
       process.env.TRACETOON_CONFIG = saved;
     }
