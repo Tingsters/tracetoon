@@ -51,7 +51,7 @@ poster, an instruction manual and more) and any art style that differs from the
 repo's recent comics. An image model you choose draws the whole page, lettering
 included, and the agent proofreads every word.
 
-<p align="center"><a href="https://github.com/Tingsters/tracetoon/pull/17"><img src="https://github.com/Tingsters/tracetoon/blob/7469a67bf351f2b5c6410d901c5c55e9773332f6/comics/feat-no-cast-5a632c1/comic.png?raw=true" alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign." width="640"></a><br><sub>The comic Tracetoon made for <a href="https://github.com/Tingsters/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</sub></p>
+<p align="center"><a href="https://github.com/Tingsters/tracetoon/pull/17"><img src="docs/example-pr17.png" alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign." width="640"></a><br><sub>The comic Tracetoon made for <a href="https://github.com/Tingsters/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</sub></p>
 
 Comics are optional. Without an image route, or with `tracetoon config set
 comic false`, the PR simply has none.
@@ -165,8 +165,8 @@ Turn it off at whichever level you need. Any "off" wins:
    writing guide, and the comic brief (`comic.json`). It asks you nothing
    before drafting.
 5. **`tracetoon comic art` / `comic render`** draw the page with the image
-   route you approved, add a footer bar (`owner/repo #N · made with
-   Tracetoon`), and print the words to proofread.
+   route you approved, add a small "made with Tracetoon" footer bar, and print
+   the words to proofread.
 6. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text is kept), runs the leak scan and the claim check,
    lists optional notes, and prints an approval code. The preview page shows

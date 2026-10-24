@@ -124,8 +124,8 @@ Rules (checked by `tracetoon comic check`; warnings don't block):
 `tracetoon comic art` (see SKILL.md for consent) draws the **whole page in one
 image, lettering included**, so the words look like part of the comic. Then:
 
-1. `tracetoon comic render` adds Tracetoon's footer bar (`owner/repo #N · made
-   with Tracetoon`) and prints a **proofread** list.
+1. `tracetoon comic render` adds a small "made with Tracetoon" footer bar and
+   prints a **proofread** list.
 2. **Look at `out/comic.png`** and check every word on the list is lettered
    exactly, with nothing extra or garbled.
 3. If something is off, run `tracetoon comic art --force` to redraw (up to 2

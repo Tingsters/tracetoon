@@ -98,11 +98,12 @@ describe('page scripts', () => {
     expect(transcript(s)).toContain('**Dev:** Where is this file?');
   });
 
-  test('a whole page gets an exact footer bar', () => {
+  test('a whole page gets a footer bar that says only "made with Tracetoon"', () => {
     expect(imageSize(PNG)).toEqual({ w: 1, h: 1 });
-    const svg = pageWithFooter({ mime: 'image/png', data: PNG }, 'acme/widgets #42');
-    expect(svg).toContain('acme/widgets #42');
-    expect(svg).toContain('made with Tracetoon');
+    const svg = pageWithFooter({ mime: 'image/png', data: PNG });
+    expect(svg.match(/<text[^>]*>([^<]*)<\/text>/g)).toEqual([
+      expect.stringContaining('>made with Tracetoon<'),
+    ]);
   });
 
   test('overlay lettering lays out any number of panels', () => {
@@ -112,10 +113,10 @@ describe('page scripts', () => {
         layout: 'grid',
         panels: Array.from({ length: n }, () => pageScript().panels[0]!),
       });
-      const svg = composePage(s, [], { footer: 'acme/widgets #42' });
+      const svg = composePage(s, []);
       expect(svg.match(/<clipPath/g)?.length).toBe(n);
       expect(svg).toContain('CLICK HERE, HUMAN');
-      expect(svg).toContain('acme/widgets #42');
+      expect(svg).toContain('made with Tracetoon');
     }
   });
 });

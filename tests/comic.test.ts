@@ -33,8 +33,8 @@ describe('comic pieces', () => {
   test('builds a PNG page from panel art, with bubbles and the footer', async () => {
     const s = pageScript();
     const images = s.panels.map(() => ({ mime: 'image/png' as const, data: PIXEL }));
-    const svg = composePage(s, images, { footer: 'acme/demo #3' });
-    expect(svg).toContain('acme/demo #3');
+    const svg = composePage(s, images);
+    expect(svg).toContain('made with Tracetoon');
     expect(svg).toContain('Where is this file?');
     const png = await svgToPng(svg, 800);
     expect([...png.slice(1, 4)].map((c) => String.fromCharCode(c)).join('')).toBe('PNG');
@@ -377,8 +377,9 @@ describe('comic end to end', () => {
       'file:///preview.html',
     ]);
     const svg = readFileSync(join(runDir, 'out', 'comic.svg'), 'utf8');
-    expect(svg).toContain('acme/demo · feature');
+    // The footer says only "made with Tracetoon": no repo, branch or PR number.
     expect(svg).toContain('made with Tracetoon');
+    expect(svg).not.toMatch(/acme\/demo|feature/);
 
     // Overlay lettering: text-free panels, Tracetoon draws the words.
     const overlay = cli(repo.root, 'comic', 'art', '--lettering', 'overlay', '--force');

@@ -199,11 +199,6 @@ function dataUri(img: PanelImage): string {
   return `data:${img.mime};base64,${Buffer.from(img.data).toString('base64')}`;
 }
 
-export interface PageInfo {
-  /** Footer text, e.g. "acme/widgets #42". "made with Tracetoon" is added. */
-  footer?: string;
-}
-
 const FOOTER_BAR = 56;
 const ACCENTS: Record<string, string> = {
   red: '#D7263D',
@@ -227,11 +222,10 @@ function lookOf(script: ComicScript): { caption: string; sfx: string; paper: str
   return { caption: '#FFF3B0', sfx: accent, paper: '#FFFDF7' };
 }
 
-/** The branded footer bar: exact text, drawn by Tracetoon, never by the model. */
-function footerBar(y: number, width: number, left: string): string {
+/** The footer bar: "made with Tracetoon", drawn by Tracetoon, never by the model. */
+function footerBar(y: number, width: number): string {
   const ty = y + FOOTER_BAR / 2 + 9;
   return `<rect x="0" y="${y}" width="${width}" height="${FOOTER_BAR}" fill="#111114"/>
-<text x="28" y="${ty}" font-family="${FONT}" font-weight="700" font-size="26" fill="#FFFFFF">${esc(left)}</text>
 <text x="${width - 28}" y="${ty}" text-anchor="end" font-family="${FONT}" font-weight="700" font-size="24" fill="#C9C9D3">made with Tracetoon</text>`;
 }
 
@@ -258,7 +252,7 @@ export function imageSize(data: Uint8Array): { w: number; h: number } | undefine
  * A page the image model drew whole (lettering included), with Tracetoon's
  * footer bar added underneath.
  */
-export function pageWithFooter(img: PanelImage, footer: string, aspect = 4 / 3): string {
+export function pageWithFooter(img: PanelImage, aspect = 4 / 3): string {
   const size = imageSize(img.data);
   const ratio = size ? size.w / size.h : aspect;
   const h = Math.round(PAGE_W / ratio);
@@ -266,7 +260,7 @@ export function pageWithFooter(img: PanelImage, footer: string, aspect = 4 / 3):
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${total}" viewBox="0 0 ${PAGE_W} ${total}">
 <rect width="${PAGE_W}" height="${total}" fill="#111114"/>
 <image href="${dataUri(img)}" width="${PAGE_W}" height="${h}" preserveAspectRatio="xMidYMid slice"/>
-${footerBar(h, PAGE_W, footer)}
+${footerBar(h, PAGE_W)}
 </svg>`;
 }
 
@@ -284,7 +278,6 @@ function columns(n: number): number {
 export function composePage(
   script: ComicScript,
   images: PanelImage[],
-  info: PageInfo = {},
   layout?: Layout,
 ): string {
   const n = script.panels.length;
@@ -294,7 +287,7 @@ export function composePage(
   const k = cell / SRC;
   const look = lookOf(script);
   const bodyH = TITLE_H + MARGIN + rows * cell + (rows - 1) * GUTTER + MARGIN;
-  const height = bodyH + (info.footer ? FOOTER_BAR : FOOTER_H + MARGIN);
+  const height = bodyH + FOOTER_BAR;
   const cells = script.panels
     .map((panel, i) => {
       const row = Math.floor(i / cols);
@@ -312,9 +305,7 @@ ${n > 1 ? `<circle cx="30" cy="${cell - 30}" r="18" fill="${INK}"/><text x="30" 
 </g>`;
     })
     .join('\n');
-  const footer = info.footer
-    ? footerBar(bodyH, PAGE_W, info.footer)
-    : `<text x="${PAGE_W - MARGIN}" y="${height - MARGIN - 12}" text-anchor="end" font-family="${FONT}" font-size="22" fill="#8A8A96">made with Tracetoon</text>`;
+  const footer = footerBar(bodyH, PAGE_W);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${height}" viewBox="0 0 ${PAGE_W} ${height}">
 <rect width="${PAGE_W}" height="${height}" fill="${look.paper}"/>
 <text x="${PAGE_W / 2}" y="72" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="52" fill="${INK}">${esc(script.headline || script.title)}</text>
