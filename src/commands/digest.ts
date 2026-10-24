@@ -188,7 +188,7 @@ export function contextCmd(
           ? ''
           : config.style && config.style !== 'auto'
             ? `Comic style: pinned to ${config.style}`
-            : `Comic: invent this PR's own characters, and pick a style unlike the recent ones (${recent.join(', ') || 'none yet'})`,
+            : `Comic: invent this PR's own characters, and pick a style unlike the recent ones (${recent.join('; ') || 'none yet'})`,
       ]
         .filter(Boolean)
         .join('\n'),
