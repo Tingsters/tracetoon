@@ -1,0 +1,84 @@
+{
+  "v": 2,
+  "title": "Quoted Out of Context",
+  "headline": "QUOTED OUT OF CONTEXT",
+  "synopsis": "Detective Kit finds the digest's mystery test run was just the words 'bun test' inside a quoted script. Quotes now stay quotes.",
+  "altText": "A three-panel film noir strip. Panel 1: Kit the fox, in a trench coat, reads a case file stamped TEST RUNS: 3 under a desk lamp. Panel 2: Kit holds a magnifying glass over a script where 'bun test' sits inside quotation marks. Panel 3: Kit leads away Glitch the beetle in tiny handcuffs, protesting.",
+  "format": "strip",
+  "layout": "three panels in a row, rain on the window in the first, a single desk lamp lighting each scene",
+  "style": "noir",
+  "palette": "bw-accent",
+  "accent": "yellow",
+  "continuity": {
+    "mode": "standalone"
+  },
+  "panels": [
+    {
+      "scene": "Kit the fox in a trench coat and fedora reads a case file under a desk lamp, rain streaking the office window",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "center",
+          "expression": "thinking"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "TEST RUNS: 3"
+        },
+        {
+          "speaker": "caption",
+          "text": "The digest swore it saw a test run."
+        }
+      ]
+    },
+    {
+      "scene": "Close-up: Kit holds a magnifying glass over a page of script; the words bun test glow yellow, wrapped in quotation marks",
+      "characters": [
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "determined"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "caption",
+          "kind": "sign",
+          "text": "'bun test'"
+        },
+        {
+          "speaker": "kit",
+          "text": "Nobody ran it. Somebody just said it."
+        }
+      ]
+    },
+    {
+      "scene": "Kit leads Glitch the beetle away in tiny handcuffs under a streetlamp",
+      "characters": [
+        {
+          "cast": "glitch",
+          "position": "left",
+          "expression": "angry"
+        },
+        {
+          "cast": "kit",
+          "position": "right",
+          "expression": "proud"
+        }
+      ],
+      "dialogue": [
+        {
+          "speaker": "glitch",
+          "text": "I was quoted out of context!"
+        },
+        {
+          "speaker": "caption",
+          "text": "Case closed. Quotes stay quotes."
+        }
+      ]
+    }
+  ]
+}
