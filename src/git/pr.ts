@@ -254,7 +254,8 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     });
   const dirty = opts.head
     ? false
-    : git(toplevel, ['status', '--porcelain']).stdout.trim().length > 0;
+    : git(toplevel, ['status', '--porcelain', '--untracked-files=no']).stdout.trim()
+        .length > 0;
   const usedWorkingTree = commits.length === 0 && !opts.head;
   const diffArgs = usedWorkingTree
     ? ['diff', '-U0', '--no-color', '--no-ext-diff', mergeBase]

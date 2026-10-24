@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /**
  * The part of a PR body Tracetoon owns. Everything between the start and end
  * markers is ours to replace; anything a human wrote outside them is kept.
@@ -29,6 +30,8 @@ export interface PrMeta {
   areas?: string[];
   /** standalone, sequel or new-arc. */
   continuity?: string;
+  /** Hash of the block's text as posted, to notice later edits on GitHub. */
+  contentSha?: string;
 }
 
 /** JSON that can never end an HTML comment early (no `--`, no `>`). */
@@ -69,6 +72,39 @@ export function mergeIntoBody(existing: string | undefined, block: string): stri
   if (s >= 0 && e > s) return body.slice(0, s) + block + body.slice(e + END.length);
   const human = body.trim();
   return human ? `${human}\n\n${block}\n` : `${block}\n`;
+}
+
+/** The text inside our block, without the metadata comment. */
+export function regionContent(body: string): string | undefined {
+  const s = body.indexOf(START);
+  const e = body.indexOf(END);
+  if (s < 0 || e <= s) return undefined;
+  return body
+    .slice(s + START.length, e)
+    .replace(META_RE, '')
+    .trim();
+}
+
+/** A short, stable hash of region text, ignoring line-ending and edge whitespace. */
+export function contentHash(text: string): string {
+  // Image sources are filled in at publish (the comic's hosted URL), after the
+  // hash is taken, so they don't count as edits.
+  const norm = text
+    .replace(/\r\n/g, '\n')
+    .replace(/src="[^"]*"/g, 'src=""')
+    .trim();
+  return createHash('sha256').update(norm).digest('hex').slice(0, 16);
+}
+
+/**
+ * Whether someone edited our block on GitHub since Tracetoon last posted it.
+ * Undefined when there's no block or the metadata predates the hash.
+ */
+export function regionEdited(body: string): boolean | undefined {
+  const meta = decodeMeta(body);
+  const text = regionContent(body);
+  if (!meta?.contentSha || text === undefined) return undefined;
+  return contentHash(text) !== meta.contentSha;
 }
 
 /** The human-written part of a body (outside our block). */

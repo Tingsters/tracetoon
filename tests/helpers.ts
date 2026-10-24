@@ -154,7 +154,8 @@ export class ClaudeLog {
       { content: stdout, isError, toolUseResult: { stdout, stderr: '' } },
     );
   }
-  plan(plan: string, approved = true): this {
+  /** `submitted`: the plan text Claude Code records in the result (can differ from the input). */
+  plan(plan: string, approved = true, submitted?: string): this {
     return this.tool(
       'ExitPlanMode',
       { plan },
@@ -162,6 +163,7 @@ export class ClaudeLog {
         content: approved
           ? 'User has approved your plan.'
           : 'User rejected. the user said: shorter',
+        ...(submitted ? { toolUseResult: { plan: submitted } } : {}),
       },
     );
   }

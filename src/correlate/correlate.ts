@@ -176,7 +176,21 @@ function keepParentFolderPrompts(
 }
 
 function shaPatterns(truth: PrTruth): RegExp[] {
-  return truth.commits.map((c) => new RegExp(`\\b${c.sha.slice(0, 7).toLowerCase()}`));
+  return truth.commits.map((c) => commitLine(c.sha));
+}
+
+/**
+ * A SHA where git prints a commit, not just anywhere in some output (a file
+ * listing can contain a SHA too): `[branch abc1234] subject` from git commit,
+ * a line starting with it (git log --oneline, git rev-parse), or
+ * `Updating x..abc1234` from a pull or merge.
+ */
+export function commitLine(sha: string): RegExp {
+  const s = sha.slice(0, 7).toLowerCase();
+  return new RegExp(
+    `^\\s*\\[[^\\]\\n]*\\b${s}[0-9a-f]*\\]|^\\s*${s}[0-9a-f]*\\b|updating [0-9a-f]+\\.\\.${s}`,
+    'mi',
+  );
 }
 
 /**
@@ -213,14 +227,18 @@ type CommandRecord = Extract<TraceRecord, { kind: 'command' }>;
 export function commitMoments(
   records: TraceRecord[],
   commits: { sha: string; subject: string }[],
+  roots?: string[],
 ): Map<string, string | undefined> {
   const found = new Map<string, string | undefined>();
   const commands = records.filter((r): r is CommandRecord => r.kind === 'command');
   for (const c of commits) {
-    const sha = new RegExp(`\\b${c.sha.slice(0, 7).toLowerCase()}`);
+    const sha = commitLine(c.sha);
     const subject =
       c.subject.trim().length >= 12 ? c.subject.trim().toLowerCase() : undefined;
     for (const r of commands) {
+      // A command run in another repository can't have made this repo's commit,
+      // even if a matching SHA shows up in its output.
+      if (roots && !ranInRepo(r, roots)) continue;
       // Only a command that creates commits can have made this one: a SHA in
       // `git log` or `git show` output only means the session looked at it.
       const byOutput =
@@ -238,6 +256,29 @@ export function commitMoments(
   return found;
 }
 
+/**
+ * Whether a command could have run in one of these repositories, judged by its
+ * `git -C` target, a leading `cd`, or the directory the agent was in. Only a
+ * directory that is clearly elsewhere (neither inside a root nor a parent of
+ * one, like a sibling repository) rules it out; unknown counts as yes.
+ */
+function ranInRepo(r: CommandRecord, roots: string[]): boolean {
+  const dirs: string[] = [];
+  for (const m of r.cmd.matchAll(/\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)/g)) {
+    const d = m[1]!.replace(/^["']|["']$/g, '');
+    dirs.push(r.cwd ? resolve(r.cwd, d) : d);
+  }
+  if (!dirs.length) {
+    const cd = leadingCd(r.cmd, r.cwd);
+    if (cd) dirs.push(cd);
+    else if (r.cwd) dirs.push(r.cwd);
+  }
+  if (!dirs.length) return true;
+  return dirs.some(
+    (d) => underAnyRoot(d, roots) || roots.some((root) => isPathUnder(root, d)),
+  );
+}
+
 const COMMIT_MAKER =
   /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:commit|merge|cherry-pick|revert|am|rebase|pull)\b/;
 
@@ -248,7 +289,7 @@ function makesCommit(cmd: string): boolean {
 
 /** PR commits the session made. */
 export function commitsMadeBy(records: TraceRecord[], truth: PrTruth): string[] {
-  return [...commitMoments(records, truth.commits).keys()];
+  return [...commitMoments(records, truth.commits, truth.roots).keys()];
 }
 
 /**
@@ -267,7 +308,7 @@ export function earlierWorkCutoff(
   const firstOwn = truth.commits.length
     ? Math.min(...truth.commits.map((c) => c.authorTime))
     : Number.POSITIVE_INFINITY;
-  const times = [...commitMoments(records, base).values()]
+  const times = [...commitMoments(records, base, truth.roots).values()]
     .map((t) => (t ? Date.parse(t) : NaN))
     .filter((t) => Number.isFinite(t) && t < firstOwn);
   return times.length ? Math.max(...times) : undefined;
@@ -336,11 +377,12 @@ export function matchSession(
   const records = session.records;
   // A PR commit's SHA in command output proves the session worked on this repo,
   // even from a worktree that no longer exists. Treat such folders as repo roots.
-  const commitsMade = commitsMadeBy(records, truth);
   const formerRoots = formerRootsOf(records, truth);
   const view: PrTruth = formerRoots.length
     ? { ...truth, roots: [...truth.roots, ...formerRoots] }
     : truth;
+  // Former worktree roots count: a commit may have been made from one.
+  const commitsMade = commitsMadeBy(records, view);
   const flags = records.map((r) => belongs(r, view, w));
   keepConversation(records, flags);
   keepParentFolderPrompts(records, flags, view, w);

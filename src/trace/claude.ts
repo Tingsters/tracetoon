@@ -9,7 +9,13 @@ import { claude } from '@showtail/agent-traces';
 import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
 import { resolvePlanResult } from '@showtail/agent-traces/transcript/plans';
 import { mentionsAnyRoot } from './pathMatch.ts';
-import type { SessionRef, TraceAdapter, TraceSession, Usage } from './types.ts';
+import type {
+  DecisionQuestion,
+  SessionRef,
+  TraceAdapter,
+  TraceSession,
+  Usage,
+} from './types.ts';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const COMMAND_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -262,9 +268,11 @@ export function parseClaudeLines(
             : textOfToolResult(c.content).slice(0, 4000);
           if (cmd) into.records.push({ kind: 'command', cmd, isError, output, ...where });
         } else if (call.name === 'ExitPlanMode') {
+          // The result holds the plan as submitted; the call's input can be a
+          // version behind (the plan file before the agent's last edit).
           const markdown =
-            str(call.input.plan) ??
-            (isObj(o.toolUseResult) ? str(o.toolUseResult.plan) : undefined);
+            (isObj(o.toolUseResult) ? str(o.toolUseResult.plan) : undefined) ??
+            str(call.input.plan);
           if (markdown) {
             const { approved } = resolvePlanResult(textOfToolResult(c.content));
             into.records.push({ kind: 'plan', markdown, approved, ...where });
@@ -279,6 +287,7 @@ export function parseClaudeLines(
           into.records.push({
             kind: 'decision',
             text: `${questions}\n${answer}`.trim(),
+            questions: decisionQuestions(qs, o.toolUseResult),
             ...where,
           });
         }
@@ -401,3 +410,30 @@ export const claudeAdapter: TraceAdapter = {
     return session;
   },
 };
+
+/**
+ * The questions and the user's exact answers. Claude Code keeps them in
+ * `toolUseResult.answers` (question -> answer); options come from the call.
+ */
+export function decisionQuestions(qs: unknown[], result: unknown): DecisionQuestion[] {
+  const answers =
+    isObj(result) && isObj(result.answers)
+      ? (result.answers as Record<string, unknown>)
+      : {};
+  return qs.flatMap((q) => {
+    if (!isObj(q)) return [];
+    const question = str(q.question);
+    if (!question) return [];
+    const options = (Array.isArray(q.options) ? q.options : [])
+      .map((o) => (isObj(o) ? str(o.label) : str(o)))
+      .filter((l): l is string => !!l);
+    const raw = answers[question];
+    const answer =
+      typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.join(', ') : undefined;
+    const picked = answer
+      ? options.includes(answer) ||
+        answer.split(/,\s*/).every((a) => options.includes(a.trim()))
+      : false;
+    return [{ question, options, answer, ownWords: answer ? !picked : undefined }];
+  });
+}
