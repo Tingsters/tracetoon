@@ -415,7 +415,9 @@ export const claudeAdapter: TraceAdapter = {
  */
 export function decisionQuestions(qs: unknown[], result: unknown): DecisionQuestion[] {
   const answers =
-    isObj(result) && isObj(result.answers) ? (result.answers as Record<string, unknown>) : {};
+    isObj(result) && isObj(result.answers)
+      ? (result.answers as Record<string, unknown>)
+      : {};
   return qs.flatMap((q) => {
     if (!isObj(q)) return [];
     const question = str(q.question);
