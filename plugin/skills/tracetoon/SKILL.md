@@ -52,11 +52,20 @@ that bypass on your own initiative.
    "previously on").
    - If `aiPolicy.verdict` is `prohibited`, show the user the excerpts and stop
      unless they explicitly want to continue.
-   - If it is `disclosure-required`, the disclosure section is mandatory.
+   - If it is `disclosure-required`, keep Tracetoon's disclosure line (`config.disclosure` must not be `none`) and add any extra disclosure the policy asks for at the end of `body.md`.
 4. **Write the description.** Read `digest.json` (and `tracetoon expand <ref>`
    for detail). Write `body.md` in the run folder following
    [references/writing-guide.md](references/writing-guide.md). For a new PR,
    also write a one-line `title.txt`.
+   - Draft it straight away from what's available; don't ask the user questions
+     first. Only ask when the draft can't be written without an answer (for
+     example, it's unclear which change the PR is meant to describe).
+   - If the user already wrote a description (an existing PR body,
+     `existingPr.editedText` when they edited Tracetoon's section on GitHub, or a
+     `body.md` they wrote or edited), start from their text and keep it. Fix only
+     what the evidence contradicts and add what's missing.
+   - When asked for changes, edit `body.md` in place; don't regenerate it from
+     scratch unless the user asks for a fresh draft.
 5. **Write and draw the comic** (skip if `config.comic` is false or the user
    doesn't want one). Follow
    [references/comic-guide.md](references/comic-guide.md). Aim for something

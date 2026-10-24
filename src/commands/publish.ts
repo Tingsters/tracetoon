@@ -15,6 +15,7 @@ import { loadConfig } from '../config.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { assetUrl, publishAssets, type AssetFile } from '../github/assets.ts';
 import {
+  contentHash,
   defuseMentions,
   managedBlock,
   mergeIntoBody,
@@ -39,6 +40,24 @@ interface Context {
   existingPr: { number: number; url: string; title: string; body: string } | null;
   story?: Story;
   bibleIsNew?: boolean;
+  config?: { disclosure?: 'assisted-by' | 'co-authored-by' | 'none' };
+}
+
+/**
+ * One short disclosure line, added after the description and the comic. The
+ * match percentage and session details live in the preview, not the PR.
+ */
+export function disclosureLine(
+  digest: Pick<TraceDigest, 'disclosure'>,
+  mode: 'assisted-by' | 'co-authored-by' | 'none' = 'assisted-by',
+): string {
+  if (mode === 'none') return '';
+  const trailers = digest.disclosure.suggestedTrailers;
+  if (!trailers.length) return '';
+  const tools = digest.disclosure.agents.join(', ');
+  const trailer =
+    mode === 'assisted-by' ? trailers.join(' · ') : `AI-assisted with ${tools}`;
+  return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon) and reviewed by the author</sub>`;
 }
 
 export interface Approval {
@@ -126,13 +145,17 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const script = readJson<ComicScript>(run, 'comic.json');
   const bible = readJson<SeriesBible>(run, 'bible.json');
   const comic = opts.noComic ? undefined : renderedComic(run);
+  // The description comes first; the comic is the closing beat, unless the
+  // writer placed it with the marker. A short disclosure goes last.
   let content = defuseMentions(bodyMd).replace(COMIC_MARKER, '');
   if (comic && script && bible) {
     const block = comicBlock(script, bible, ctx.story);
     content = bodyMd.includes(COMIC_MARKER)
       ? defuseMentions(bodyMd).replace(COMIC_MARKER, block)
-      : `${block}\n\n${content}`;
+      : `${content.trim()}\n\n${block}`;
   }
+  const disclosure = disclosureLine(digest, ctx.config?.disclosure);
+  if (disclosure) content = `${content.trim()}\n\n${disclosure}`;
 
   const story = ctx.story;
   const meta: PrMeta = {
@@ -161,6 +184,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         }
       : {}),
     ...(story?.areas?.length ? { areas: story.areas.slice(0, 12) } : {}),
+    contentSha: contentHash(content),
   };
   const block = managedBlock(content, meta);
   const body = mergeIntoBody(ctx.existingPr?.body, block);

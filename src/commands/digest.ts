@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { loadConfig } from '../config.ts';
 import { buildDigest, type TraceDigest } from '../digest/build.ts';
 import { findPrTemplate, detectAiPolicy } from '../github/repoContext.ts';
-import { decodeMeta, humanPart } from '../github/body.ts';
+import { decodeMeta, humanPart, regionContent, regionEdited } from '../github/body.ts';
 import { prTruth } from '../git/pr.ts';
 import { scan } from '../pipeline.ts';
 import { buildStory, loadBible, previousEpisodes } from '../story/story.ts';
@@ -158,6 +158,12 @@ export function contextCmd(
           title: truth.pr.title,
           humanBody: humanPart(truth.pr.body),
           body: truth.pr.body,
+          // Someone edited Tracetoon's section on GitHub since it was posted:
+          // their text is the starting point, not something to overwrite.
+          editedOnGitHub: regionEdited(truth.pr.body) ?? false,
+          editedText: regionEdited(truth.pr.body)
+            ? regionContent(truth.pr.body)
+            : undefined,
           previous: decodeMeta(truth.pr.body) ?? null,
         }
       : null,
@@ -184,6 +190,15 @@ export function contextCmd(
       [
         `Run ${run.id}: context written`,
         `PR: ${ctx.existingPr ? `#${ctx.existingPr.number} ${ctx.existingPr.title}` : 'none yet (will create one)'}`,
+        ...(ctx.existingPr?.editedOnGitHub
+          ? [
+              "Note: Tracetoon's section of this PR was edited on GitHub since it was posted. Start from that text (existingPr.editedText) and keep the edits.",
+            ]
+          : ctx.existingPr?.humanBody
+            ? [
+                'Note: this PR already has a description written by someone. Keep it; add to it rather than replacing it.',
+              ]
+            : []),
         `Template: ${template ? template.path : 'none'}`,
         `AI policy: ${policy.verdict}${policy.excerpts.length ? ` (${policy.excerpts.length} mention(s))` : ''}`,
         ...policy.excerpts.slice(0, 5).map((e) => `  ${e.file}:${e.line}: ${e.text}`),

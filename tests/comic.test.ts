@@ -347,6 +347,10 @@ describe('comic end to end', () => {
     const finalBody = readFileSync(join(runDir, 'final-body.md'), 'utf8');
     expect(finalBody).toContain('{{tracetoon:comic-src}}');
     expect(finalBody).toContain('Comic transcript');
+    // The description comes first; the comic is the closing beat.
+    expect(finalBody.indexOf('Adds a greeting helper')).toBeLessThan(
+      finalBody.indexOf('{{tracetoon:comic-src}}'),
+    );
     expect(decodeMeta(finalBody)).toMatchObject({
       episode: 1,
       theme: 'pets',
