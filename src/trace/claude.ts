@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { claude } from '@showtail/agent-traces';
 import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
 import { resolvePlanResult } from '@showtail/agent-traces/transcript/plans';
+import { headTail } from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
 import type {
   DecisionQuestion,
@@ -160,6 +161,7 @@ export function parseClaudeLines(
 ): void {
   const pending = new Map<string, Pending>();
   const countedUsage = new Set<string>();
+  let lastTs: string | undefined;
   for (const raw of content.split(/\r?\n/)) {
     if (!raw.trim()) continue;
     let o: unknown;
@@ -175,6 +177,7 @@ export function parseClaudeLines(
       continue;
     }
     const base = { ts: str(o.timestamp), cwd: str(o.cwd), branch: str(o.gitBranch) };
+    if (base.ts && (!lastTs || base.ts > lastTs)) lastTs = base.ts;
 
     if (type === 'ai-title' && str(o.aiTitle)) into.title = str(o.aiTitle);
     if (type === 'custom-title' && str(o.customTitle)) into.title = str(o.customTitle);
@@ -263,10 +266,29 @@ export function parseClaudeLines(
         } else if (COMMAND_TOOLS.has(call.name)) {
           const cmd = str(call.input.command);
           const r = isObj(o.toolUseResult) ? o.toolUseResult : undefined;
-          const output = r
-            ? `${str(r.stdout) ?? ''}\n${str(r.stderr) ?? ''}`.slice(0, 4000)
-            : textOfToolResult(c.content).slice(0, 4000);
+          const output = headTail(
+            r
+              ? `${str(r.stdout) ?? ''}\n${str(r.stderr) ?? ''}`
+              : textOfToolResult(c.content),
+          );
           if (cmd) into.records.push({ kind: 'command', cmd, isError, output, ...where });
+          // Files the command changed (sed, a script, a heredoc): Claude Code
+          // records them as diffs on the result. Kept even if the command failed
+          // later on, since the edits happened.
+          const shellDiff = r && isObj(r.bashEditDiff) ? r.bashEditDiff : undefined;
+          for (const f of Array.isArray(shellDiff?.files) ? shellDiff.files : []) {
+            const path = isObj(f) ? str(f.filePath) : undefined;
+            if (!path) continue;
+            const lines = linesFromPatch((f as Obj).hunks);
+            if (!lines.added.length && !lines.removed.length) continue;
+            into.records.push({
+              kind: 'edit',
+              file: resolve(where.cwd ?? '.', path),
+              ...lines,
+              via: 'shell',
+              ...where,
+            });
+          }
         } else if (call.name === 'ExitPlanMode') {
           // The result holds the plan as submitted; the call's input can be a
           // version behind (the plan file before the agent's last edit).
@@ -327,7 +349,28 @@ export function parseClaudeLines(
     if (texts.length)
       into.records.push({ kind: 'assistant', text: texts.join('\n'), model, ...base });
   }
+  // Commands still running when the log was read (e.g. `git commit && tracetoon
+  // digest` in one call): their result isn't written until they finish. Keep the
+  // recent ones as commands with no output, so a commit's subject still counts.
+  // Older unanswered calls were interrupted and never ran.
+  const recentFrom = lastTs ? Date.parse(lastTs) - PENDING_WINDOW_MS : Infinity;
+  for (const call of pending.values()) {
+    const cmd = COMMAND_TOOLS.has(call.name) ? str(call.input.command) : undefined;
+    if (!cmd || !call.ts || Date.parse(call.ts) < recentFrom) continue;
+    into.records.push({
+      kind: 'command',
+      cmd,
+      pending: true,
+      ts: call.ts,
+      cwd: call.cwd,
+      branch: call.branch,
+      model: call.model,
+    });
+  }
 }
+
+/** How recent an unanswered command must be to count as still running. */
+const PENDING_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /** The `subagents/*.jsonl` files that belong to a top-level session file. */
 function subagentFiles(sessionPath: string): string[] {

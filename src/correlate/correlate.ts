@@ -193,6 +193,39 @@ export function commitLine(sha: string): RegExp {
   );
 }
 
+/** Build output, vendored code and lockfiles: written by tools, not by hand. */
+export function isGeneratedPath(path: string): boolean {
+  return /(^|\/)(dist|build|vendor|node_modules)\/|\.min\.(js|css)$|(^|\/)(bun\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|cargo\.lock|poetry\.lock)$/.test(
+    path.toLowerCase(),
+  );
+}
+
+/** `   b62c2ff..5f0b550  fix/x -> fix/x`: a push that uploaded this commit. */
+export function pushLine(sha: string): RegExp {
+  const s = sha.slice(0, 7).toLowerCase();
+  return new RegExp(`^\\s*[+]?\\s*[0-9a-f]{7,}\\.{2,3}${s}[0-9a-f]*\\s+\\S+\\s+->`, 'mi');
+}
+
+/** Lowercased, whitespace collapsed: for comparing a subject with a command. */
+export function normalizeText(s: string): string {
+  return s.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * A command as the shell will read its arguments: `'\''` becomes `'`, and
+ * backslash escapes (`\"`, `\$`, `` \` ``) and PowerShell backtick escapes
+ * (`` `" ``, `` `$ ``) are undone, so a quoted commit message compares with the
+ * commit's subject.
+ */
+export function normalizeShell(cmd: string): string {
+  return normalizeText(
+    cmd
+      .replace(/'\\''/g, "'")
+      .replace(/\\(.)/g, '$1')
+      .replace(/`(["'$`])/g, '$1'),
+  );
+}
+
 /**
  * Folders (outside today's roots) where commands printed a PR commit SHA: worktrees
  * or clones of this repo that may since have been removed. Never the home folder or
@@ -233,21 +266,27 @@ export function commitMoments(
   const commands = records.filter((r): r is CommandRecord => r.kind === 'command');
   for (const c of commits) {
     const sha = commitLine(c.sha);
-    const subject =
-      c.subject.trim().length >= 12 ? c.subject.trim().toLowerCase() : undefined;
+    const pushed = pushLine(c.sha);
+    const subject = c.subject.trim().length >= 12 ? normalizeText(c.subject) : undefined;
     for (const r of commands) {
       // A command run in another repository can't have made this repo's commit,
       // even if a matching SHA shows up in its output.
       if (roots && !ranInRepo(r, roots)) continue;
       // Only a command that creates commits can have made this one: a SHA in
       // `git log` or `git show` output only means the session looked at it.
-      const byOutput =
-        !!r.output && makesCommit(r.cmd) && sha.test(r.output.toLowerCase());
+      const commits = makesCommit(r.cmd);
+      const out = r.output?.toLowerCase() ?? '';
+      const byOutput = commits && sha.test(out);
+      // `git commit -q … && git push` prints no commit line, but the push names
+      // the commit it uploaded. A push on its own only uploads earlier work.
+      const byPush = commits && /\bgit\b[^\n]*\bpush\b/i.test(r.cmd) && pushed.test(out);
+      // Quiet commits print no SHA: the subject in the command's message counts,
+      // read the way the shell will (escaped quotes and the like undone).
       const bySubject =
         !!subject &&
         /\bgit\b[^\n]*\bcommit\b/i.test(r.cmd) &&
-        r.cmd.toLowerCase().includes(subject);
-      if (byOutput || bySubject) {
+        normalizeShell(r.cmd).includes(subject);
+      if (byOutput || byPush || bySubject) {
         found.set(c.sha, r.ts);
         break;
       }
@@ -276,6 +315,16 @@ function ranInRepo(r: CommandRecord, roots: string[]): boolean {
   if (!dirs.length) return true;
   return dirs.some(
     (d) => underAnyRoot(d, roots) || roots.some((root) => isPathUnder(root, d)),
+  );
+}
+
+/** `git checkout -b x`, `git switch -c x`, `git push -u origin x` and the like. */
+export function worksOnBranch(cmd: string, branch: string): boolean {
+  const b = branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return splitCommands(cmd).some((part) =>
+    new RegExp(
+      `\\bgit\\b(?:\\s+-C\\s+\\S+)*\\s+(?:checkout(?:\\s+-[^\\sbB]\\S*)*\\s+-[bB]|switch(?:\\s+-\\S+)*?\\s+(?:-c|-C|--create)|branch|push\\b[^\\n]*?)\\s+(?:\\S+\\s+)?["']?${b}["']?(?:\\s|$|:)`,
+    ).test(part),
   );
 }
 
@@ -404,6 +453,9 @@ export function matchSession(
     if (r.kind !== 'edit') continue;
     const rel = repoRel(view, r.file);
     if (!rel) continue;
+    // A build that rewrites a generated file (a bundle, a lockfile) isn't
+    // authored work, and its many lines would swamp the real edits.
+    if (r.via === 'shell' && isGeneratedPath(rel)) continue;
     const set = addedByFile.get(rel) ?? new Set<string>();
     let survived = false;
     const prSet = new Set(prLines.byFile.get(rel) ?? []);
@@ -428,7 +480,17 @@ export function matchSession(
   const prLink = kept.some(
     (r) => r.kind === 'link' && truth.pr !== undefined && r.prNumber === truth.pr.number,
   );
-  const branch = kept.some((r) => r.branch === truth.head && truth.head !== 'HEAD');
+  // The branch the agent recorded, or (when it launched outside the repo and
+  // every record says "HEAD") a command in the repo that made or pushed it.
+  const branch =
+    truth.head !== 'HEAD' &&
+    (kept.some((r) => r.branch === truth.head) ||
+      kept.some(
+        (r) =>
+          r.kind === 'command' &&
+          ranInRepo(r, view.roots) &&
+          worksOnBranch(r.cmd, truth.head),
+      ));
   const cwdInRepo = kept.some((r) => underAnyRoot(r.cwd, view.roots));
   const commandsTouchRepo = kept.some(
     (r) => r.kind === 'command' && mentionsAnyRoot(r.cmd, view.roots),

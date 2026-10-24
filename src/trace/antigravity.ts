@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { antigravity, antigravityIde } from '@showtail/agent-traces';
-import { splitLines } from './diffLines.ts';
+import { headTail, splitLines } from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
 import type {
   AgentId,
@@ -253,7 +253,7 @@ export function parseAntigravityLines(
     if (type === 'RUN_COMMAND') {
       const c = pendingCommands.shift();
       if (!c) continue;
-      const output = (str(o.content) ?? '').slice(0, 4000);
+      const output = headTail(str(o.content) ?? '');
       const exit = /exit(?:ed with)? code[:\s]+(\d+)/i.exec(output)?.[1];
       into.records.push({
         kind: 'command',

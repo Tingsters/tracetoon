@@ -56,13 +56,17 @@ export type TraceRecord =
       added: string[];
       removed: string[];
       created?: boolean;
+      /** Made by a shell command (sed, a script) rather than an edit tool. */
+      via?: 'shell';
     })
   | (Base & {
       kind: 'command';
       cmd: string;
       isError?: boolean;
-      /** Start of the command's output. Used only for matching (e.g. commit SHAs); never shown. */
+      /** Start and end of the command's output. Used only for matching (e.g. commit SHAs); never shown. */
       output?: string;
+      /** Still running when the log was read: no result (or output) yet. */
+      pending?: boolean;
     })
   | (Base & {
       kind: 'link';

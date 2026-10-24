@@ -63,3 +63,13 @@ export function splitLines(text: string): string[] {
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines;
 }
+
+/**
+ * Command output kept for matching: the start and the end, so a commit line
+ * printed after long test output (`[branch abc1234] ...`) isn't cut off.
+ */
+export function headTail(text: string, keep = 4000): string {
+  if (text.length <= keep) return text;
+  const half = Math.floor(keep / 2);
+  return `${text.slice(0, half)}\n...\n${text.slice(-half)}`;
+}

@@ -62,10 +62,15 @@ that bypass on your own initiative.
      `command.run` from `tracetoon status --json` (the launcher's full path if
      `tracetoon` isn't on their PATH).
 2. **Digest.** `tracetoon digest --json`. It prints the run folder and the
-   digest path.
+   digest path. Run it as its own command, after any `git commit`, never
+   chained in the same command: your own tool call is only logged once it
+   finishes, so a digest inside it can't see that command.
    - If `ambiguous` is not empty, show the user those sessions (title, agent,
      reasons) and ask which belong to this PR. Re-run with
      `--include <refs>` / `--exclude <refs>`.
+   - If `notes` has a "Left out:" line, a session worked in this repo while the
+     commits were made but wasn't matched. Ask the user whether it belongs, and
+     re-run with the `--include` it names if so.
    - If no sessions matched, say so. You can still write a normal description
      from the diff, without an agent trace section.
 3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
