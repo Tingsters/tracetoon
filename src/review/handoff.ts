@@ -10,6 +10,21 @@ export interface PreviewHandoff {
   markdown: string;
 }
 
+/** Style only interactive output; JSON and redirected logs retain the plain URL. */
+export function terminalHandoff(
+  handoff: PreviewHandoff,
+  url: string,
+  display: { isTTY?: boolean; env?: NodeJS.ProcessEnv } = {},
+): string {
+  const isTTY = display.isTTY ?? process.stdout.isTTY;
+  const env = display.env ?? process.env;
+  if (!isTTY || env.NO_COLOR || env.TERM === 'dumb') return handoff.terminal;
+  // OSC 8 keeps wrapped file URLs clickable in supporting terminals. The full
+  // URL is still visible when a terminal only understands the ANSI styling.
+  const link = `\u001b]8;;${url}\u001b\\\u001b[4;94m${url}\u001b[0m\u001b]8;;\u001b\\`;
+  return handoff.terminal.replace(url, () => link);
+}
+
 export function yoloHint(root: string, command: string, chat = false): string {
   const enabled = loadConfig(root).yolo;
   let repoOverride: boolean | undefined;
@@ -56,7 +71,7 @@ export function previewHandoff(input: {
       '```text',
       WORDMARK,
       '```',
-      `**${caption}**`,
+      `**[${caption}](<${input.url}>)**`,
       '',
       input.url,
       '',

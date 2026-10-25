@@ -231,6 +231,16 @@ before publishing. Working-tree drafts must be committed and refreshed first.
 JSON output adds `previewHandoff` (terminal and Markdown presentations) to
 render/preview and `pendingDrafts` to status/digest.
 
+The handoff includes an explicit Markdown link and the full local file URL.
+Interactive terminals show that URL in blue with an underline; supporting
+terminals also make it a terminal hyperlink. Redirected output and JSON stay
+plain; `NO_COLOR` and `TERM=dumb` also keep terminal output plain. Links use
+the native file URL on Windows, macOS and Linux, with spaces and special
+characters encoded. If an app blocks
+local links, `tracetoon preview --open` opens the preview through the system's
+browser launcher (`start`, `open` or `xdg-open`). Link colors in chat follow the
+host's theme. CI tests all three operating systems.
+
 The [art-direction guide](plugin/skills/tracetoon/references/comic-direction.md)
 links the manga and joke-comic research behind these choices. New v2 scripts
 can supply `composition` geometry shared by image prompts and the overlay

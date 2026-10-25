@@ -191,6 +191,10 @@ that bypass on your own initiative.
    The complete `previewUrl` must remain on its own line outside the logo's
    fence, never shortened or wrapped in backticks. Put diagnostics and local
    report links before the handoff so the review link is easy to find.
+   Preserve the prominent Markdown link in the handoff as well as its full URL;
+   the host renders it using its link color. Do not turn the linked label back
+   into plain text. The URL points to the preview on this user's own machine
+   on Windows, macOS or Linux.
    The comic is embedded in the page, so it shows in any browser.
    - If code changed, refresh `digest --run <id>`, context, description, review
      and preview before asking for approval. Rendering an old digest cannot

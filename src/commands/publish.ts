@@ -56,7 +56,7 @@ import {
   submissionSnapshot,
   type SubmissionSnapshot,
 } from '../review/snapshot.ts';
-import { previewHandoff } from '../review/handoff.ts';
+import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
 import { recordRendered, setReviewState } from '../review/pending.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { comicSummary } from '../comic/composition.ts';
@@ -427,7 +427,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           : '',
         `Approval code: ${approval.code}`,
         '',
-        handoff.terminal,
+        terminalHandoff(handoff, fileUrl(previewPath)),
       ]
         .filter(Boolean)
         .join('\n'),
@@ -523,7 +523,7 @@ export function previewCmd(
         approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
         `Approval code: ${approval.code}`,
         '',
-        handoff.terminal,
+        terminalHandoff(handoff, fileUrl(htmlPath)),
       ]
         .filter(Boolean)
         .join('\n'),

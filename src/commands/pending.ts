@@ -1,5 +1,5 @@
 import { activePendingRuns, pendingDrafts, setReviewState } from '../review/pending.ts';
-import { previewHandoff } from '../review/handoff.ts';
+import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { prTruth } from '../git/pr.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
@@ -10,21 +10,22 @@ export function pendingNotice(root: string, gitDir: string) {
   return {
     pendingDrafts: pending,
     text: pending
-      .map((draft) =>
-        [
+      .map((draft) => {
+        const handoff = previewHandoff({
+          root,
+          command,
+          url: draft.previewUrl,
+          run: draft.run,
+          pending: true,
+          problem: draft.problem,
+        });
+        return [
           `Branch: ${draft.branch} -> ${draft.base} | ${draft.title}`,
           `Resume: ${command} preview --run ${draft.run}`,
           `Dismiss: ${command} pending dismiss --run ${draft.run}`,
-          previewHandoff({
-            root,
-            command,
-            url: draft.previewUrl,
-            run: draft.run,
-            pending: true,
-            problem: draft.problem,
-          }).terminal,
-        ].join('\n'),
-      )
+          terminalHandoff(handoff, draft.previewUrl),
+        ].join('\n');
+      })
       .join('\n\n'),
   };
 }
