@@ -135,6 +135,11 @@ describe('comic end to end', () => {
 
   test('makes the comic, puts only the image on the assets branch, and links it by commit', () => {
     const { repo, remote, runDir } = prepared();
+    const draftPath = join(runDir, 'body.md');
+    writeFileSync(
+      draftPath,
+      `${readFileSync(draftPath, 'utf8')}\n\n{{tracetoon:comic}}\n\n<img src="tracetoon-preview-comic.png" alt="author image">\n`,
+    );
     expect(cli(repo.root, 'comic', 'check').code).toBe(0);
     env.TRACETOON_CODEX_BIN = FAKE_CODEX;
     const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
@@ -159,8 +164,16 @@ describe('comic end to end', () => {
     const meta = decodeMeta(finalBody)!;
     expect(Object.keys(meta).sort()).toEqual(['contentSha', 'style', 'titleSha', 'v']);
     expect(meta.style).toBe('sunday-strip');
-    expect(readFileSync(join(runDir, 'preview.html'), 'utf8')).toContain(
-      'src="data:image/png;base64,',
+    const previewHtml = readFileSync(join(runDir, 'preview.html'), 'utf8');
+    // Assert the image inside the actual PR body, not the separate share card.
+    const description = /<div class="card">([\s\S]*?)<\/div>/.exec(previewHtml)?.[1];
+    const imageSrc = /<img\b[^>]*\bsrc="([^"]+)"/.exec(description ?? '')?.[1];
+    expect(imageSrc).toBe(
+      `data:image/png;base64,${readFileSync(join(runDir, 'out/comic.png')).toString('base64')}`,
+    );
+
+    expect(description).toContain(
+      '<img src="tracetoon-preview-comic.png" alt="author image">',
     );
 
     // Swapping the image after approval is refused.
@@ -419,10 +432,12 @@ describe('comic end to end', () => {
       cli(repo.root, 'context', '--offline', '--run', runDir.split(/[\\/]/).pop()!).code,
     ).toBe(0);
     env.TRACETOON_CODEX_BIN = FAKE_CODEX;
-    expect(cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent').code).toBe(
-      0,
-    );
-    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(1);
+    expect(art.json.error).toContain('prohibits AI-generated media');
+    // A comic made before the policy was collected is also withheld at render.
+    mkdirSync(join(runDir, 'out'), { recursive: true });
+    writeFileSync(join(runDir, 'out', 'comic.png'), PIXEL);
 
     const r = cli(repo.root, 'render');
     expect(r.code).toBe(0);

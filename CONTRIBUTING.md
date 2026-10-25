@@ -39,6 +39,14 @@ bun test
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
 - Never commit real session logs. Fixtures are synthetic or scrubbed.
 
+Contributor research and review handoffs live in `src/contribution/`; their host
+agent role prompts and v1 contracts are documented in the packaged skill's
+`references/contribution-workflow.md`. Run `bun scripts/eval-contributions.ts
+prepare`, supply separate baseline and three-phase drafts, then run
+`review-inputs` and `score` to exercise the synthetic, source-cited evaluation.
+Its lexical probes are smoke checks, not a semantic quality score. Evaluation
+artifacts stay under `.git/tracetoon/eval-contributions/`.
+
 ## Releasing
 
 Bump the version in `package.json`, `src/version.ts`,

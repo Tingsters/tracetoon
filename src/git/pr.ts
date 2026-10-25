@@ -2,9 +2,10 @@
  * Ground truth for a PR from git: which repo, which branches, which commits, and
  * exactly which lines the PR adds. Everything else is matched against this.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gh, git } from '../util/exec.ts';
+import { privateRepoPath, readSubmittedFile, repoPath } from '../util/repoFiles.ts';
 
 export interface Commit {
   sha: string;
@@ -211,11 +212,18 @@ function untrackedAsAdded(cwd: string): FileChange[] {
   if (!r.ok) return [];
   const out: FileChange[] = [];
   for (const p of r.stdout.split('\0').filter(Boolean)) {
-    const abs = join(cwd, p);
+    if (!repoPath(p)) continue;
     try {
-      const text = readFileSync(abs, 'utf8');
-      if (text.includes('\0')) continue; // binary
-      out.push({ path: p, added: text.split(/\r?\n/), removed: [] });
+      const data = readSubmittedFile(cwd, p);
+      const text = data.toString('utf8');
+      out.push({
+        path: p,
+        added:
+          data.includes(0) || !Buffer.from(text, 'utf8').equals(data)
+            ? []
+            : text.split(/\r?\n/),
+        removed: [],
+      });
     } catch {
       /* unreadable */
     }
@@ -262,6 +270,7 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     : ['diff', '-U0', '--no-color', '--no-ext-diff', mergeBase, headRef];
   let files = parseUnifiedDiff(git(toplevel, diffArgs).stdout);
   if (usedWorkingTree) files = files.concat(untrackedAsAdded(toplevel));
+  files = files.filter((f) => !privateRepoPath(f.path));
   const roots = [...new Set([toplevel, ...worktreeRoots(toplevel)])];
   const url = git(toplevel, ['remote', 'get-url', 'origin']).stdout.trim();
   const parsed = url ? parseRemote(url) : undefined;

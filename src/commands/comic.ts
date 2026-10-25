@@ -8,6 +8,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  contributionPolicy,
+  loadGuidance,
+  researchPacket,
+} from '../contribution/guidance.ts';
+import { detectAiPolicy, type AiPolicy } from '../github/repoContext.ts';
+import {
   composePage,
   pageWithFooter,
   type Layout,
@@ -74,8 +80,25 @@ function describe(problems: ScriptProblem[]): string {
 }
 
 function load(cwd: string, runId?: string): Loaded {
-  const truth = prTruth(cwd, { noGh: true });
+  let truth = prTruth(cwd, { noGh: true });
   const run = findRun(truth.gitDir, runId);
+  const context = readJson<{
+    base?: string;
+    aiPolicy?: AiPolicy;
+    contribution?: { offline: boolean };
+  }>(run, 'context.json');
+  if (context?.base && context.base !== truth.base)
+    truth = prTruth(cwd, { noGh: true, base: context.base });
+  const { request } = researchPacket(truth, context?.contribution?.offline ?? false);
+  const guidance = loadGuidance(run, truth.toplevel, request);
+  const policy = contributionPolicy(
+    context?.aiPolicy ?? detectAiPolicy(truth.toplevel),
+    guidance,
+  ).policy;
+  if (policy.media === 'prohibited')
+    throw new UserError(
+      'Repository guidance prohibits AI-generated media. Skip the comic for this PR.',
+    );
   const script = readJson<ComicScript>(run, 'comic.json');
   if (!script)
     throw new UserError(

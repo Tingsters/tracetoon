@@ -8,6 +8,7 @@ import {
   type Config,
 } from './config.ts';
 import { doctor } from './commands/doctor.ts';
+import { guidanceCheckCmd } from './commands/guidance.ts';
 import { imagesCmd } from './commands/images.ts';
 import { contextCmd, digestCmd, expandCmd, scanCmd } from './commands/digest.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
@@ -95,10 +96,20 @@ program
 
 program
   .command('context')
-  .description('read the PR template, AI policy, existing PR and settings into the run')
+  .description(
+    'prepare contributor research, the submitted diff, template, policy and PR context',
+  )
   .option('--run <id>', 'run id (default: latest)')
-  .option('--offline', 'do not ask GitHub for an existing PR')
+  .option('--offline', 'disable GitHub lookups and require offline contributor research')
   .action((o) => contextCmd(cwd, { ...g(), ...o }));
+
+program
+  .command('guidance')
+  .description('contributor research handoffs')
+  .command('check')
+  .description('validate guidance.json citations, discovery chains and local snapshots')
+  .option('--run <id>', 'run id (default: latest)')
+  .action((o) => guidanceCheckCmd(cwd, { ...g(), ...o }));
 
 program
   .command('render')
