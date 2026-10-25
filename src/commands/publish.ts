@@ -4,7 +4,7 @@
  * that code and nothing changed, so nothing can be posted that the user didn't
  * see. The only edits after approval fill in where the comic image is hosted.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   contributionPolicy,
   loadGuidance,
@@ -305,7 +305,15 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const comicData = comic
     ? `data:${comic.mime};base64,${comic.data.toString('base64')}`
     : '';
-  const previewBody = comic ? body.replaceAll(COMIC_SRC, comicData) : body;
+  let previewComic: { src: string; data: string } | undefined;
+  if (comic) {
+    let src: string;
+    do {
+      src = `tracetoon-preview-comic-${randomUUID()}.png`;
+    } while (body.includes(src));
+    previewComic = { src, data: comicData };
+  }
+  const previewBody = previewComic ? body.replaceAll(COMIC_SRC, previewComic.src) : body;
   writeFileSync(
     join(run.dir, 'preview.html'),
     renderPreviewHtml({
@@ -320,6 +328,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       outline: writeYourself ? outline : undefined,
       comicHeldBack: mediaBanned && !!renderedComic(run),
       digest,
+      previewComic,
       contributionReview,
       share: comic
         ? {

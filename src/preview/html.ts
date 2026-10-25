@@ -83,6 +83,8 @@ export function renderPreviewHtml(input: {
   body: string;
   approval: Approval;
   digest: TraceDigest;
+  /** Rendered comic bytes, supplied by the CLI rather than by PR HTML. */
+  previewComic?: { src: string; data: string };
   /** The comic as it would look in a social post (image path and caption). */
   share?: { image: string; caption: string };
   /** Advisory claim-check findings, shown beside the sentences they're about. */
@@ -115,12 +117,18 @@ export function renderPreviewHtml(input: {
     titleFindings = [],
     titleNote,
     contributionReview,
+    previewComic,
   } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
   const marked_ = annotateClaims(body, claims);
-  const html = marked_.place(
+  const sanitized = marked_.place(
     marked.parse(marked_.body, { async: false, gfm: true }) as string,
   );
+  // Embedding before Markdown parsing loses the data URL to sanitizeHtml. Keep
+  // arbitrary data URLs blocked and insert only this render's approved image afterward.
+  const html = previewComic
+    ? sanitized.replaceAll(`src="${previewComic.src}"`, `src="${esc(previewComic.data)}"`)
+    : sanitized;
   const findings = approval.findings.length
     ? `<p class="warn">Leak scan: ${approval.findings.map((f) => `${esc(f.kind)}×${f.count}`).join(', ')}</p>`
     : '<p class="ok">Leak scan: clean</p>';

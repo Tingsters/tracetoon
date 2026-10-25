@@ -172,6 +172,8 @@ describe('helpers', () => {
       '&lt;script&gt;alert(1)&lt;/script&gt;',
     );
     expect(sanitizeHtml('<img src="javascript:alert(1)">')).toBe('<img>');
+    expect(sanitizeHtml('<img src="data:image/png;base64,aGVsbG8=">')).toBe('<img>');
+    expect(sanitizeHtml('<img src="data:image/svg+xml;base64,PHN2Zy8+">')).toBe('<img>');
   });
 });
 
