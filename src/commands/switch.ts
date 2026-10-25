@@ -1,7 +1,6 @@
 /** `tracetoon on|off|status` and `tracetoon hook install|uninstall`. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { onPath } from '../comic/providers.ts';
+import { dirname, join } from 'node:path';
 import { repoConfigPath, setUserConfig } from '../config.ts';
 import {
   hookStatus,
@@ -11,7 +10,9 @@ import {
 } from '../hook/install.ts';
 import { repoRoot, switchState } from '../hook/switches.ts';
 import { git } from '../util/exec.ts';
-import { describeRuntime } from './doctor.ts';
+import { selfProgram, userCommand } from '../util/userCommand.ts';
+export { userCommand } from '../util/userCommand.ts';
+import { pendingNotice } from './pending.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
 export interface ScopeOpts extends OutOpts {
@@ -70,7 +71,13 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
   const state = switchState(cwd);
   const hooks = hookStatus();
   const command = userCommand();
-  emit(opts, { ...state, hooks, command }, () =>
+  const root = repoRoot(cwd);
+  const gitDir = root
+    ? git(root, ['rev-parse', '--absolute-git-dir']).stdout.trim()
+    : undefined;
+  const pending =
+    root && gitDir ? pendingNotice(root, gitDir) : { pendingDrafts: [], text: '' };
+  emit(opts, { ...state, hooks, command, pendingDrafts: pending.pendingDrafts }, () =>
     [
       `Tracetoon is ${state.enabled ? 'ON' : 'OFF'} here: ${state.why}.`,
       `In your own terminal, run it as: ${command.run}`,
@@ -86,34 +93,9 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
       state.enabled
         ? 'Turn off: tracetoon off [--repo | --local], or TRACETOON=0 for one command.'
         : 'Turn on: tracetoon on [--repo | --local].',
+      pending.text,
     ].join('\n'),
   );
-}
-
-/**
- * How the user can run Tracetoon in their own terminal: `tracetoon` when it's on
- * PATH, otherwise the skill's launcher (agents run the launcher, not PATH).
- */
-export function userCommand(): { onPath: boolean; run: string } {
-  if (onPath('tracetoon')) return { onPath: true, run: 'tracetoon' };
-  const quote = (p: string) => (/\s/.test(p) ? `"${p}"` : p);
-  const assets = process.env.TRACETOON_ASSETS;
-  const run = assets
-    ? quote(
-        join(
-          dirname(assets),
-          'bin',
-          process.platform === 'win32' ? 'tracetoon.cmd' : 'tracetoon',
-        ),
-      )
-    : selfProgram().map(quote).join(' ');
-  return { onPath: false, run };
-}
-
-/** The program agents should run for the hook: this binary, or bun + this script in development. */
-function selfProgram(): string[] {
-  if (describeRuntime() === 'prebuilt binary') return [process.execPath];
-  return [process.execPath, resolve(process.argv[1] ?? '')];
 }
 
 function report(opts: OutOpts, changes: HookChange[]): void {

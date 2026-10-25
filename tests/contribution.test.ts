@@ -20,6 +20,7 @@ import type {
 } from '../src/contribution/types.ts';
 import type { TraceDigest } from '../src/digest/build.ts';
 import { prTruth } from '../src/git/pr.ts';
+import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
 import { contributionSignals } from '../scripts/eval-contributions.ts';
 import contributionCases from './fixtures/contribution-cases.json';
@@ -658,6 +659,11 @@ describe('CLI contribution handoffs', () => {
       'Document contribution rules',
     );
     repo.commit('greet.ts', 'export const greeting = "hi";', 'Add greeting');
+    // An edit must target the same branch revision that is actually on the remote.
+    const remote = tempDir('tracetoon-review-remote-');
+    git(remote, ['init', '-q', '--bare']);
+    git(repo.root, ['remote', 'add', 'origin', remote]);
+    git(repo.root, ['push', '-q', 'origin', 'feature']);
     const scratch = tempDir();
     const env = {
       ...process.env,

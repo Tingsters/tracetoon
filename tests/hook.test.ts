@@ -15,7 +15,7 @@ import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
 
 const CLI = process.env.TRACETOON_TEST_CLI ?? resolve(import.meta.dir, '../src/cli.ts');
-const claude = (command: string, cwd = '.') => ({ tool_input: { command }, cwd });
+const claude = (command: string, cwd = tempDir()) => ({ tool_input: { command }, cwd });
 
 let savedConfig: string | undefined;
 beforeEach(() => {
@@ -75,8 +75,9 @@ describe('hook decisions', () => {
   });
 
   test('lets everything else through', () => {
-    expect(decide('claude', claude('ls -la'), env())).toBeUndefined();
-    expect(decide('claude', claude('gh pr view'), env())).toBeUndefined();
+    const cwd = tempDir();
+    expect(decide('claude', claude('ls -la', cwd), env())).toBeUndefined();
+    expect(decide('claude', claude('gh pr view', cwd), env())).toBeUndefined();
     expect(decide('claude', {}, env())).toBeUndefined();
     expect(decide('claude', 'nonsense', env())).toBeUndefined();
   });

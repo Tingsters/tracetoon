@@ -10,6 +10,8 @@ import { recentStyles } from '../github/history.ts';
 import { describeTitleRules, readTitleRules } from '../github/titleRules.ts';
 import { findRun, newRun, readJson, writeJson } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
+import { submissionSnapshot } from '../review/snapshot.ts';
+import { pendingNotice } from './pending.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -46,6 +48,7 @@ export function scanCmd(cwd: string, opts: ScanOpts): void {
 }
 
 export interface DigestOpts extends ScanOpts {
+  run?: string;
   include?: string[];
   exclude?: string[];
   budget?: number;
@@ -68,9 +71,18 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     ...build,
     budgetTokens: Number.MAX_SAFE_INTEGER,
   });
-  const run = newRun(truth.gitDir);
+  const pending = pendingNotice(truth.toplevel, truth.gitDir);
+  const run = opts.run ? findRun(truth.gitDir, opts.run) : newRun(truth.gitDir);
+  const previous = opts.run
+    ? readJson<{ head: string }>(run, 'approval.json')
+    : undefined;
+  if (previous?.head && previous.head !== truth.head)
+    throw new UserError(
+      `This run belongs to branch ${previous.head}. Switch to that branch before refreshing it.`,
+    );
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
+  writeJson(run, 'submission.json', submissionSnapshot(truth));
   const ambiguous = digest.sessions.filter((s) => s.band === 'ambiguous');
   emit(
     opts,
@@ -88,6 +100,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
       ambiguous: ambiguous.map((s) => s.ref),
       stats: digest.stats,
       notes: digest.notes,
+      pendingDrafts: pending.pendingDrafts,
     },
     () =>
       [
@@ -100,6 +113,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
           ? `Ambiguous: ${ambiguous.map((s) => s.ref).join(', ')}. Ask the user, then re-run with --include or --exclude.`
           : '',
         ...digest.notes,
+        pending.text,
       ]
         .filter(Boolean)
         .join('\n'),

@@ -178,12 +178,16 @@ Turn it off at whichever level you need. Any "off" wins:
    current findings, source citations, collection gaps and missing evidence in
    the preview. Changed inputs invalidate old reviews. Reviews are advisory;
    existing publishing restrictions still apply.
-7. **`tracetoon publish --code <code>`** posts exactly what you approved: the
+7. **Open the local preview** using the standalone link under the compact
+   Tracetoon logo at the end of the output. Skim the description and comic,
+   then tell your agent "Publish this PR". The note below the link explains
+   how to enable YOLO for future PRs if you prefer to skip that pause.
+8. **`tracetoon publish --code <code>`** posts exactly what you approved: the
    comic goes on the repo's `tracetoon-assets` branch (or as a GitHub
    attachment for private repos), and `gh` creates or updates the PR.
 
 Other commands: `images`, `status`, `on`/`off`, `hook install`/`uninstall`,
-`scan`, `expand`, `preview`, `comic prompts`/`reroll`, `export --agent-trace`
+`scan`, `expand`, `preview`, `pending dismiss --run <id>`, `comic prompts`/`reroll`, `export --agent-trace`
 ([Agent Trace](https://agent-trace.dev) line attribution), `config`. Every
 command takes `--json`.
 
@@ -201,7 +205,22 @@ documents role prompts and the versioned `guidance.json` / `review.json` contrac
 
 The only thing Tracetoon reads back from earlier PRs is which art styles their
 comics used. Run folders live in `.git/tracetoon/runs/` (git never tracks them),
-and only the newest 20 are kept.
+and the newest 20 scratch runs are kept in addition to active pending previews.
+
+If you continue working without submitting, `status` and the next PR workflow
+show **"You have a PR awaiting review"** with its preview link. Supported agent
+hooks also provide a nonblocking reminder when work resumes, once per session
+(or every 30 minutes when the host supplies no session ID). Successful publication
+or `pending dismiss --run <id>` clears it. A newer rendered preview supersedes
+the older one for that branch and PR target; starting a digest does not hide it.
+
+Use `digest --run <id>` to refresh a draft while preserving its description and
+comic. Approvals cover the code snapshot, title, body, comic and PR target.
+Changed code requires a refreshed digest, description, review and preview;
+YOLO still performs this freshness check. Pre-upgrade previews need a refresh
+before publishing. Working-tree drafts must be committed and refreshed first.
+JSON output adds `previewHandoff` (terminal and Markdown presentations) to
+render/preview and `pendingDrafts` to status/digest.
 
 ## Settings
 

@@ -9,6 +9,7 @@ import {
 } from './config.ts';
 import { doctor } from './commands/doctor.ts';
 import { guidanceCheckCmd } from './commands/guidance.ts';
+import { dismissPendingCmd } from './commands/pending.ts';
 import { imagesCmd } from './commands/images.ts';
 import { contextCmd, digestCmd, expandCmd, scanCmd } from './commands/digest.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
@@ -81,6 +82,7 @@ program
 program
   .command('digest')
   .description('start a run: build the redacted trace digest for this branch')
+  .option('--run <id>', 'refresh an existing run, preserving its description and comic')
   .option('--base <ref>', 'base branch')
   .option('--include <ids>', 'session refs or ids to include', list)
   .option('--exclude <ids>', 'session refs or ids to leave out', list)
@@ -138,7 +140,7 @@ program
   .option('--run <id>', 'run id (default: latest)')
   .option('--code <code>', 'approval code from render/preview')
   .option('--yolo', 'publish without a code when yolo is enabled and every check passes')
-  .option('--push', 'push the branch first if GitHub does not have it')
+  .option('--push', 'push the branch if GitHub does not have the approved revision')
   .option('--draft', 'open the PR as a draft')
   .option('--ack-policy', 'the user read the repo AI policy and still wants to post')
   .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
@@ -224,6 +226,13 @@ for (const [name, on] of [
 const hook = program
   .command('hook')
   .description('the agent hook that routes PRs through Tracetoon');
+program
+  .command('pending')
+  .description('manage local PR review reminders')
+  .command('dismiss')
+  .description('dismiss a pending preview without deleting work')
+  .requiredOption('--run <id>', 'run awaiting review')
+  .action((o) => dismissPendingCmd(cwd, { ...g(), ...o }));
 hook
   .command('pre-pr')
   .description('called by agents before shell commands; blocks direct gh pr create/edit')

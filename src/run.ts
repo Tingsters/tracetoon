@@ -1,6 +1,7 @@
 /**
  * A run's scratch folder: `<git dir>/tracetoon/runs/<id>/`. Git never tracks it and
- * it is not a history: each run is self-contained and safe to delete.
+ * each run is self-contained. Pending previews are retained until publication,
+ * dismissal or replacement; other runs are disposable scratch.
  */
 import {
   existsSync,
@@ -11,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { activePendingRuns } from './review/pending.ts';
 
 export interface Run {
   id: string;
@@ -37,7 +39,7 @@ export function newRun(gitDir: string): Run {
   return { id: name, dir };
 }
 
-/** How many run folders to keep; older ones are scratch nobody reads. */
+/** How many scratch runs to keep in addition to active pending previews. */
 export const KEEP_RUNS = 20;
 
 /** Delete all but the newest run folders (never `keep`). */
@@ -47,7 +49,9 @@ export function pruneRuns(gitDir: string, keep?: string): void {
     .filter((d) => d.isDirectory() && /^\d{8}-\d{6}(-\d+)?$/.test(d.name))
     .map((d) => d.name)
     .sort();
-  for (const name of runs.slice(0, Math.max(0, runs.length - KEEP_RUNS)))
+  const pending = new Set(activePendingRuns(gitDir).map((d) => d.run.id));
+  const scratch = runs.filter((name) => !pending.has(name));
+  for (const name of scratch.slice(0, Math.max(0, scratch.length - KEEP_RUNS)))
     if (name !== keep) rmSync(join(base, name), { recursive: true, force: true });
 }
 
