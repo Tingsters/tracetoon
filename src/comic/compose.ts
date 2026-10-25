@@ -6,6 +6,13 @@
  *    with Tracetoon's exact footer bar underneath.
  */
 import type { ComicScript, Dialogue, Panel } from './types.ts';
+import {
+  aspectRatio,
+  pageAspect,
+  resolveComposition,
+  titleBox,
+  visibleHeadline,
+} from './composition.ts';
 
 export const PAGE_W = 1600;
 const MARGIN = 30;
@@ -77,11 +84,11 @@ export function wrap(text: string, maxWidth: number, size: number): string[] {
 
 const XPOS = { left: 200, center: 400, right: 600 } as const;
 
-function speakerX(panel: Panel, speaker: string): number | undefined {
+function speakerX(panel: Panel, speaker: string, width = SRC): number | undefined {
   const c = panel.characters.find(
     (pc) => pc.name.toLowerCase() === speaker.toLowerCase(),
   );
-  return c ? XPOS[c.position] : undefined;
+  return c ? (XPOS[c.position] * width) / SRC : undefined;
 }
 
 interface Box {
@@ -137,9 +144,20 @@ function bubble(
   return kind === 'thought' ? `${shape}${tail}${text}` : `${tail}${shape}${text}`;
 }
 
-function sfx(d: Dialogue, i: number, color = '#F25F5C'): string {
-  const x = 400 + (i % 2 ? 120 : -120);
-  return `<text x="${x}" y="360" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="84" fill="${color}" stroke="#FFFFFF" stroke-width="10" paint-order="stroke" transform="rotate(-9 ${x} 360)">${esc(d.text)}</text>`;
+function sfx(
+  d: Dialogue,
+  i: number,
+  color = '#F25F5C',
+  width = SRC,
+  height = SRC,
+  fit = false,
+): string {
+  const x = width * (i % 2 ? 0.65 : 0.35),
+    y = height * 0.45;
+  const size = fit
+    ? Math.min(84, height * 0.4, (width * 0.6) / Math.max(d.text.length * 0.65, 1))
+    : 84;
+  return `<text x="${x}" y="${y}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="${size}" fill="${color}" stroke="#FFFFFF" stroke-width="10" paint-order="stroke" transform="rotate(-9 ${x} ${y})">${esc(d.text)}</text>`;
 }
 
 /** Bubbles for one panel, in the panel's own 800×800 space. */
@@ -147,8 +165,11 @@ export function panelBubbles(
   panel: Panel,
   placed?: ({ x: number; y: number; w?: number } | null)[],
   look?: Look,
+  canvas?: { w: number; h: number; size: number },
 ): string {
-  const size = 30;
+  const size = canvas?.size ?? 30;
+  const width = canvas?.w ?? SRC,
+    height = canvas?.h ?? SRC;
   const boxes: Box[] = [];
   /**
    * The highest free spot for a bubble. Two bubbles may share a row only if the
@@ -156,7 +177,7 @@ export function panelBubbles(
    * left-to-right, top-to-bottom; otherwise it goes below, clear of their tails.
    */
   const place = (x: number, w: number, h: number): number => {
-    for (let y = 22; y < 420; y += 6) {
+    for (let y = 22; y < (canvas ? height - h - 80 : 420); y += 6) {
       const ok = boxes.every((b) => {
         const rowOverlap = y < b.y + b.h + 34 && y + h + 34 > b.y;
         if (!rowOverlap) return y >= b.y + b.h; // below: always fine
@@ -168,27 +189,48 @@ export function panelBubbles(
   };
   return panel.dialogue
     .map((d, i) => {
-      if (d.kind === 'sfx') return sfx(d, i, look?.sfx);
+      if (d.kind === 'sfx') return sfx(d, i, look?.sfx, width, height, !!canvas);
       const isCaption =
         d.speaker === 'caption' || d.kind === 'caption' || d.kind === 'sign';
       const manual = placed?.[i];
-      const maxW = manual?.w ? manual.w * SRC - 44 : isCaption ? 520 : 330;
+      const maxW = manual?.w
+        ? manual.w * width - 44
+        : canvas
+          ? Math.min(width - 80, isCaption ? width - 80 : width * 0.7)
+          : isCaption
+            ? 520
+            : 330;
+      if (maxW < 60)
+        throw new Error(
+          'The panel lettering area is too narrow. Enlarge it or reduce the dialogue.',
+        );
       const lines = wrap(d.text, maxW, size);
+      if (canvas && lines.some((line) => textWidth(line, size) > maxW))
+        throw new Error(
+          'Dialogue does not fit its safe panel area. Shorten the word or enlarge the frame/textBox.',
+        );
       const w = Math.min(maxW, Math.max(...lines.map((l) => textWidth(l, size)))) + 44;
       const h = lines.length * size * 1.18 + 30;
-      const sx = speakerX(panel, d.speaker);
+      const sx = speakerX(panel, d.speaker, width);
       let x: number;
       let y: number;
       if (manual) {
-        x = manual.x * SRC;
-        y = manual.y * SRC;
+        x = manual.x * width;
+        y = manual.y * height;
       } else {
         if (isCaption) x = 18;
-        else if (sx === undefined) x = (SRC - w) / 2;
-        else x = Math.min(Math.max(sx - w / 2, 18), SRC - w - 18);
+        else if (sx === undefined) x = (width - w) / 2;
+        else x = Math.min(Math.max(sx - w / 2, 18), width - w - 18);
         y = place(x, w, h);
       }
       const box = { x, y, w, h };
+      if (
+        canvas &&
+        (x < 0 || y < 0 || x + w > width || y + h + (isCaption ? 0 : 72) > height)
+      )
+        throw new Error(
+          'Dialogue does not fit its safe panel area. Enlarge the frame/textBox, move the bubble or shorten the text.',
+        );
       boxes.push(box);
       return bubble(d, box, lines, size, isCaption ? undefined : sx, look);
     })
@@ -280,6 +322,7 @@ export function composePage(
   images: PanelImage[],
   layout?: Layout,
 ): string {
+  if (script.composition) return composeDesignedPage(script, images, layout);
   const n = script.panels.length;
   const cols = columns(n);
   const rows = Math.ceil(n / cols);
@@ -312,4 +355,82 @@ ${n > 1 ? `<circle cx="30" cy="${cell - 30}" r="18" fill="${INK}"/><text x="30" 
 ${cells}
 ${footer}
 </svg>`;
+}
+
+/** Explicit page geometry, without square crops, fixed title bands or stretched text. */
+function composeDesignedPage(
+  script: ComicScript,
+  images: PanelImage[],
+  layout?: Layout,
+): string {
+  const composition = resolveComposition(script)!;
+  const h = Math.round(PAGE_W / aspectRatio(pageAspect(script)));
+  const look = lookOf(script);
+  const cells = composition.frames
+    .map((frame, i) => {
+      const x = frame.x * PAGE_W,
+        y = frame.y * h,
+        w = frame.w * PAGE_W,
+        fh = frame.h * h;
+      const shape = frame.clip
+        ? `<polygon points="${frame.clip.map(([px, py]) => `${px * w},${py * fh}`).join(' ')}"`
+        : `<rect width="${w}" height="${fh}"`;
+      const art = images[i];
+      const safe = frame.textBox ?? { x: 0, y: 0, w: 1, h: 1 };
+      const sw = safe.w * w,
+        sh = safe.h * fh;
+      // Existing manual bubble coordinates still refer to the full panel, not its safe box.
+      const placed = layout?.panels[i]?.map((p) =>
+        p
+          ? {
+              x: (p.x - safe.x) / safe.w,
+              y: (p.y - safe.y) / safe.h,
+              ...(p.w ? { w: p.w / safe.w } : {}),
+            }
+          : null,
+      );
+      const words = panelBubbles(script.panels[i]!, placed, look, {
+        w: sw,
+        h: sh,
+        size: 52,
+      });
+      return `<g data-panel="${i + 1}" transform="translate(${x} ${y})">
+<clipPath id="design-${i}">${shape}/></clipPath>
+<g clip-path="url(#design-${i})">${art ? `<image href="${dataUri(art)}" width="${w}" height="${fh}" preserveAspectRatio="xMidYMid slice"/>` : `<rect width="${w}" height="${fh}" fill="#EEE"/>`}
+<g transform="translate(${safe.x * w} ${safe.y * fh})">${words}</g></g>
+${frame.border === 'none' ? '' : `${shape} fill="none" stroke="${INK}" stroke-width="4"/>`}</g>`;
+    })
+    .join('\n');
+  const title = visibleHeadline(script),
+    box = titleBox(script);
+  let heading = '';
+  if (title && box) {
+    const w = box.w * PAGE_W,
+      bh = box.h * h;
+    let size = 72,
+      lines = wrap(title, w - 12, size);
+    while (
+      size > 32 &&
+      (lines.length * size * 1.18 > bh || lines.some((line) => textWidth(line, size) > w))
+    ) {
+      size -= 2;
+      lines = wrap(title, w - 12, size);
+    }
+    if (
+      lines.length * size * 1.18 > bh ||
+      lines.some((line) => textWidth(line, size) > w)
+    )
+      throw new Error(
+        'The visible title does not fit its box. Enlarge it, shorten it or omit it.',
+      );
+    heading = lines
+      .map(
+        (line, i) =>
+          `<text x="${(box.x + box.w / 2) * PAGE_W}" y="${box.y * h + (bh - lines.length * size * 1.18) / 2 + size * 0.9 + i * size * 1.18}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="${size}" fill="${INK}" stroke="#FFF" stroke-width="3" paint-order="stroke">${esc(line)}</text>`,
+      )
+      .join('');
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${h + FOOTER_BAR}" viewBox="0 0 ${PAGE_W} ${h + FOOTER_BAR}">
+<rect width="${PAGE_W}" height="${h + FOOTER_BAR}" fill="${look.paper}"/>
+${cells}${heading}${footerBar(h, PAGE_W)}</svg>`;
 }

@@ -82,8 +82,8 @@ that bypass on your own initiative.
    - If no sessions matched, say so. You can still write a normal description
      from the diff, without an agent trace section.
 3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
-   settings, AI policy, and `comic.recentStyles` (styles the repo's last comics
-   used, so this one can differ).
+   settings, AI policy, and `comic.recentComics` (compact creative choices from
+   recent comics, so this one can differ; missing legacy fields are unknown).
    - **Researcher phase.** Launch a separate researcher with the host's native
      subagent tool, using [contribution-workflow.md](references/contribution-workflow.md).
      Give it `guidance-request.json`, `changes.patch`, `context.json` and repository
@@ -136,11 +136,20 @@ that bypass on your own initiative.
    doesn't want one, or `aiPolicy.media` is `prohibited`). Follow
    [references/comic-guide.md](references/comic-guide.md). Aim for something
    funny that someone outside the repo would want to share:
-   - find the joke in the digest; pick a format and any art style that suits
-     it and isn't one of the recent styles (ideas in
+   - compare three distinct short story/composition/cast concepts in local
+     `comic-design.json`, following [comic-direction.md](references/comic-direction.md).
+     Choose one against `context.comic.recentComics`; draw one finished image.
+     Panel count follows necessary story beats, not diff length. Pick a format
+     and any art style that suits it (ideas in
      [references/styles.md](references/styles.md), or your own description);
+   - use explicit `composition` geometry and choose `none`, `integrated` or
+     `heading` title treatment. Do not default to a big top title and three
+     equal panels. Compare broad style family, layout, panel count and cast with
+     recent comics; a new style name alone does not create variety;
    - invent this comic's own characters (or none) and describe each once in
-     `comic.json`; never reuse characters from earlier comics;
+     `comic.json`, with each `kind` (`human`, `creature`, `object`); never reuse
+     characters from earlier comics. Use fictional people for human situations,
+     creatures or objects when they strengthen the gag, or no cast at all;
    - write `comic.json` (`"v": 2`), then `tracetoon comic check`;
    - make the art: `tracetoon comic art` draws the whole page with its lettering
      through the Codex or Antigravity CLI, or the OpenAI or Gemini API, after the
@@ -152,7 +161,9 @@ that bypass on your own initiative.
      route fails, retry with `--force` or another `--provider`; if it keeps
      failing, skip the comic;
    - `tracetoon comic render`, then **look at `out/comic.png` and proofread** the
-     lettering against the printed list. Redraw with `comic art --force` (up to 2
+     lettering against the printed list. Also inspect actual composition, panel
+     count, title placement, reading order and payoff at PR and phone widths.
+     Redraw with `comic art --force` (up to 2
      times), then fall back to `--lettering overlay`. Offer
      `tracetoon comic reroll` if the user wants a different look.
 6. **Render and independent review.** `tracetoon render --json` composes the full

@@ -59,6 +59,7 @@ import {
 import { previewHandoff } from '../review/handoff.ts';
 import { recordRendered, setReviewState } from '../review/pending.ts';
 import { userCommand } from '../util/userCommand.ts';
+import { comicSummary } from '../comic/composition.ts';
 
 export const COMIC_SRC = '{{tracetoon:comic-src}}';
 const COMIC_MARKER = '{{tracetoon:comic}}';
@@ -247,11 +248,14 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           : '');
   if (disclosure) content = `${content.trim()}\n\n${disclosure}`;
 
-  // Only what's read back later: the comic's style (so the next one differs)
-  // and a hash of the text as posted (to keep edits made on GitHub).
+  // Compact creative choices (not plots/cast descriptions) and hashes used to
+  // preserve edits made on GitHub.
   const meta: PrMeta = {
     v: 1,
     ...(comic && script?.style ? { style: script.style } : {}),
+    ...(comic && script
+      ? { comic: (({ style: _style, ...choices }) => choices)(comicSummary(script)) }
+      : {}),
     contentSha: contentHash(content),
     titleSha: titleHash(title),
   };
@@ -347,7 +351,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       notes,
       policy: ctx.aiPolicy,
       outline: writeYourself ? outline : undefined,
-      comicHeldBack: mediaBanned && !!renderedComic(run),
+      comicHeldBack:
+        mediaBanned &&
+        ['comic.png', 'comic.svg'].some((name) => existsSync(join(run.dir, 'out', name))),
       digest,
       previewComic,
       contributionReview,

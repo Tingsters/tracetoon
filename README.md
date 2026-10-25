@@ -170,6 +170,12 @@ Turn it off at whichever level you need. Any "off" wins:
 5. **`tracetoon comic art` / `comic render`** draw the page with the image
    route you approved, add a small "made with Tracetoon" footer bar, and print
    the words to proofread.
+   The drafter first compares three short story/layout/cast concepts, then draws
+   one image. Composition follows the joke: a single visual metaphor, a two-panel
+   comparison, a vertical pause, unequal frames, insets or a diagonal split.
+   Visible titles are optional. Fictional people, useful creature/object
+   metaphors and characterless scenes are all available; there is no animal cast
+   default or fixed rotation.
 6. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text is kept), runs the leak scan and the claim check,
    lists optional notes, and prepares the exact rendered PR for an independent
@@ -203,8 +209,11 @@ reported by the host, not independently certified by the CLI.
 The [contribution workflow](plugin/skills/tracetoon/references/contribution-workflow.md)
 documents role prompts and the versioned `guidance.json` / `review.json` contracts.
 
-The only thing Tracetoon reads back from earlier PRs is which art styles their
-comics used. Run folders live in `.git/tracetoon/runs/` (git never tracks them),
+Tracetoon reads compact creative metadata from earlier PRs: style family, layout,
+panel count, title treatment and cast categories. It reads PR bodies to extract
+that metadata, then passes only those summaries into the next comic's context.
+Prior plots, character descriptions and traces are not creative context. Legacy
+missing fields remain unknown, and pinned styles still win. Run folders live in `.git/tracetoon/runs/` (git never tracks them),
 and the newest 20 scratch runs are kept in addition to active pending previews.
 
 If you continue working without submitting, `status` and the next PR workflow
@@ -221,6 +230,13 @@ YOLO still performs this freshness check. Pre-upgrade previews need a refresh
 before publishing. Working-tree drafts must be committed and refreshed first.
 JSON output adds `previewHandoff` (terminal and Markdown presentations) to
 render/preview and `pendingDrafts` to status/digest.
+
+The [art-direction guide](plugin/skills/tracetoon/references/comic-direction.md)
+links the manga and joke-comic research behind these choices. New v2 scripts
+can supply `composition` geometry shared by image prompts and the overlay
+renderer. Legacy scripts retain their old defaults. Changing the script or
+composition invalidates cached art and rendered output; rerolling formats must
+respect the story's panel count.
 
 ## Settings
 

@@ -6,6 +6,7 @@
  * its own.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
   contributionPolicy,
@@ -41,7 +42,18 @@ import {
   type CheckOpts,
   type ScriptProblem,
 } from '../comic/script.ts';
-import { PALETTES, type ComicScript, type Palette } from '../comic/types.ts';
+import {
+  PALETTES,
+  type ComicScript,
+  type ComicSummary,
+  type Palette,
+} from '../comic/types.ts';
+import {
+  artFingerprint,
+  comicSummary,
+  frameAspect,
+  pageAspect,
+} from '../comic/composition.ts';
 import { loadConfig, setUserConfig } from '../config.ts';
 import { prTruth } from '../git/pr.ts';
 import { findRun, readJson, writeJson, type Run } from '../run.ts';
@@ -64,10 +76,13 @@ interface Loaded {
 /** What the script check needs beyond the script: pinned style, recent styles. */
 function checkOptsFor(run: Run, root: string): CheckOpts {
   const config = loadConfig(root);
-  const ctx = readJson<{ comic?: { recentStyles?: string[] } }>(run, 'context.json');
+  const ctx = readJson<{
+    comic?: { recentStyles?: string[]; recentComics?: ComicSummary[] };
+  }>(run, 'context.json');
   return {
     pinnedStyle: config.style && config.style !== 'auto' ? config.style : undefined,
     recentStyles: ctx?.comic?.recentStyles ?? [],
+    recentComics: ctx?.comic?.recentComics ?? [],
   };
 }
 
@@ -222,6 +237,25 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
   }
   mkdirSync(join(run.dir, 'art'), { recursive: true });
   const lettering = opts.lettering ?? 'model';
+  const fingerprint = artFingerprint(script, lettering);
+  acceptRequestedArt(run, script);
+  const manifest = readJson<{ fingerprint?: string }>(run, 'art/manifest.json');
+  if (
+    manifest &&
+    (manifest.fingerprint ? manifest.fingerprint !== fingerprint : !!script.composition)
+  ) {
+    clearPage(run);
+    clearPanels(run);
+    // Retries may reuse panels already drawn for this request, even when a
+    // provider fails before the final manifest is written.
+    writeJson(run, 'art/manifest.json', {
+      fingerprint,
+      lettering,
+      mode: lettering === 'model' ? 'page' : 'panels',
+      provider: provider ?? 'existing',
+      panels: [],
+    });
+  }
   const results: { panel: number; file: string; source: string }[] = [];
 
   // A page drawn whole, lettering included: by an image model, or already saved
@@ -276,6 +310,7 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       provider: provider ?? 'existing',
       mode,
       lettering,
+      fingerprint,
       panels: results,
     };
     writeJson(run, 'art/manifest.json', summary);
@@ -324,7 +359,7 @@ async function makePage(
   script: ComicScript,
   id: ProviderId,
 ): Promise<{ panel: number; file: string; source: string }> {
-  const aspect = script.aspect ?? formatById(script.format)?.aspect ?? '4:3';
+  const aspect = pageAspect(script);
   const [img] = await generateImages(id, [
     { prompt: pagePrompt(script), refs: [], aspect },
   ]);
@@ -350,7 +385,11 @@ async function makePanels(
     // One agent session draws every panel, so they match each other.
     const images = await generateImages(
       id,
-      todo.map((t) => ({ prompt: artPrompt(t.panel, t.i, script), refs: [] })),
+      todo.map((t) => ({
+        prompt: artPrompt(t.panel, t.i, script),
+        refs: [],
+        aspect: frameAspect(script, t.i),
+      })),
     );
     todo.forEach((t, k) => save(t.i, images[k]!));
     return;
@@ -359,7 +398,11 @@ async function makePanels(
   let anchor: Reference | undefined;
   for (const t of todo) {
     const [img] = await generateImages(id, [
-      { prompt: artPrompt(t.panel, t.i, script), refs: anchor ? [anchor] : [] },
+      {
+        prompt: artPrompt(t.panel, t.i, script),
+        refs: anchor ? [anchor] : [],
+        aspect: frameAspect(script, t.i),
+      },
     ]);
     save(t.i, img!);
     anchor ??= {
@@ -390,6 +433,14 @@ export function comicPromptsCmd(
           saveTo: join(run.dir, 'art', `panel-${i + 1}.png`),
           prompt: artPrompt(p, i, script),
         }));
+  // Keep the old cache untrusted until every requested image has actually
+  // changed. Merely printing new prompts must not bless an earlier drawing.
+  const lettering = opts.lettering ?? 'model';
+  writeJson(run, 'art/request.json', {
+    fingerprint: artFingerprint(script, lettering),
+    lettering,
+    before: artHashes(run, script, lettering),
+  });
   emit(opts, { prompts, text: pageText(script) }, () =>
     prompts
       .map((p) =>
@@ -401,13 +452,69 @@ export function comicPromptsCmd(
   );
 }
 
+function artHashes(
+  run: Run,
+  script: ComicScript,
+  lettering: 'model' | 'overlay',
+): (string | null)[] {
+  const files =
+    lettering === 'model'
+      ? [existingPage(run)]
+      : script.panels.map((_, i) => existingPanel(run, i));
+  return files.map((file) =>
+    file ? createHash('sha256').update(readFileSync(file.path)).digest('hex') : null,
+  );
+}
+
+/** Adopt host-tool images only when all requested files are new since prompts. */
+function acceptRequestedArt(run: Run, script: ComicScript): void {
+  const request = readJson<{
+    fingerprint: string;
+    lettering: 'model' | 'overlay';
+    before: (string | null)[];
+  }>(run, 'art/request.json');
+  if (
+    !request ||
+    !['model', 'overlay'].includes(request.lettering) ||
+    request.fingerprint !== artFingerprint(script, request.lettering)
+  )
+    return;
+  const current = artHashes(run, script, request.lettering);
+  if (
+    !Array.isArray(request.before) ||
+    current.length !== request.before.length ||
+    current.some((hash, i) => !hash || hash === request.before[i])
+  )
+    return;
+  writeJson(run, 'art/manifest.json', {
+    provider: 'host',
+    mode: request.lettering === 'model' ? 'page' : 'panels',
+    lettering: request.lettering,
+    fingerprint: request.fingerprint,
+  });
+  rmSync(join(run.dir, 'art/request.json'), { force: true });
+}
+
 export async function comicRenderCmd(
   cwd: string,
   opts: OutOpts & { run?: string },
 ): Promise<void> {
   const { run, root, script } = load(cwd, opts.run);
-  const manifest = readJson<{ mode?: string }>(run, 'art/manifest.json');
+  acceptRequestedArt(run, script);
+  const manifest = readJson<{ mode?: string; fingerprint?: string }>(
+    run,
+    'art/manifest.json',
+  );
   const page = manifest?.mode !== 'panels' ? existingPage(run) : undefined;
+  const lettering = page ? 'model' : 'overlay';
+  const fingerprint = artFingerprint(script, lettering);
+  if (
+    manifest &&
+    (manifest.fingerprint ? manifest.fingerprint !== fingerprint : !!script.composition)
+  )
+    throw new UserError(
+      'The art belongs to an earlier script or composition. Run tracetoon comic art --force, or use comic prompts and save fresh host-tool images before rendering.',
+    );
   let svg: string;
   if (page) {
     svg = pageWithFooter({ mime: page.mime, data: readFileSync(page.path) });
@@ -435,6 +542,7 @@ export async function comicRenderCmd(
   writeFileSync(svgPath, svg, 'utf8');
   let pngPath: string | undefined;
   let warning: string | undefined;
+  rmSync(join(run.dir, 'out', 'comic.png'), { force: true });
   try {
     let png = await svgToPng(svg, 1600);
     if (png.length > 9_500_000) png = await svgToPng(svg, 1200); // GitHub's 10 MB limit
@@ -443,6 +551,7 @@ export async function comicRenderCmd(
   } catch (e) {
     warning = `Could not make a PNG (${(e as Error).message}); the SVG will be used.`;
   }
+  writeJson(run, 'out/manifest.json', { fingerprint, lettering });
   // The image model lettered the page: the agent checks every word against this list.
   const proofread = page ? pageText(script) : undefined;
   emit(
@@ -496,13 +605,48 @@ export async function comicRerollCmd(cwd: string, opts: RerollOpts): Promise<voi
     style = pool[Math.floor(Math.random() * pool.length)]!.id;
   }
   const next: ComicScript = { ...script, style };
+  if (style !== script.style) {
+    const family = comicSummary({ ...next, styleFamily: undefined }).styleFamily;
+    if (family) next.styleFamily = family;
+    else delete next.styleFamily;
+  }
   if (opts.format) {
-    if (!formatById(opts.format))
+    const format = formatById(opts.format);
+    if (!format)
       throw new UserError(
         `Unknown format "${opts.format}". Use one of: ${FORMATS.map((f) => f.id).join(', ')}`,
       );
+    if (
+      script.panels.length < format.panels[0] ||
+      script.panels.length > format.panels[1]
+    )
+      throw new UserError(
+        `${format.name} needs ${format.panels[0]}–${format.panels[1]} panels. Have the drafter rewrite the story before changing to this format.`,
+      );
     next.format = opts.format;
-    if (opts.format !== 'custom') delete next.aspect;
+    if (opts.format !== script.format) {
+      if (opts.format === 'custom')
+        throw new UserError(
+          'Write the custom composition in comic.json before rerolling it.',
+        );
+      const family = {
+        strip: 'sequence',
+        '4koma': 'vertical',
+        'before-after': 'comparison',
+        splash: script.panels.length === 1 ? 'single' : 'hero-inset',
+        'mission-briefing': 'hero-inset',
+        'movie-poster': 'single',
+        'manual-page': 'vertical',
+        'newspaper-sunday': 'asymmetric',
+        'trading-card': 'single',
+      } as const;
+      next.composition = {
+        family: family[opts.format as keyof typeof family],
+        title: { mode: script.composition?.title.mode ?? 'heading' },
+      };
+      delete next.layout;
+      delete next.aspect;
+    }
   }
   const idea = styleById(style);
   if (opts.palette) {
@@ -536,6 +680,21 @@ export async function comicRerollCmd(cwd: string, opts: RerollOpts): Promise<voi
 export function renderedComic(
   run: Run,
 ): { path: string; mime: string; data: Buffer } | undefined {
+  if (!['comic.png', 'comic.svg'].some((name) => existsSync(join(run.dir, 'out', name))))
+    return undefined;
+  const script = readJson<ComicScript>(run, 'comic.json');
+  const output = readJson<{ fingerprint?: string; lettering: 'model' | 'overlay' }>(
+    run,
+    'out/manifest.json',
+  );
+  if (
+    script &&
+    (output || script.composition) &&
+    (!output || output.fingerprint !== artFingerprint(script, output.lettering))
+  )
+    throw new UserError(
+      'The rendered comic is stale for this script or composition. Draw and render the current comic before preparing the PR preview.',
+    );
   for (const [name, mime] of [
     ['comic.png', 'image/png'],
     ['comic.svg', 'image/svg+xml'],

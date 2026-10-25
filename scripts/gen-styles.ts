@@ -12,6 +12,11 @@ animation", "linocut print"). Pick what suits this PR's story, and something
 different from the repo's recent comics (\`tracetoon context\` lists them;
 \`tracetoon comic check\` warns on a repeat).
 
+These lettering notes suggest a treatment, not a mandatory headline.
+\`composition.title\` decides whether a title is drawn and where it belongs.
+Also compare broad \`styleFamily\`, layout and cast in \`recentComics\`;
+renaming the same treatment is not variety.
+
 | Style | Look | Good for | Palettes |
 |---|---|---|---|
 ${rows.join('\n')}

@@ -123,7 +123,7 @@ describe('comic end to end', () => {
     expect(d.code).toBe(0);
     const c = cli(repo.root, 'context', '--offline');
     expect(c.code).toBe(0);
-    expect(c.json.comic).toEqual({ recentStyles: [] });
+    expect(c.json.comic).toEqual({ recentStyles: [], recentComics: [] });
     expect(c.json.cast).toBeUndefined();
     const runDir = d.json.runDir as string;
     expect(existsSync(join(runDir, 'bible.json'))).toBe(false);
@@ -162,7 +162,14 @@ describe('comic end to end', () => {
     );
     // Only what a later run reads back: the style, and the edit-detection hashes.
     const meta = decodeMeta(finalBody)!;
-    expect(Object.keys(meta).sort()).toEqual(['contentSha', 'style', 'titleSha', 'v']);
+    expect(Object.keys(meta).sort()).toEqual([
+      'comic',
+      'contentSha',
+      'style',
+      'titleSha',
+      'v',
+    ]);
+    expect(meta.comic).toMatchObject({ panelCount: 2, styleFamily: 'flat-color' });
     expect(meta.style).toBe('sunday-strip');
     const previewHtml = readFileSync(join(runDir, 'preview.html'), 'utf8');
     // Assert the image inside the actual PR body, not the separate share card.
