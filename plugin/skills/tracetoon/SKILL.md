@@ -40,6 +40,11 @@ that bypass on your own initiative.
 
 1. **Check.** `tracetoon status`, then `tracetoon doctor --json`. If `gh` is
    missing or not signed in, tell the user; you can still prepare everything.
+   - If `status` lists `pendingDrafts`, show "You have a PR awaiting review"
+     with the preview link. Continue the user's work; this reminder is not a
+     request to stop or authorization to publish. Resume a matching branch's
+     draft by its explicit run ID, preserving its description and comic.
+     `tracetoon pending dismiss --run <id>` clears a reminder locally.
    - If `push.canPush` is false, tell the user now: their gh account can't push
      to this repo, so publishing will fail. They can switch accounts
      (`gh auth switch`) or use a fork.
@@ -61,10 +66,13 @@ that bypass on your own initiative.
    - When you suggest a command for the user to run themselves, use
      `command.run` from `tracetoon status --json` (the launcher's full path if
      `tracetoon` isn't on their PATH).
-2. **Digest.** `tracetoon digest --json`. It prints the run folder and the
+2. **Digest.** `tracetoon digest --json` (or `digest --run <id> --json` to
+   refresh a pending draft in place). It prints the run folder and the
    digest path. Run it as its own command, after any `git commit`, never
    chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
+   Keep the selected run ID and pass `--run <id>` to subsequent commands that
+   accept it; another digest may change the default `latest` run.
    - If `ambiguous` is not empty, show the user those sessions (title, agent,
      reasons) and ask which belong to this PR. Re-run with
      `--include <refs>` / `--exclude <refs>`.
@@ -160,14 +168,22 @@ that bypass on your own initiative.
    If the leak scan reports findings, return them to the drafter and render again.
    Don't use `--allow-findings` unless the user has
    looked at the finding and says it is fine.
-7. **Preview.** `tracetoon preview`, and show the user the title and body. Give
-   them the preview link exactly as printed (`previewUrl` in `--json`): a full
-   `file:///…/preview.html` URL on its own line, not in backticks, not shortened
-   to a relative path, so they can Ctrl+click it to see the page with the comic.
+7. **Preview.** `tracetoon preview --run <id> --json`. Briefly describe the
+   change and any remaining findings, then end your response with
+   `previewHandoff.markdown` exactly as returned. It uses this compact wordmark:
+
+   ```text
+   _|_ ._  _   _  _  _|_  _   _   _
+    |_ |  (_| (_ (/_  |_ (_) (_) | |
+   ```
+
+   The complete `previewUrl` must remain on its own line outside the logo's
+   fence, never shortened or wrapped in backticks. Put diagnostics and local
+   report links before the handoff so the review link is easy to find.
    The comic is embedded in the page, so it shows in any browser.
-   - If render warns that commits were added after the digest, run
-     `tracetoon digest` again (and context, body, render) before asking for
-     approval.
+   - If code changed, refresh `digest --run <id>`, context, description, review
+     and preview before asking for approval. Rendering an old digest cannot
+     approve new code. Commit a working-tree draft before publishing it.
    - Render prints the PR base for a new PR. If the story covers more than the
      branch (e.g. the whole history), check the base is the branch the user
      expects.
@@ -199,6 +215,10 @@ If the user asked to skip the preview, or `config.yolo` is true, run
 `tracetoon publish --yolo` after step 6. It refuses (exit code 2) when the leak
 scan found something, a session is ambiguous, or the repo policy may prohibit AI
 contributions. In that case, fall back to the preview.
+Code freshness checks apply in YOLO mode too. The handoff explains how to make
+YOLO the persistent preference for future PRs; changing that preference alone
+does not publish a pending draft. Honor repository overrides. When a hook
+provides a pending-review reminder, show it once and continue the requested work.
 
 ### Other commands
 

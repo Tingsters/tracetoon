@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   contributionPolicy,
   loadGuidance,
+  objectHash,
   researchPacket,
 } from '../contribution/guidance.ts';
 import {
@@ -49,6 +50,15 @@ import { TOOL_VERSION } from '../version.ts';
 import { renderedComic } from './comic.ts';
 import { digestHash } from './digest.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
+import {
+  sameSubmission,
+  snapshotProblem,
+  submissionSnapshot,
+  type SubmissionSnapshot,
+} from '../review/snapshot.ts';
+import { previewHandoff } from '../review/handoff.ts';
+import { recordRendered, setReviewState } from '../review/pending.ts';
+import { userCommand } from '../util/userCommand.ts';
 
 export const COMIC_SRC = '{{tracetoon:comic-src}}';
 const COMIC_MARKER = '{{tracetoon:comic}}';
@@ -103,11 +113,15 @@ export interface Approval {
   noPullRequests?: boolean;
   ambiguousSessions: string[];
   renderedAt: string;
+  /** Optional only for reading pre-upgrade previews; publishing requires it. */
+  submission?: SubmissionSnapshot;
 }
 
 const sha = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex');
-const codeFor = (title: string, body: string, comicSha = '') =>
-  approvalCode(`${title}\n\0${body}\n\0${comicSha}`);
+const codeFor = (approval: Approval, body: string) =>
+  approvalCode(
+    `${approval.title}\n\0${body}\n\0${approval.comicSha ?? ''}\n\0${objectHash({ submission: approval.submission, head: approval.head, base: approval.base, mode: approval.mode, prNumber: approval.prNumber })}`,
+  );
 
 /**
  * The branch to open the PR against. A digest can compare with a commit (to
@@ -170,6 +184,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     throw new UserError('This run has no context.json. Run `tracetoon context` first.');
   if (ctx.base && ctx.base !== truth.base)
     truth = prTruth(cwd, { base: ctx.base, noGh: true });
+  const captured = readJson<SubmissionSnapshot>(run, 'submission.json');
+  if (!captured || !sameSubmission(captured, submissionSnapshot(truth)))
+    throw new UserError(
+      `The digest needs refreshing for the current code. Run tracetoon digest --run ${run.id}, then context, update the description, and render again.`,
+    );
   const packet = researchPacket(truth, ctx.contribution?.offline ?? false);
   const guidance = loadGuidance(run, truth.toplevel, packet.request);
   const composition = contributionPolicy(ctx.aiPolicy, guidance);
@@ -243,7 +262,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   );
   const comicSha = comic ? sha(comic.data) : undefined;
   const approval: Approval = {
-    code: codeFor(title, body, comicSha),
+    code: '',
     title,
     bodySha: sha(body),
     comicSha,
@@ -260,7 +279,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       .filter((s) => s.band === 'ambiguous')
       .map((s) => s.ref),
     renderedAt: new Date().toISOString(),
+    submission: captured,
   };
+  approval.code = codeFor(approval, body);
   writeFileSync(join(run.dir, 'final-body.md'), body, 'utf8');
   writeFileSync(join(run.dir, 'changes.patch'), packet.patch, 'utf8');
   const reviewPacket = reviewInput({
@@ -340,9 +361,16 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     'utf8',
   );
   writeJson(run, 'approval.json', approval);
+  recordRendered(truth.gitDir, run, approval);
 
   const previewPath = join(run.dir, 'preview.html');
   const stale = digestStale(truth.toplevel, digest);
+  const handoff = previewHandoff({
+    root: truth.toplevel,
+    command: userCommand().run,
+    url: fileUrl(previewPath),
+    run: run.id,
+  });
   emit(
     opts,
     {
@@ -350,6 +378,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ...approval,
       previewPath,
       previewUrl: fileUrl(previewPath),
+      previewHandoff: handoff,
       titleChecks: titleFindings,
       contributionReview: reviewSummary(contributionReview),
       reviewInputPath: join(run.dir, 'review-input.json'),
@@ -369,7 +398,6 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? `PR base: ${approval.base}${approval.base !== digest.pr.base ? ` (the story covers changes since ${digest.pr.base.slice(0, 12)})` : ''}`
           : '',
         stale ? `Warning: ${stale}` : '',
-        `Preview (Ctrl+click to open): ${fileUrl(previewPath)}`,
         findings.length
           ? `Leak scan found: ${findings.map((f) => `${f.kind} x${f.count}`).join(', ')}. ${
               approval.allowFindings
@@ -392,6 +420,8 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? 'WARNING: this repository appears to prohibit AI-assisted contributions. Read the policy before posting.'
           : '',
         `Approval code: ${approval.code}`,
+        '',
+        handoff.terminal,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -444,13 +474,21 @@ export function previewCmd(
   cwd: string,
   opts: OutOpts & { run?: string; open?: boolean },
 ): void {
-  const { run } = loadRun(cwd, opts.run);
+  const { run, truth } = loadRun(cwd, opts.run);
   const approval = readJson<Approval>(run, 'approval.json');
   const body = readText(run, 'final-body.md');
   const contributionReview = readJson<ReviewResult>(run, 'review-result.json');
   if (!approval || body === undefined)
     throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
   const htmlPath = join(run.dir, 'preview.html');
+  const problem = snapshotProblem(truth.toplevel, approval.submission);
+  const handoff = previewHandoff({
+    root: truth.toplevel,
+    command: userCommand().run,
+    url: fileUrl(htmlPath),
+    run: run.id,
+    problem,
+  });
   if (opts.open) openInBrowser(htmlPath);
   const shown = approval.comicFile
     ? body.replaceAll(COMIC_SRC, approval.comicFile)
@@ -465,6 +503,7 @@ export function previewCmd(
       comic: approval.comicFile ?? null,
       previewPath: htmlPath,
       previewUrl: fileUrl(htmlPath),
+      previewHandoff: handoff,
       contributionReview: contributionReview && reviewSummary(contributionReview),
     },
     () =>
@@ -476,8 +515,9 @@ export function previewCmd(
         contributionReview ? reviewLine(contributionReview) : '',
         '-'.repeat(72),
         approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
-        `Preview (Ctrl+click to open): ${fileUrl(htmlPath)}`,
         `Approval code: ${approval.code}`,
+        '',
+        handoff.terminal,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -611,11 +651,20 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
   const bodyPath = join(run.dir, 'final-body.md');
   if (!approval || !existsSync(bodyPath))
     throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
+  const problem = snapshotProblem(truth.toplevel, approval.submission);
+  if (problem)
+    throw new UserError(
+      `${problem} Run tracetoon digest --run ${run.id}, then refresh context, description, review and preview before publishing.`,
+    );
+  if (approval.submission?.usedWorkingTree)
+    throw new UserError(
+      `This preview includes uncommitted work. Commit the changes, then run tracetoon digest --run ${run.id} and refresh the preview before publishing.`,
+    );
   const body = readFileSync(bodyPath, 'utf8');
-  const current = codeFor(approval.title, body, approval.comicSha);
+  const current = codeFor(approval, body);
   if (current !== approval.code || sha(body) !== approval.bodySha) {
     throw new UserError(
-      'The rendered body changed after it was approved. Run `tracetoon render` again.',
+      'The rendered body or publication target changed after it was approved. Run `tracetoon render` again.',
     );
   }
   if (approval.findings.length && !approval.allowFindings) {
@@ -655,18 +704,21 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     );
   }
 
-  if (approval.mode === 'create') {
-    const onRemote = git(truth.toplevel, [
+  {
+    const remote = git(truth.toplevel, [
       'ls-remote',
       '--exit-code',
       '--heads',
       'origin',
-      approval.head,
-    ]).ok;
-    if (!onRemote) {
+      `refs/heads/${approval.head}`,
+    ]);
+    const remoteSha = remote.stdout.trim().split(/\s/)[0];
+    if (!remote.ok || remoteSha !== approval.submission!.headSha) {
       if (!opts.push) {
         throw new UserError(
-          `Branch ${approval.head} is not on GitHub yet. Push it (or re-run with --push) and publish again.`,
+          remoteSha
+            ? `Branch ${approval.head} on GitHub differs from the approved code. Push it (or re-run with --push) and publish again.`
+            : `Branch ${approval.head} is not on GitHub yet. Push it (or re-run with --push) and publish again.`,
         );
       }
       const p = git(truth.toplevel, ['push', '-u', 'origin', approval.head]);
@@ -715,6 +767,7 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     hosting: hosted.hosting,
     assetsCommit: hosted.assetsCommit,
   });
+  setReviewState(run, approval, 'published');
   const shareScript = readJson<ComicScript>(run, 'comic.json');
   const share =
     hosted.hosting !== 'none'

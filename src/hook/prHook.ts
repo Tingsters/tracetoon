@@ -2,10 +2,11 @@
  * The PR hook. Each agent calls `tracetoon hook pre-pr --agent <id>` before it
  * runs a shell command. If the command creates a PR (or rewrites a PR's title or
  * body) with `gh`, the hook stops it and tells the agent to use the Tracetoon
- * skill instead. Everything else passes untouched. Any error lets the command
+ * skill instead. Other commands can receive a pending-review reminder. Any error lets the command
  * through: the hook must never get in the way of normal work.
  */
 import { switchState } from './switches.ts';
+import { pendingReminder } from '../review/reminder.ts';
 
 export type HookAgent = 'claude' | 'codex' | 'antigravity';
 
@@ -73,9 +74,26 @@ export function decide(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   const { command, cwd } = commandFrom(payload);
-  if (!command || !/\bgh(\.exe)?["']?\s+pr\b/i.test(command)) return undefined;
-  if (BYPASS_RE.test(command) || !writesPr(command)) return undefined;
+  if (!command || BYPASS_RE.test(command)) return undefined;
   if (!switchState(cwd ?? process.cwd(), env).enabled) return undefined;
+  if (!writesPr(command)) {
+    const reminder = pendingReminder(
+      agent,
+      payload as Record<string, any>,
+      cwd ?? process.cwd(),
+    );
+    if (!reminder) return undefined;
+    // Antigravity: https://antigravity.google/docs/hooks#pretooluse
+    // Codex/Claude: https://learn.chatgpt.com/docs/hooks#pretooluse
+    return agent === 'antigravity'
+      ? JSON.stringify({ decision: 'allow', reason: reminder })
+      : JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            additionalContext: reminder,
+          },
+        });
+  }
   if (agent === 'antigravity')
     return JSON.stringify({ decision: 'deny', reason: DENY_REASON });
   return JSON.stringify({

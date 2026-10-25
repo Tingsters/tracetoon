@@ -293,7 +293,9 @@ describe('render and publish', () => {
       env,
       encoding: 'utf8',
     });
-    expect(text.stdout).toContain(`Preview (Ctrl+click to open): ${url}`);
+    expect(text.stdout).toContain(`OPEN YOUR LOCAL PR PREVIEW\n${url}\n`);
+    expect(text.stdout.trimEnd()).toEndWith(r.json.previewHandoff.terminal);
+    expect(shown.json.previewHandoff.markdown).toContain(`\n\n${url}\n\n`);
 
     expect(cli(repo.root, 'publish').code).toBe(1);
     expect(cli(repo.root, 'publish', '--code', 'deadbeef').code).toBe(1);

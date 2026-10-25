@@ -29,4 +29,4 @@ jobs:
         shell: bash
         run: |
           bun run bundle
-          TRACETOON_TEST_CLI="$PWD/plugin/skills/tracetoon/dist/tracetoon.mjs" bun test tests/flow.test.ts tests/comic.test.ts tests/contribution.test.ts
+          TRACETOON_TEST_CLI="$PWD/plugin/skills/tracetoon/dist/tracetoon.mjs" bun test tests/flow.test.ts tests/comic.test.ts tests/contribution.test.ts tests/review.test.ts
