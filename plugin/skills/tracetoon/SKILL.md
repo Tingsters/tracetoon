@@ -7,7 +7,7 @@ description: Write or update a GitHub pull request description from the AI agent
 
 Tracetoon reads the session logs your agents already keep on disk, finds the
 sessions that produced the current branch, and gives you a redacted digest. You
-write the PR description and a comic script from it; Tracetoon draws
+coordinate a researcher, a drafter and an independent reviewer; Tracetoon draws
 the comic, and the user sees the exact result and approves it before anything is
 posted.
 
@@ -43,7 +43,7 @@ that bypass on your own initiative.
    - If `push.canPush` is false, tell the user now: their gh account can't push
      to this repo, so publishing will fail. They can switch accounts
      (`gh auth switch`) or use a fork.
-   - **Comics, settled before any writing.** If a comic is wanted
+   - Resolve comic setup **after research in step 3**, before drafting. If a comic is wanted
      (`config.comic` is true and the repo doesn't ban AI images) and
      `comics.kind` isn't `ready`, raise it once, in one short message, using
      `comics.text` and `imageProviders`:
@@ -76,6 +76,22 @@ that bypass on your own initiative.
 3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentStyles` (styles the repo's last comics
    used, so this one can differ).
+   - **Researcher phase.** Launch a separate researcher with the host's native
+     subagent tool, using [contribution-workflow.md](references/contribution-workflow.md).
+     Give it `guidance-request.json`, `changes.patch`, `context.json` and repository
+     read access. It collects scoped and linked guidance into `guidance.json`.
+     Run `tracetoon guidance check --json`; resolve structural errors before
+     drafting. Use its source-backed AI policy and disclosure controls alongside
+     the original context. Collection gaps remain visible and advisory.
+   - Keep the host as coordinator. Use distinct researcher, drafter and reviewer
+     agents; record their actual host ids. If native delegation is unavailable,
+     run the phases sequentially with `mode: "inline"` and clearly disclose the
+     inline draft / self-review. Never invent an agent id or claim independence.
+   - Honor `contribution.offline` throughout research and review. Follow relevant
+     guidance links, including canonical instruction redirects; record links
+     that cannot be consulted. Do not crawl unrelated navigation.
+   - Now resolve comic setup as described in step 1, using the researched media
+     policy before offering any image route or drawing.
    - If `aiPolicy.verdict` is `prohibited`, show the user the excerpts and stop
      unless they explicitly want to continue.
    - `aiPolicy.text` is `author-written-recommended` (e.g. LLVM, Swift): tell the
@@ -88,12 +104,17 @@ that bypass on your own initiative.
      tell the user; only they can decide to post anyway (`--ack-policy`).
    - `aiPolicy.prInstructions`: follow these repo instructions about PR text.
    - If it is `disclosure-required`, keep Tracetoon's disclosure line (`config.disclosure` must not be `none`) and add any extra disclosure the policy asks for at the end of `body.md`.
-4. **Write the description.** Read `digest.json` (and `tracetoon expand <ref>`
-   for detail). Write `body.md` in the run folder following
+4. **Drafter phase.** Launch a distinct drafter with `digest.json`, `changes.patch`,
+   `context.json`, `guidance.json`, relevant code read access, and the role prompt in
+   [contribution-workflow.md](references/contribution-workflow.md). It reads the
+   trace evidence (using `tracetoon expand <ref>` for detail) and writes `body.md`
+   in the run folder following
    [references/writing-guide.md](references/writing-guide.md). For a new PR,
    also write a one-line `title.txt` following the guide's "The title" section
    and `titleRules` from context. For an existing PR, keep its title unless the
    scope changed.
+   Pass the following writing rules to the drafter; the coordinator does not
+   author the title or description when delegation is available.
    - Draft it straight away from what's available; don't ask the user questions
      first. Only ask when the draft can't be written without an answer (for
      example, it's unclear which change the PR is meant to describe).
@@ -103,7 +124,7 @@ that bypass on your own initiative.
      what the evidence contradicts and add what's missing.
    - When asked for changes, edit `body.md` in place; don't regenerate it from
      scratch unless the user asks for a fresh draft.
-5. **Write and draw the comic** (skip if `config.comic` is false, the user
+5. **Have the drafter write the comic, then draw it** (skip if `config.comic` is false, the user
    doesn't want one, or `aiPolicy.media` is `prohibited`). Follow
    [references/comic-guide.md](references/comic-guide.md). Aim for something
    funny that someone outside the repo would want to share:
@@ -126,8 +147,18 @@ that bypass on your own initiative.
      lettering against the printed list. Redraw with `comic art --force` (up to 2
      times), then fall back to `--lettering overlay`. Offer
      `tracetoon comic reroll` if the user wants a different look.
-6. **Render.** `tracetoon render --json`. If the leak scan reports findings, fix
-   `body.md` and render again. Don't use `--allow-findings` unless the user has
+6. **Render and independent review.** `tracetoon render --json` composes the full
+   PR and writes `review-input.json`. Launch a fresh reviewer, distinct from the
+   researcher and drafter, with that packet, the original sources, submitted code,
+   digest and author evidence. It independently checks source interpretation and
+   the full rendered PR, then writes `review.json` using
+   [contribution-workflow.md](references/contribution-workflow.md). Re-render to
+   validate and display the assessment. Return draftable findings to the drafter
+   for up to **two correction rounds**, each followed by a render and fresh review.
+   Present remaining gaps in the preview. Never manufacture human attestations,
+   approvals or test evidence. Guidance and review findings are advisory.
+   If the leak scan reports findings, return them to the drafter and render again.
+   Don't use `--allow-findings` unless the user has
    looked at the finding and says it is fine.
 7. **Preview.** `tracetoon preview`, and show the user the title and body. Give
    them the preview link exactly as printed (`previewUrl` in `--json`): a full
@@ -141,15 +172,15 @@ that bypass on your own initiative.
      branch (e.g. the whole history), check the base is the branch the user
      expects.
    You can also offer `tracetoon preview --open`. Ask them to approve or say what
-   to change; for changes, edit and go back to step 5 or 6.
+   to change; route changes through the drafter, then render and review again.
    - Render prints **optional notes** (also in the preview, under the draft):
      facts a reviewer may want that weren't captured, e.g. "no browser check
      was captured; add one if you did". Offer them in one short list as things
      the user *may* add. Never ask before drafting, and never treat them as
      required.
    - If the user supplies context (a manual check, the reason for a choice),
-     add it to `author.md` in the run folder in their words, update `body.md`,
-     and render again. The claim check treats it as author-reported.
+     add it to `author.md` in the run folder in their words, return it to the
+     drafter, then render and review again. The claim check treats it as author-reported.
    - The claim check marks sentences that are contradicted or not established
      by the evidence. Fix contradicted ones; for not-established ones, reword or
      keep them if the user confirms (it may have happened outside the logs).

@@ -160,18 +160,24 @@ Turn it off at whichever level you need. Any "off" wins:
    personal data, your home path and username.
 3. **`tracetoon context`** reads the PR template, AI policies and agent
    instructions, any existing PR (and edits made to it on GitHub), your
-   settings, and the art styles of the repo's recent comics.
-4. **Your agent writes** the description (`body.md`) following Tracetoon's
-   writing guide, and the comic brief (`comic.json`). It asks you nothing
-   before drafting.
+   settings, and the art styles of the repo's recent comics. It also prepares
+   a contributor-research packet and the submitted diff.
+4. **Your agent coordinates a researcher and a drafter.** The researcher collects
+   applicable local and linked guidelines, scoped instructions, conditions and
+   exceptions. `tracetoon guidance check` validates that handoff. A separate
+   drafter receives the guidance, redacted traces and submitted code, then writes
+   the description (`body.md`) and comic brief (`comic.json`).
 5. **`tracetoon comic art` / `comic render`** draw the page with the image
    route you approved, add a small "made with Tracetoon" footer bar, and print
    the words to proofread.
 6. **`tracetoon render`** builds the final body (Tracetoon only owns a marked
    region, so your own text is kept), runs the leak scan and the claim check,
-   lists optional notes, and prints an approval code. The preview page shows
-   the draft, the checks and the comic, which is embedded so it opens in any
-   browser.
+   lists optional notes, and prepares the exact rendered PR for an independent
+   reviewer. The reviewer checks adherence against the original guidance and
+   evidence; the drafter gets up to two correction rounds. Re-rendering shows
+   current findings, source citations, collection gaps and missing evidence in
+   the preview. Changed inputs invalidate old reviews. Reviews are advisory;
+   existing publishing restrictions still apply.
 7. **`tracetoon publish --code <code>`** posts exactly what you approved: the
    comic goes on the repo's `tracetoon-assets` branch (or as a GitHub
    attachment for private repos), and `gh` creates or updates the PR.
@@ -180,6 +186,18 @@ Other commands: `images`, `status`, `on`/`off`, `hook install`/`uninstall`,
 `scan`, `expand`, `preview`, `comic prompts`/`reroll`, `export --agent-trace`
 ([Agent Trace](https://agent-trace.dev) line attribution), `config`. Every
 command takes `--json`.
+
+These roles use the current host's native subagents, without another model API
+or credentials. Hosts without delegation use a clearly labeled inline draft and
+self-review. `context --offline` disables GitHub lookups and tells the researcher
+and reviewer to leave external references as collection gaps. Source snapshots
+and reports stay in the local run folder; only the approved PR text and comic
+are published. The CLI validates handoff structure and local source hashes; the
+independent reviewer checks interpretation and remote sources. Role identity is
+reported by the host, not independently certified by the CLI.
+
+The [contribution workflow](plugin/skills/tracetoon/references/contribution-workflow.md)
+documents role prompts and the versioned `guidance.json` / `review.json` contracts.
 
 The only thing Tracetoon reads back from earlier PRs is which art styles their
 comics used. Run folders live in `.git/tracetoon/runs/` (git never tracks them),

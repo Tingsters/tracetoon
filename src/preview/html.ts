@@ -6,6 +6,7 @@ import { claimSummary, type ClaimFinding } from '../digest/claims.ts';
 import type { ContextNote } from '../digest/notes.ts';
 import type { TitleFinding } from '../digest/titleCheck.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
+import type { ReviewResult } from '../contribution/types.ts';
 
 const esc = (s: string) =>
   s
@@ -98,6 +99,7 @@ export function renderPreviewHtml(input: {
   titleFindings?: TitleFinding[];
   /** Why the title shown isn't the one proposed (a person's title kept). */
   titleNote?: string;
+  contributionReview?: ReviewResult;
 }): string {
   const {
     title,
@@ -112,6 +114,7 @@ export function renderPreviewHtml(input: {
     comicHeldBack,
     titleFindings = [],
     titleNote,
+    contributionReview,
   } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
   const marked_ = annotateClaims(body, claims);
@@ -164,11 +167,13 @@ ${
 ${policyHtml(policy, comicHeldBack)}
 <div class="card">${html}</div>
 ${marked_.notes}
+${contributionReview ? contributionReviewHtml(contributionReview) : ''}
 ${
   notes.length
     ? `<section class="checks"><p><b>Optional additions</b> (skip any that don't apply; "not captured" doesn't mean "not done"):</p><ul>${notes.map((n) => `<li>${esc(n.text)}</li>`).join('')}</ul></section>`
     : ''
 }
+
 ${
   outline
     ? `<section class="checks outline"><p><b>Notes to write from</b>: this repository asks for author-written text, so here are the facts as an outline.</p>${marked.parse(outline, { async: false, gfm: true }) as string}</section>`
@@ -190,10 +195,26 @@ ${evidence}
 `;
 }
 
-/**
- * What the digest actually says, next to the description, so every claim in the
- * text can be checked against the evidence at a glance.
- */
+/** Source and assessment text is escaped, never rendered as executable markup. */
+function contributionReviewHtml(review: ReviewResult): string {
+  const mode =
+    review.mode === 'inline'
+      ? 'Inline draft / self-review'
+      : review.mode === 'delegated'
+        ? 'Independent host agents (reported by the host)'
+        : 'Review unavailable';
+  const rules = review.requirements.map((rule) => {
+    const finding = review.assessments.find((a) => a.requirement === rule.id);
+    const refs = rule.sources.map((ref) => {
+      const source = review.sources.find((s) => s.id === ref.source);
+      return `${source?.location ?? ref.source}:${ref.startLine}-${ref.endLine}`;
+    });
+    return `<li><b>${esc(rule.text)}</b> — ${esc(finding?.state ?? 'not assessed')}<br>${esc(rule.strength)}; applies when: ${esc(rule.appliesWhen)}${rule.exceptions.length ? `<br>Exceptions: ${esc(rule.exceptions.join('; '))}` : ''}<br>${esc(finding?.reason ?? 'No current assessment.')}${finding?.correction ? `<br>Suggested correction: ${esc(finding.correction)}` : ''}${finding?.evidence.length ? `<br>Evidence: ${esc(finding.evidence.join(', '))}` : ''}<br><small>Sources: ${esc(refs.join(', '))}</small></li>`;
+  });
+  return `<section class="checks"><p><b>Contributor guidance review</b> (advisory): ${esc(review.status)}. ${esc(mode)}. Guidance: ${esc(review.guidanceStatus)}.</p>${review.issues.length ? `<ul>${review.issues.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}${rules.length ? `<details open><summary>Requirements and assessments</summary><ul>${rules.join('')}</ul></details>` : '<p>No requirements assessed; this is not a certification of compliance.</p>'}</section>`;
+}
+
+/** Captured evidence beside the draft, so its claims can be checked. */
 function evidenceHtml(d: TraceDigest): string {
   const li = (items: string[], empty = 'none') =>
     `<ul>${items.length ? items.map((i) => `<li>${i}</li>`).join('') : `<li class="n">${empty}</li>`}</ul>`;

@@ -5,6 +5,18 @@
  * see. The only edits after approval fill in where the comic image is hosted.
  */
 import { createHash } from 'node:crypto';
+import {
+  contributionPolicy,
+  loadGuidance,
+  researchPacket,
+} from '../contribution/guidance.ts';
+import {
+  loadReview,
+  reviewInput,
+  reviewLine,
+  reviewSummary,
+} from '../contribution/review.ts';
+import type { GuidanceRequest, ReviewResult } from '../contribution/types.ts';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -42,6 +54,8 @@ export const COMIC_SRC = '{{tracetoon:comic-src}}';
 const COMIC_MARKER = '{{tracetoon:comic}}';
 
 interface Context {
+  base?: string;
+  contribution?: GuidanceRequest;
   aiPolicy: AiPolicy;
   existingPr: { number: number; url: string; title: string; body: string } | null;
   config?: { disclosure?: 'assisted-by' | 'co-authored-by' | 'none' };
@@ -147,13 +161,19 @@ export interface RenderOpts extends OutOpts {
 }
 
 export function renderCmd(cwd: string, opts: RenderOpts): Approval {
-  const { run, truth } = loadRun(cwd, opts.run);
+  let { run, truth } = loadRun(cwd, opts.run);
   const digest = readJson<TraceDigest>(run, 'digest.json');
   if (!digest)
     throw new UserError('This run has no digest.json. Run `tracetoon digest` first.');
   const ctx = readJson<Context>(run, 'context.json');
   if (!ctx)
     throw new UserError('This run has no context.json. Run `tracetoon context` first.');
+  if (ctx.base && ctx.base !== truth.base)
+    truth = prTruth(cwd, { base: ctx.base, noGh: true });
+  const packet = researchPacket(truth, ctx.contribution?.offline ?? false);
+  const guidance = loadGuidance(run, truth.toplevel, packet.request);
+  const composition = contributionPolicy(ctx.aiPolicy, guidance);
+  ctx.aiPolicy = composition.policy;
   const bodyMd = readText(run, 'body.md');
   if (!bodyMd?.trim()) {
     throw new UserError(`Write the PR description to ${join(run.dir, 'body.md')} first.`);
@@ -195,11 +215,17 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ? defuseMentions(bodyMd).replace(COMIC_MARKER, block)
       : `${content.trim()}\n\n${block}`;
   }
-  const disclosure = disclosureLine(
-    digest,
-    ctx.config?.disclosure,
-    ctx.aiPolicy.disclosure,
-  );
+  const disclosureMode =
+    composition.disclosure === 'required' && ctx.config?.disclosure === 'none'
+      ? 'assisted-by'
+      : ctx.config?.disclosure;
+  const disclosure =
+    composition.disclosure === 'prohibited'
+      ? ''
+      : disclosureLine(digest, disclosureMode, ctx.aiPolicy.disclosure) ||
+        (composition.disclosure === 'required'
+          ? '<sub>This description was drafted with [Tracetoon](https://github.com/Tingsters/tracetoon).</sub>'
+          : '');
   if (disclosure) content = `${content.trim()}\n\n${disclosure}`;
 
   // Only what's read back later: the comic's style (so the next one differs)
@@ -236,6 +262,27 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     renderedAt: new Date().toISOString(),
   };
   writeFileSync(join(run.dir, 'final-body.md'), body, 'utf8');
+  writeFileSync(join(run.dir, 'changes.patch'), packet.patch, 'utf8');
+  const reviewPacket = reviewInput({
+    title,
+    body,
+    guidance,
+    digest,
+    diffSha256: packet.request.diffSha256,
+    headSha: packet.request.headSha,
+    authorText: readText(run, 'author.md'),
+    comicSha256: comicSha,
+  });
+  writeJson(run, 'review-input.json', reviewPacket);
+  const contributionReview = loadReview(
+    run,
+    reviewPacket,
+    guidance,
+    digest,
+    packet.patch,
+    composition.issues,
+  );
+  writeJson(run, 'review-result.json', contributionReview);
   // Advisory: check the description's claims against the captured evidence.
   const claims = checkClaims({
     title,
@@ -273,6 +320,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       outline: writeYourself ? outline : undefined,
       comicHeldBack: mediaBanned && !!renderedComic(run),
       digest,
+      contributionReview,
       share: comic
         ? {
             image: comicData,
@@ -294,6 +342,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       previewPath,
       previewUrl: fileUrl(previewPath),
       titleChecks: titleFindings,
+      contributionReview: reviewSummary(contributionReview),
+      reviewInputPath: join(run.dir, 'review-input.json'),
+      reviewFingerprint: reviewPacket.fingerprint,
       ...(titleNote ? { titleNote } : {}),
       claims: {
         ...claimSummary(claims),
@@ -320,6 +371,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         titleNote ? `Note: ${titleNote}` : '',
         titleLine(titleFindings),
         claimLine(claims),
+        reviewLine(contributionReview),
         notes.length
           ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`
           : '',
@@ -386,6 +438,7 @@ export function previewCmd(
   const { run } = loadRun(cwd, opts.run);
   const approval = readJson<Approval>(run, 'approval.json');
   const body = readText(run, 'final-body.md');
+  const contributionReview = readJson<ReviewResult>(run, 'review-result.json');
   if (!approval || body === undefined)
     throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
   const htmlPath = join(run.dir, 'preview.html');
@@ -403,6 +456,7 @@ export function previewCmd(
       comic: approval.comicFile ?? null,
       previewPath: htmlPath,
       previewUrl: fileUrl(htmlPath),
+      contributionReview: contributionReview && reviewSummary(contributionReview),
     },
     () =>
       [
@@ -410,6 +464,7 @@ export function previewCmd(
         `Title: ${approval.title}`,
         '-'.repeat(72),
         shown,
+        contributionReview ? reviewLine(contributionReview) : '',
         '-'.repeat(72),
         approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
         `Preview (Ctrl+click to open): ${fileUrl(htmlPath)}`,

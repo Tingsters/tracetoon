@@ -38,7 +38,7 @@ export function findPrTemplate(root: string): PrTemplate | undefined {
   return undefined;
 }
 
-const POLICY_FILES = [
+export const POLICY_FILES = [
   'AI_POLICY.md',
   '.github/AI_POLICY.md',
   'AGENTS.md',

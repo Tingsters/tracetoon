@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { writeResearchPacket } from '../contribution/guidance.ts';
 import { loadConfig } from '../config.ts';
 import { buildDigest, type TraceDigest } from '../digest/build.ts';
 import { findPrTemplate, detectAiPolicy } from '../github/repoContext.ts';
@@ -122,13 +123,17 @@ export function contextCmd(
   cwd: string,
   opts: OutOpts & { run?: string; offline?: boolean },
 ): void {
-  const truth = prTruth(cwd, { noGh: opts.offline });
+  let truth = prTruth(cwd, { noGh: opts.offline });
   let run;
   try {
     run = findRun(truth.gitDir, opts.run);
   } catch {
     run = newRun(truth.gitDir);
   }
+  const digest = readJson<TraceDigest>(run, 'digest.json');
+  if (digest?.pr.base && digest.pr.base !== truth.base)
+    truth = prTruth(cwd, { base: digest.pr.base, noGh: opts.offline });
+  const contribution = writeResearchPacket(run, truth, opts.offline);
   const template = findPrTemplate(truth.toplevel);
   const policy = detectAiPolicy(truth.toplevel);
   const titleRules = readTitleRules(truth.toplevel, {
@@ -164,6 +169,7 @@ export function contextCmd(
     config,
     comic: { recentStyles: recent },
     titleRules,
+    contribution,
   };
   writeJson(run, 'context.json', ctx);
   emit(
@@ -187,6 +193,7 @@ export function contextCmd(
               ]
             : []),
         `Template: ${template ? template.path : 'none'}`,
+        `Contribution research: ${contribution.sourceSeeds.length} source seed(s); guidance-request.json and changes.patch written${contribution.offline ? ' (offline: do not browse external links)' : ''}.`,
         `AI policy: ${policy.verdict}${policy.excerpts.length ? ` (${policy.excerpts.length} mention(s))` : ''}`,
         ...policy.excerpts.slice(0, 5).map((e) => `  ${e.file}:${e.line}: ${e.text}`),
         `yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting} | comic: ${config.comic ? 'on' : 'off'}`,

@@ -419,10 +419,12 @@ describe('comic end to end', () => {
       cli(repo.root, 'context', '--offline', '--run', runDir.split(/[\\/]/).pop()!).code,
     ).toBe(0);
     env.TRACETOON_CODEX_BIN = FAKE_CODEX;
-    expect(cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent').code).toBe(
-      0,
-    );
-    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(1);
+    expect(art.json.error).toContain('prohibits AI-generated media');
+    // A comic made before the policy was collected is also withheld at render.
+    mkdirSync(join(runDir, 'out'), { recursive: true });
+    writeFileSync(join(runDir, 'out', 'comic.png'), PIXEL);
 
     const r = cli(repo.root, 'render');
     expect(r.code).toBe(0);

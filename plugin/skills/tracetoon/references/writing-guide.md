@@ -93,6 +93,14 @@ they wrote it). Don't restructure it into the shape below.
 Follow them: the template's sections in its order, and any rules in CONTRIBUTING
 or AGENTS.md about PR text. They take priority over everything below.
 
+In the three-role workflow, the drafter also receives validated `guidance.json`.
+Follow each applicable source-backed requirement with its scope and exceptions.
+Preserve human-only sections and missing-evidence gaps. The independent reviewer
+checks the full rendered PR afterward; route corrections through the drafter.
+See [contribution-workflow.md](contribution-workflow.md) for the role prompts and
+handoff contracts. A recommendation is not a mandatory submission gate, and a
+project's explicit testing exception must not become a blanket local-test rule.
+
 ## Shape it by the kind of change
 
 First decide what kind of change this is, then answer the questions that matter
