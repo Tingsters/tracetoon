@@ -47,6 +47,13 @@ prepare`, supply separate baseline and three-phase drafts, then run
 Its lexical probes are smoke checks, not a semantic quality score. Evaluation
 artifacts stay under `.git/tracetoon/eval-contributions/`.
 
+For visual comic changes, `bun scripts/eval-comics.ts prepare` creates six
+synthetic PR scenarios. Draw and render each printed run through the normal
+approved image route, then run `bun scripts/eval-comics.ts gallery` for a local
+gallery at PR-column and phone widths, with schematic overlay geometry proofs.
+Inspect actual hierarchy, lettering, story fidelity and payoff; passing prompt
+tests is not a visual quality result. Gallery artifacts stay under `.git/`.
+
 ## Releasing
 
 Bump the version in `package.json`, `src/version.ts`,

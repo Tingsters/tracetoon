@@ -6,7 +6,7 @@ import { findPrTemplate, detectAiPolicy } from '../github/repoContext.ts';
 import { decodeMeta, humanPart, regionContent, regionEdited } from '../github/body.ts';
 import { prTruth } from '../git/pr.ts';
 import { scan } from '../pipeline.ts';
-import { recentStyles } from '../github/history.ts';
+import { recentComics } from '../github/history.ts';
 import { describeTitleRules, readTitleRules } from '../github/titleRules.ts';
 import { findRun, newRun, readJson, writeJson } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
@@ -155,9 +155,8 @@ export function contextCmd(
     repo: truth.remote ? `${truth.remote.owner}/${truth.remote.name}` : undefined,
   });
   const config = loadConfig(truth.toplevel);
-  // The only thing read back from earlier PRs: their comic styles, so this one
-  // differs. Skipped when comics are off.
-  const recent = config.comic ? recentStyles(truth, { offline: opts.offline }) : [];
+  // Compact creative choices help this comic differ. Skipped when comics are off.
+  const recent = config.comic ? recentComics(truth, { offline: opts.offline }) : [];
   const ctx = {
     repo: truth.remote ? `${truth.remote.owner}/${truth.remote.name}` : null,
     head: truth.head,
@@ -181,7 +180,10 @@ export function contextCmd(
         }
       : null,
     config,
-    comic: { recentStyles: recent },
+    comic: {
+      recentStyles: recent.flatMap((c) => (c.style ? [c.style] : [])),
+      recentComics: recent,
+    },
     titleRules,
     contribution,
   };
@@ -216,7 +218,12 @@ export function contextCmd(
           ? ''
           : config.style && config.style !== 'auto'
             ? `Comic style: pinned to ${config.style}`
-            : `Comic: invent this PR's own characters, and pick a style unlike the recent ones (${recent.join('; ') || 'none yet'})`,
+            : `Comic: choose the story, composition and cast; compare recent creative choices (${
+                recent
+                  .map((c) => c.style)
+                  .filter(Boolean)
+                  .join('; ') || 'none yet'
+              })`,
       ]
         .filter(Boolean)
         .join('\n'),

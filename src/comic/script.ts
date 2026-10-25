@@ -1,7 +1,17 @@
 /** Checks a comic script before any art is made. */
 import { formatById, FORMATS } from './formats.ts';
 import { styleById } from './styles.ts';
-import { ASPECTS, BEATS, EXPRESSIONS, PALETTES, type ComicScript } from './types.ts';
+import {
+  ASPECTS,
+  BEATS,
+  EXPRESSIONS,
+  PALETTES,
+  CAST_KINDS,
+  STYLE_FAMILIES,
+  type ComicScript,
+  type ComicSummary,
+} from './types.ts';
+import { comicSummary, compositionProblems, visibleHeadline } from './composition.ts';
 
 /** Words per text item on a page: the model letters them, so keep them short. */
 export const MAX_ITEM_WORDS = 12;
@@ -23,6 +33,7 @@ export interface CheckOpts {
   recentStyles?: string[];
   /** A style the user pinned in config (always allowed, never a repeat). */
   pinnedStyle?: string;
+  recentComics?: ComicSummary[];
 }
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
@@ -31,7 +42,7 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 /** Every piece of text the model is asked to letter, in reading order. */
 export function pageText(s: ComicScript): string[] {
   return [
-    s.headline ?? s.title,
+    visibleHeadline(s),
     ...s.panels.flatMap((p) => (p.dialogue ?? []).map((d) => d.text)),
   ].filter((t) => t?.trim());
 }
@@ -59,7 +70,7 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
 
   const format = formatById(s.format);
   if (!format) bad('format', `must be one of ${FORMATS.map((f) => f.id).join(', ')}`);
-  if (s.format === 'custom' && !s.layout?.trim())
+  if (s.format === 'custom' && !s.layout?.trim() && !s.composition)
     bad('layout', 'is required for a custom format: describe the page');
   if (!Array.isArray(s.panels) || s.panels.length < 1 || s.panels.length > 6) {
     bad('panels', 'must have 1 to 6 panels');
@@ -75,6 +86,11 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
     );
   if (s.aspect && !ASPECTS.includes(s.aspect))
     bad('aspect', `must be one of ${ASPECTS.join(', ')}`);
+  out.push(...compositionProblems(s as ComicScript));
+  if (s.styleFamily && !STYLE_FAMILIES.includes(s.styleFamily))
+    bad('styleFamily', `must be ${STYLE_FAMILIES.join(', ')}`);
+  if (s.headline !== undefined && typeof s.headline !== 'string')
+    bad('headline', 'must be text');
 
   // Any art style: an idea by id, or the agent's own words.
   if (typeof s.style !== 'string' || !s.style.trim())
@@ -96,7 +112,7 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
   const idea = styleById(s.style);
   if (idea && s.palette && !idea.palettes.includes(s.palette))
     warn('palette', `${idea.name} is usually ${idea.palettes.join(' or ')}`);
-  const headline = s.headline ?? s.title ?? '';
+  const headline = visibleHeadline(s as ComicScript);
   if (words(headline) > MAX_HEADLINE_WORDS)
     bad('headline', `has ${words(headline)} words; keep it to ${MAX_HEADLINE_WORDS}`);
 
@@ -111,6 +127,8 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
     else names.add(c.name.toLowerCase());
     if (!c?.description?.trim())
       bad(`characters[${i}].description`, 'describe what this character looks like');
+    if (c?.kind !== undefined && !CAST_KINDS.includes(c.kind))
+      bad(`characters[${i}].kind`, `must be ${CAST_KINDS.join(', ')}`);
   }
   if (names.size > MAX_CHARACTERS)
     bad('characters', `at most ${MAX_CHARACTERS} characters per comic`);
@@ -164,12 +182,53 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
         bad(`${w}.text`, 'must not contain links or @mentions');
     }
   });
+  if (!out.some((p) => p.severity !== 'warning')) {
+    const current = comicSummary(s as ComicScript);
+    const recent = (opts.recentComics ?? []).slice(0, 5);
+    if (
+      current.layoutFamily &&
+      recent
+        .slice(0, 3)
+        .filter(
+          (r) =>
+            r.layoutFamily === current.layoutFamily &&
+            r.panelCount === current.panelCount &&
+            r.titleTreatment === current.titleTreatment,
+        ).length >= 2
+    )
+      warn(
+        'composition',
+        'This layout, panel count and title treatment repeat recent comics. Consider a different concept; keep it if the story earns it.',
+      );
+    if (
+      current.castKinds?.includes('creature') &&
+      !current.castKinds.includes('human') &&
+      recent.slice(0, 2).length === 2 &&
+      recent
+        .slice(0, 2)
+        .every((r) => r.castKinds?.includes('creature') && !r.castKinds.includes('human'))
+    )
+      warn(
+        'characters',
+        'Recent comics already used creature-led casts. Consider people, objects or a characterless metaphor; keep creatures when they strengthen this gag.',
+      );
+    if (
+      !opts.pinnedStyle &&
+      current.styleFamily &&
+      recent.slice(0, 3).filter((r) => r.styleFamily === current.styleFamily).length >= 2
+    )
+      warn(
+        'styleFamily',
+        'This broad art family repeats recent comics, even if the style name differs. Consider another visual treatment.',
+      );
+  }
   return out;
 }
 
 /** A plain-text transcript of the comic for the PR body (accessibility). */
 export function transcript(script: ComicScript): string {
-  const head = script.headline ? `**${script.headline}**\n\n` : '';
+  const shown = script.composition ? visibleHeadline(script) : script.headline;
+  const head = shown ? `**${shown}**\n\n` : '';
   return (
     head +
     script.panels

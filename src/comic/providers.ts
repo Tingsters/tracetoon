@@ -21,6 +21,13 @@ import { join } from 'node:path';
 import { formatById } from './formats.ts';
 import { paletteText, styleById, styleLettering, styleText } from './styles.ts';
 import {
+  compositionPrompt,
+  frameAspect,
+  pageAspect,
+  resolveComposition,
+  visibleHeadline,
+} from './composition.ts';
+import {
   BEAT_MEANING,
   type Aspect,
   type ComicScript,
@@ -76,7 +83,7 @@ export type Readiness = 'ready' | 'not ready' | 'unknown';
 
 /** Things image models must avoid, on every comic. */
 export const NEGATIVE =
-  'no real people, no celebrity likenesses, no logos or brand marks, no watermarks, no signatures';
+  'fictional characters only (human characters are welcome); no identifiable real-person or celebrity likenesses, no logos or brand marks, no watermarks, no signatures';
 
 function characterLine(script: ComicScript, name: string): string {
   const c = script.characters?.find((x) => x.name.toLowerCase() === name.toLowerCase());
@@ -102,6 +109,7 @@ export function scriptStyle(script: ComicScript): string {
 export function artPrompt(panel: Panel, index: number, script: ComicScript): string {
   const people = who(panel, script);
   const count = script.panels.length;
+  const frame = resolveComposition(script)?.frames[index];
   return [
     `${scriptStyle(script)}.`,
     panel.beat
@@ -111,7 +119,9 @@ export function artPrompt(panel: Panel, index: number, script: ComicScript): str
     people ? `Characters: ${people}.` : '',
     panel.camera ? `Camera: ${panel.camera} shot.` : '',
     panel.artPrompt ? `${panel.artPrompt}.` : '',
-    'Square image. Keep the top third as plain, uncluttered background so speech bubbles can be added later. No text, no letters.',
+    script.composition
+      ? `A ${SHAPE[frameAspect(script, index)]} panel image. Keep this normalized area plain for later lettering: ${JSON.stringify(frame?.textBox ?? { x: 0, y: 0, w: 1, h: 0.4 })}. Compose the subject outside it. No text, no letters.`
+      : 'Square image. Keep the top third as plain, uncluttered background so speech bubbles can be added later. No text, no letters.',
     'If a reference image is given, keep every character and the art style consistent with it.',
     `Strictly: ${NEGATIVE}.`,
   ]
@@ -150,8 +160,8 @@ function textLine(d: Dialogue): string {
  */
 export function pagePrompt(script: ComicScript): string {
   const format = formatById(script.format);
-  const aspect = script.aspect ?? format?.aspect ?? '4:3';
-  const headline = script.headline ?? script.title;
+  const aspect = pageAspect(script);
+  const headline = visibleHeadline(script);
   const cast = (script.characters ?? []).map((c) => `${c.name}: ${c.description}`);
   const panels = script.panels.map((p, i) => {
     const people = p.characters.map(
@@ -172,15 +182,27 @@ export function pagePrompt(script: ComicScript): string {
   return [
     `A finished comic page, ${SHAPE[aspect]} image.`,
     `Art style: ${scriptStyle(script)}.`,
-    format && format.id !== 'custom' ? `Format: ${format.name}. ${format.layout}.` : '',
+    !script.composition && format && format.id !== 'custom'
+      ? `Format: ${format.name}. ${format.layout}.`
+      : '',
     script.layout ? `Layout: ${script.layout}.` : '',
+    compositionPrompt(script),
     cast.length
       ? `Characters (draw each one the same way in every panel): ${cast.join('; ')}.`
       : '',
-    `Headline, lettered big and bold as part of the design: "${headline}".`,
+    !script.composition
+      ? `Headline, lettered big and bold as part of the design: "${headline}".`
+      : '',
     `${script.panels.length === 1 ? 'The scene' : `The ${script.panels.length} panels, in reading order`}:`,
     ...panels,
-    `Lettering: ${styleLettering(script.style)}. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
+    `Lettering: ${
+      script.composition
+        ? styleLettering(script.style)
+            .split(',')
+            .filter((part) => !/headline|title/i.test(part))
+            .join(',') || 'clear comic lettering suited to this art'
+        : styleLettering(script.style)
+    }. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
     `Strictly: ${NEGATIVE}.`,
   ]
     .filter(Boolean)

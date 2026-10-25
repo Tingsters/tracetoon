@@ -1,7 +1,7 @@
 /**
  * The comic's data: one page brief per PR. Each comic invents its own
- * characters and picks its own art style; nothing is carried from one PR to
- * the next.
+ * characters and picks its own art direction. Only compact creative choices
+ * are read back to notice repetition; characters are never carried forward.
  */
 
 export type Beat = 'ki' | 'sho' | 'ten' | 'ketsu';
@@ -41,6 +41,74 @@ export interface Character {
   name: string;
   /** What it looks like, for the image model. */
   description: string;
+  /** Creative category, not an identity inferred from the description. */
+  kind?: CastKind;
+}
+
+export type CastKind = 'human' | 'creature' | 'object';
+export const CAST_KINDS: CastKind[] = ['human', 'creature', 'object'];
+export type StyleFamily =
+  | 'ink'
+  | 'flat-color'
+  | 'painted'
+  | 'print'
+  | 'dimensional'
+  | 'pixel'
+  | 'technical'
+  | 'custom';
+export const STYLE_FAMILIES: StyleFamily[] = [
+  'ink',
+  'flat-color',
+  'painted',
+  'print',
+  'dimensional',
+  'pixel',
+  'technical',
+  'custom',
+];
+export const LAYOUT_FAMILIES = [
+  'single',
+  'comparison',
+  'sequence',
+  'vertical',
+  'asymmetric',
+  'hero-inset',
+  'diagonal',
+  'custom',
+] as const;
+export type LayoutFamily = (typeof LAYOUT_FAMILIES)[number];
+export type TitleMode = 'none' | 'integrated' | 'heading';
+/** Coordinates are fractions of the page, before the branding footer. */
+export interface FrameBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+export interface PanelFrame extends FrameBounds {
+  /** Polygon points in the frame's own 0–1 space. */
+  clip?: [number, number][];
+  border?: 'line' | 'none';
+  /** Safe lettering area in the frame's own 0–1 space. Required for polygon dialogue. */
+  textBox?: FrameBounds;
+  /** This later frame deliberately sits inside an earlier frame. */
+  inset?: boolean;
+}
+export interface Composition {
+  family: LayoutFamily;
+  /** In story/reading order. Omit to use the family's geometry (except custom). */
+  frames?: PanelFrame[];
+  title: { mode: TitleMode; box?: FrameBounds };
+}
+/** Only these compact creative choices are read back from published PRs. */
+export interface ComicSummary {
+  style?: string;
+  styleFamily?: StyleFamily;
+  layoutFamily?: LayoutFamily;
+  panelCount?: number;
+  titleTreatment?: TitleMode;
+  /** Missing means unknown; [] means deliberately characterless. */
+  castKinds?: CastKind[];
 }
 
 /** A character's place in one panel. */
@@ -94,6 +162,12 @@ export interface ComicScript {
   format: string;
   /** How the page is composed, in the agent's words. */
   layout?: string;
+  /** Shared geometry for model lettering and overlay lettering; absent means legacy layout. */
+  composition?: Composition;
+  /** A broad visual family so renaming a style does not disguise repetition. */
+  styleFamily?: StyleFamily;
+  /** Local art-direction rationale; never included in public PR metadata. */
+  designReason?: string;
   /** Page shape. Default: the format's. */
   aspect?: Aspect;
   /** Any art style: an idea from styles.ts by id, or the agent's own description. */

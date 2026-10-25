@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ComicSummary } from '../comic/types.ts';
 /**
  * The part of a PR body Tracetoon owns. Everything between the start and end
  * markers is ours to replace; anything a human wrote outside them is kept.
@@ -12,6 +13,8 @@ export interface PrMeta {
   v: 1;
   /** The comic's art style, so later comics in the repo pick a different one. */
   style?: string;
+  /** Compact creative choices only: no character descriptions, plots or trace data. */
+  comic?: Omit<ComicSummary, 'style'>;
   /** Hash of the block's text as posted, to notice later edits on GitHub. */
   contentSha?: string;
   /** Hash of the title as posted, so a title someone edits on GitHub is kept. */

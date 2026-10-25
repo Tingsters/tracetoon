@@ -93,6 +93,12 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > requirements without inventing it. Use comic-guide.md for any requested comic
 > script, respecting media restrictions. Write artifacts only; do not publish.
 
+For the comic, the drafter uses `comic-direction.md` to compare three short
+concepts in local `comic-design.json`, then writes one selected `comic.json` with
+explicit composition and deliberate cast. The concepts are text, not extra
+image calls. The reviewer inspects the actual rendered image and its readable
+story/punchline, not merely whether the prompt requested variety.
+
 Pass the drafter the researcher's validated guidance, `digest.json`, `context.json`,
 `changes.patch`, relevant code read access, and `author.md` when present. For a
 committed PR with a dirty checkout, inspect code at the submitted revision rather
