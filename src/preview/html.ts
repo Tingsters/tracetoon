@@ -145,7 +145,7 @@ export function renderPreviewHtml(input: {
 :root{--bg:#fff;--fg:#1f2328;--muted:#59636e;--border:#d1d9e0;--code:#f6f8fa;--accent:#0969da;--warn:#9a6700;--ok:#1a7f37}
 @media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#9198a1;--border:#3d444d;--code:#151b23;--accent:#4493f8;--warn:#d29922;--ok:#3fb950}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
-main{max-width:860px;margin:0 auto;padding:24px 16px}
+main{max-width:860px;margin:0 auto;padding:24px 16px;overflow-wrap:anywhere}
 h1.title{font-size:28px;font-weight:400;margin:0 0 8px}
 .meta{color:var(--muted);font-size:14px;margin-bottom:16px}
 .card{border:1px solid var(--border);border-radius:6px;padding:16px 24px}

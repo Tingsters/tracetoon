@@ -79,4 +79,17 @@ describe('reported comic content review', () => {
     });
     expect(comicObservationInput({ ...input, comic: undefined })).toBeUndefined();
   });
+  test('rejects non-string JSON labels instead of coercing arrays around evidence rules', () => {
+    for (const state of [['satisfied'], ['inapplicable'], ['uncertain'], null, 0, {}]) {
+      const value: any = report();
+      value.checks.payoff = { state, reason: 'Not an actual string state.', panels: [] };
+      expect(() => parseComicReview(value)).toThrow('Invalid comicReview payoff');
+    }
+    const value: any = report();
+    value.correction = {
+      target: ['premise'],
+      instruction: 'A coercible but invalid target.',
+    };
+    expect(() => parseComicReview(value)).toThrow('correction needs a target');
+  });
 });

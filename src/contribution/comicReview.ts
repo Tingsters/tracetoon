@@ -28,8 +28,9 @@ export function parseComicReview(value: unknown): ComicReview {
     const check = value.checks[name];
     requireThat(
       record(check) &&
+        typeof check.state === 'string' &&
         ['satisfied', 'needs-revision', 'uncertain', 'inapplicable'].includes(
-          String(check.state),
+          check.state,
         ) &&
         nonempty(check.reason),
       `Invalid comicReview ${name} assessment.`,
@@ -51,9 +52,8 @@ export function parseComicReview(value: unknown): ComicReview {
   if (value.correction !== undefined)
     requireThat(
       record(value.correction) &&
-        ['premise', 'script', 'art', 'lettering'].includes(
-          String(value.correction.target),
-        ) &&
+        typeof value.correction.target === 'string' &&
+        ['premise', 'script', 'art', 'lettering'].includes(value.correction.target) &&
         nonempty(value.correction.instruction),
       'comicReview correction needs a target and concrete instruction.',
     );
