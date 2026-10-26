@@ -9,8 +9,9 @@ import {
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { WORDMARK, previewHandoff } from '../src/review/handoff.ts';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { marked } from 'marked';
+import { WORDMARK, previewHandoff, terminalHandoff } from '../src/review/handoff.ts';
 import {
   activePendingRuns,
   pendingDrafts,
@@ -24,7 +25,7 @@ import { prTruth } from '../src/git/pr.ts';
 import { newRun, pruneRuns, KEEP_RUNS } from '../src/run.ts';
 import { git } from '../src/util/exec.ts';
 import { decide } from '../src/hook/prHook.ts';
-import type { Approval } from '../src/commands/publish.ts';
+import { fileUrl, type Approval } from '../src/commands/publish.ts';
 import { makeRepo, tempDir } from './helpers.ts';
 
 setDefaultTimeout(90_000);
@@ -119,8 +120,77 @@ describe('compact review handoff', () => {
     const prefix = out.markdown.slice(0, out.markdown.indexOf(url));
     expect((prefix.match(/```/g) ?? []).length % 2).toBe(0);
     expect(out.markdown).toContain(`\n\n${url}\n\n`);
+    expect(out.markdown).toContain(`**[OPEN YOUR LOCAL PR PREVIEW](<${url}>)**`);
     expect(out.markdown).toContain('Enable Tracetoon yolo mode for future PRs');
     expect(out.terminal).toContain('tracetoon config set yolo true');
+  });
+
+  test('Markdown and terminal links preserve complete Windows, macOS and Linux file URLs', () => {
+    const urls = [
+      'file:///C:/Users/Sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
+      'file:///Users/sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
+      'file:///home/sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
+    ];
+    for (const url of urls) {
+      const handoff = previewHandoff({
+        root: tempDir(),
+        command: 'tracetoon',
+        url,
+        run: 'run',
+      });
+      const html = marked.parse(handoff.markdown) as string;
+      expect(html).toContain(`<a href="${url}">OPEN YOUR LOCAL PR PREVIEW</a>`);
+      expect(handoff.markdown).toContain(`\n\n${url}\n\n`);
+      const styled = terminalHandoff(handoff, url, {
+        isTTY: true,
+        env: { TERM: 'xterm-256color' },
+      });
+      expect(styled).toContain(
+        `\u001b]8;;${url}\u001b\\\u001b[4;94m${url}\u001b[0m\u001b]8;;\u001b\\`,
+      );
+      const plain = styled
+        .replace(/\u001b\]8;;[^\u001b]*\u001b\\/g, '')
+        .replace(/\u001b\[[\d;]*m/g, '');
+      expect(plain).toBe(handoff.terminal);
+      expect(JSON.stringify(handoff)).not.toContain('\\u001b');
+    }
+  });
+
+  test('native file URLs resolve to the actual preview, including special characters', () => {
+    const root = tempDir();
+    const folder = join(root, 'My project (draft) #100% café $& $$');
+    mkdirSync(folder);
+    const path = join(folder, 'preview.html');
+    writeFileSync(path, '<title>Local preview</title>');
+    const url = fileUrl(path);
+    expect(url).toContain('%20');
+    expect(url).toContain('%23');
+    expect(url).toContain('%25');
+    expect(url).toContain('caf%C3%A9');
+    expect(fileURLToPath(url)).toBe(resolve(path));
+    expect(readFileSync(fileURLToPath(url), 'utf8')).toContain('Local preview');
+  });
+
+  test('keeps redirected output and color-disabled terminals free of control sequences', () => {
+    const url = 'file:///preview.html';
+    const handoff = previewHandoff({
+      root: tempDir(),
+      command: 'tracetoon',
+      url,
+      run: 'run',
+      pending: true,
+    });
+    expect(handoff.markdown).toContain(`**[You have a PR awaiting review](<${url}>)**`);
+    for (const display of [
+      { isTTY: false, env: { TERM: 'xterm-256color', FORCE_COLOR: '1' } },
+      { isTTY: true, env: { NO_COLOR: '1' } },
+      { isTTY: true, env: { NO_COLOR: '0' } },
+      { isTTY: true, env: { TERM: 'dumb' } },
+    ])
+      expect(terminalHandoff(handoff, url, display)).toBe(handoff.terminal);
+    expect(
+      terminalHandoff(handoff, url, { isTTY: true, env: { NO_COLOR: '' } }),
+    ).toContain('\u001b[4;94m');
   });
 
   test('shows effective YOLO state and never suggests an ineffective user toggle', () => {
