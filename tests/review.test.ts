@@ -11,7 +11,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { marked } from 'marked';
-import { WORDMARK, previewHandoff, terminalHandoff } from '../src/review/handoff.ts';
+import {
+  WORDMARK,
+  localFileLink,
+  previewHandoff,
+  terminalHandoff,
+} from '../src/review/handoff.ts';
 import {
   activePendingRuns,
   pendingDrafts,
@@ -103,7 +108,7 @@ function prepared() {
 }
 
 describe('compact review handoff', () => {
-  test('keeps the exact two-line logo and a standalone clickable URL at the end', () => {
+  test('keeps the exact two-line logo and one linked preview label outside its fence', () => {
     const root = tempDir();
     const url = pathToFileURL(join(root, 'a folder with spaces', 'preview.html')).href;
     const out = previewHandoff({
@@ -116,16 +121,19 @@ describe('compact review handoff', () => {
       '_|_ ._  _   _  _  _|_  _   _   _',
       ' |_ |  (_| (_ (/_  |_ (_) (_) | |',
     ]);
-    expect(out.terminal).toContain(`\nOPEN YOUR LOCAL PR PREVIEW\n${url}\n`);
-    const prefix = out.markdown.slice(0, out.markdown.indexOf(url));
+    expect(out.terminal).toContain(`\nOPEN YOUR LOCAL PR PREVIEW: ${url}\n`);
+    const prefix = out.markdown.slice(0, out.markdown.indexOf('**['));
     expect((prefix.match(/```/g) ?? []).length % 2).toBe(0);
-    expect(out.markdown).toContain(`\n\n${url}\n\n`);
-    expect(out.markdown).toContain(`**[OPEN YOUR LOCAL PR PREVIEW](<${url}>)**`);
+    expect(out.markdown).toContain(
+      `**${localFileLink('OPEN YOUR LOCAL PR PREVIEW', url)}**`,
+    );
+    expect(out.markdown).not.toContain('file:');
+    expect(out.markdown.match(/preview\.html/g)).toHaveLength(1);
     expect(out.markdown).toContain('Enable Tracetoon yolo mode for future PRs');
     expect(out.terminal).toContain('tracetoon config set yolo true');
   });
 
-  test('Markdown and terminal links preserve complete Windows, macOS and Linux file URLs', () => {
+  test('chat uses absolute file targets on every OS; terminal hyperlinks the label with the full URI', () => {
     const urls = [
       'file:///C:/Users/Sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
       'file:///Users/sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
@@ -139,19 +147,29 @@ describe('compact review handoff', () => {
         run: 'run',
       });
       const html = marked.parse(handoff.markdown) as string;
-      expect(html).toContain(`<a href="${url}">OPEN YOUR LOCAL PR PREVIEW</a>`);
-      expect(handoff.markdown).toContain(`\n\n${url}\n\n`);
+      const target = new URL(url).pathname.replace(/^\/([a-z]:\/)/i, '$1');
+      // An ordinary HTML anchor with file: passes marked but can be disabled by
+      // the chat host. Assert its supported absolute-path format separately.
+      expect(handoff.markdown).toContain(`](<${target}>)`);
+      expect(target).toMatch(/^(?:[a-z]:\/|\/)/i);
+      expect(handoff.markdown).not.toContain('file:');
+      expect(html).toContain(
+        `<a href="${target}">OPEN YOUR LOCAL PR PREVIEW</a>`,
+      );
+      expect(decodeURIComponent(target)).toContain(
+        'My Project (draft)/café #100% $& $$/preview.html',
+      );
       const styled = terminalHandoff(handoff, url, {
         isTTY: true,
         env: { TERM: 'xterm-256color' },
       });
       expect(styled).toContain(
-        `\u001b]8;;${url}\u001b\\\u001b[4;94m${url}\u001b[0m\u001b]8;;\u001b\\`,
+        `\u001b]8;;${url}\u001b\\\u001b[4;94mOPEN YOUR LOCAL PR PREVIEW\u001b[0m\u001b]8;;\u001b\\`,
       );
       const plain = styled
         .replace(/\u001b\]8;;[^\u001b]*\u001b\\/g, '')
         .replace(/\u001b\[[\d;]*m/g, '');
-      expect(plain).toBe(handoff.terminal);
+      expect(plain).toBe(handoff.terminal.replace(`: ${url}`, ''));
       expect(JSON.stringify(handoff)).not.toContain('\\u001b');
     }
   });
@@ -169,6 +187,21 @@ describe('compact review handoff', () => {
     expect(url).toContain('caf%C3%A9');
     expect(fileURLToPath(url)).toBe(resolve(path));
     expect(readFileSync(fileURLToPath(url), 'utf8')).toContain('Local preview');
+    const link = localFileLink('Preview', url);
+    const target = link.slice(link.indexOf('(<') + 2, -2);
+    expect(readFileSync(decodeURIComponent(target), 'utf8')).toContain('Local preview');
+  });
+
+  test('ancillary file links share the path format and preserve network paths and label punctuation', () => {
+    expect(localFileLink('Comic [draft]', 'file:///home/sam/comic.png')).toBe(
+      '[Comic \\[draft\\]](</home/sam/comic.png>)',
+    );
+    expect(localFileLink('Also ready', 'file://server/share/preview.html')).toBe(
+      '[Also ready](<//server/share/preview.html>)',
+    );
+    expect(() => localFileLink('Invalid', 'https://example.com/preview.html')).toThrow(
+      'Expected a local file URL',
+    );
   });
 
   test('keeps redirected output and color-disabled terminals free of control sequences', () => {
@@ -180,7 +213,9 @@ describe('compact review handoff', () => {
       run: 'run',
       pending: true,
     });
-    expect(handoff.markdown).toContain(`**[You have a PR awaiting review](<${url}>)**`);
+    expect(handoff.markdown).toContain(
+      '**[You have a PR awaiting review](</preview.html>)**',
+    );
     for (const display of [
       { isTTY: false, env: { TERM: 'xterm-256color', FORCE_COLOR: '1' } },
       { isTTY: true, env: { NO_COLOR: '1' } },

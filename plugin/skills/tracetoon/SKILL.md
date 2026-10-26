@@ -233,13 +233,18 @@ that bypass on your own initiative.
     |_ |  (_| (_ (/_  |_ (_) (_) | |
    ```
 
-   The complete `previewUrl` must remain on its own line outside the logo's
-   fence, never shortened or wrapped in backticks. Put diagnostics and local
-   report links before the handoff so the review link is easy to find.
-   Preserve the prominent Markdown link in the handoff as well as its full URL;
-   the host renders it using its link color. Do not turn the linked label back
-   into plain text. The URL points to the preview on this user's own machine
-   on Windows, macOS or Linux.
+   Preserve the prominent linked label exactly, outside the logo's fence. It
+   uses an absolute file-path Markdown target so the host can open the file;
+   `file://` Markdown anchors may look colored without being actionable. Do not
+   append a duplicate bare URL below it. The host chooses the link's color.
+   Put diagnostics and local report links before the handoff so the review link
+   is easy to find. Every ancillary Tracetoon artifact (including an "Also ready"
+   list) must also use a descriptive Markdown link with an absolute file-path
+   target, never a `file://` Markdown anchor or a path inside backticks. Use the
+   same format as the handoff (`localFileLink` in `src/review/handoff.ts`): retain
+   URI escapes for reserved filename characters, drop `file://`, and remove the
+   leading slash before a Windows drive letter. This works for Windows, macOS
+   and Linux paths. Keep `previewUrl` unchanged for browser/terminal transport.
    The comic is embedded in the page, so it shows in any browser.
    - If code changed, refresh `digest --run <id>`, context, description, review
      and preview before asking for approval. Rendering an old digest cannot
