@@ -40,6 +40,8 @@ bun run test
   runs the complete source suite with up to four fresh Bun processes. Each file
   gets a new process so native state cannot leak between files; tests within each
   file remain sequential. `bun run typecheck && bun run test`
+  macOS runs one file at a time because the pinned Bun version's subprocess-heavy
+  suites fail intermittently under concurrent macOS load. Full coverage is kept.
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
 - `bun run test:bundled` exercises the shipped bundle; `bun run build` followed
   by `bun run test:compiled` rehearses publication against the native executable.

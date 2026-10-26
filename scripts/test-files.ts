@@ -3,6 +3,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { privateRepoPath } from '../src/util/repoFiles.ts';
 
+// Bun 1.3.14's subprocess-heavy suites fail intermittently under concurrent
+// macOS load, including with fresh processes. Keep full coverage there serial.
+export const TEST_FILE_WORKERS = process.platform === 'darwin' ? 1 : 4;
+
 export function sourceTestFiles(root: string): string[] {
   const result = spawnSync(
     'git',
@@ -42,8 +46,8 @@ export async function runTestFiles(options: {
 }) {
   if (
     !options.files.length ||
-    !Number.isInteger(options.workers ?? 4) ||
-    (options.workers ?? 4) < 1
+    !Number.isInteger(options.workers ?? TEST_FILE_WORKERS) ||
+    (options.workers ?? TEST_FILE_WORKERS) < 1
   )
     throw new Error('Test execution requires files and a positive worker count');
   let next = 0;
@@ -94,7 +98,10 @@ export async function runTestFiles(options: {
     }
   };
   await Promise.all(
-    Array.from({ length: Math.min(options.workers ?? 4, options.files.length) }, worker),
+    Array.from(
+      { length: Math.min(options.workers ?? TEST_FILE_WORKERS, options.files.length) },
+      worker,
+    ),
   );
   return results;
 }
