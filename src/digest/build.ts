@@ -88,6 +88,7 @@ export interface DigestSession {
  *  - `unknown`: no timestamp to compare.
  */
 export interface Run {
+  verificationBasis?: 'exact-content-receipt';
   id?: string;
   t?: string;
   cmd: string;
@@ -100,6 +101,17 @@ export interface Run {
 }
 
 export interface TraceDigest {
+  /** Exact-content receipts, distinguished from inferred historical log runs. */
+  verification?: Run[];
+  checksSha?: string;
+  validation?: {
+    name: string;
+    command: string;
+    outcome: string;
+    current: boolean;
+    reason?: string;
+    durationMs: number;
+  }[];
   v: 1;
   tool: string;
   generatedAt: string;
@@ -697,6 +709,9 @@ export function buildDigest(
   // say so, rather than dropping them without a word.
   for (const m of matches) {
     if (chosen.includes(m) || m.score <= 0) continue;
+    const excludedRef = hashId(salt, m.session.sessionId);
+    if (opts.exclude?.some((x) => x === excludedRef || x === m.session.sessionId))
+      continue;
     const s = m.signals;
     if (!(s.cwdInRepo || s.commandsTouchRepo) || s.timeOverlap <= 0) continue;
     const ref = hashId(salt, m.session.sessionId);

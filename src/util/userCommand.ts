@@ -1,6 +1,8 @@
 import { join, dirname, resolve } from 'node:path';
 import { onPath } from '../comic/providers.ts';
 import { describeRuntime } from '../commands/doctor.ts';
+import { run } from './exec.ts';
+import { BUILD_INFO } from '../version.ts';
 
 export function terminalCommand(parts: string[], platform = process.platform): string {
   const quote = (part: string) =>
@@ -21,7 +23,15 @@ export function selfProgram(): string[] {
 }
 
 export function userCommand(): { onPath: boolean; run: string } {
-  if (onPath('tracetoon')) return { onPath: true, run: 'tracetoon' };
+  if (onPath('tracetoon')) {
+    const info = run('tracetoon', ['build-info', '--json'], { timeoutMs: 2000 });
+    try {
+      if (info.ok && JSON.parse(info.stdout).buildId === BUILD_INFO.buildId)
+        return { onPath: true, run: 'tracetoon' };
+    } catch {
+      /* Don't suggest an old command just because it is on PATH. */
+    }
+  }
   const assets = process.env.TRACETOON_ASSETS;
   const parts = assets
     ? [

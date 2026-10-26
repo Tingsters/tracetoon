@@ -296,7 +296,8 @@ describe('preview freshness', () => {
     ).toContain('publication target changed');
     writeFileSync(approvalFile, JSON.stringify(approval));
     expect(
-      cli(repo.root, 'publish', '--run', run, '--code', rendered.json.code).json.error,
+      cli(repo.root, 'publish', '--run', run, '--code', rendered.json.code, '--no-push')
+        .json.error,
     ).toContain('differs from the approved code');
     expect(
       cli(repo.root, 'publish', '--run', run, '--code', rendered.json.code, '--push')

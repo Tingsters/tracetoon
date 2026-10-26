@@ -42,12 +42,16 @@ beforeEach(() => {
 });
 
 /** Digest of the repo's branch: the CLI's JSON plus the digest file. */
-function digest(root: string) {
-  const r = spawnSync(process.execPath, [CLI, '--json', 'digest', '--offline'], {
-    cwd: root,
-    env,
-    encoding: 'utf8',
-  });
+function digest(root: string, extra: string[] = []) {
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--json', 'digest', '--offline', ...extra],
+    {
+      cwd: root,
+      env,
+      encoding: 'utf8',
+    },
+  );
   expect(r.status).toBe(0);
   const out = JSON.parse(r.stdout);
   return { out, full: JSON.parse(readFileSync(out.digestPath, 'utf8')) };
@@ -156,6 +160,15 @@ describe('sessions that did less', () => {
     const note = full.notes.find((n: string) => n.startsWith('Left out:'));
     expect(note).toContain('--include h:');
     expect(note).toContain('worked in this repo while the commits were made');
+    const ref = /--include (h:[a-f0-9]+)/.exec(note!)![1]!;
+    const excluded = digest(repo.root, ['--run', out.run, '--exclude', ref]);
+    expect(excluded.full.notes.some((n: string) => n.startsWith('Left out:'))).toBe(
+      false,
+    );
+    const refreshed = digest(repo.root, ['--run', out.run]);
+    expect(refreshed.full.notes.some((n: string) => n.startsWith('Left out:'))).toBe(
+      false,
+    );
   });
 });
 

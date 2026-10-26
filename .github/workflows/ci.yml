@@ -29,4 +29,10 @@ jobs:
         shell: bash
         run: |
           bun run bundle
-          TRACETOON_TEST_CLI="$PWD/plugin/skills/tracetoon/dist/tracetoon.mjs" bun test tests/flow.test.ts tests/comic.test.ts tests/contribution.test.ts tests/review.test.ts tests/composition.test.ts
+          bun run build:check
+          bun run test:bundled
+      - name: Compile and rehearse publication against the executable
+        shell: bash
+        run: |
+          bun run build
+          bun run test:compiled

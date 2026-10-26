@@ -50,6 +50,14 @@ export function pruneRuns(gitDir: string, keep?: string): void {
     .map((d) => d.name)
     .sort();
   const pending = new Set(activePendingRuns(gitDir).map((d) => d.run.id));
+  for (const name of runs) {
+    try {
+      const task = JSON.parse(readFileSync(join(base, name, 'task.json'), 'utf8'));
+      if (task.v === 1 && task.state !== 'published') pending.add(name);
+    } catch {
+      /* ordinary scratch run */
+    }
+  }
   const scratch = runs.filter((name) => !pending.has(name));
   for (const name of scratch.slice(0, Math.max(0, scratch.length - KEEP_RUNS)))
     if (name !== keep) rmSync(join(base, name), { recursive: true, force: true });
@@ -74,6 +82,7 @@ export function findRun(gitDir: string, id?: string): Run {
   if (!name || !existsSync(join(base, name))) {
     throw new Error('No Tracetoon run found. Run `tracetoon digest` first.');
   }
+  if (!/^\d{8}-\d{6}(-\d+)?$/.test(name)) throw new Error('Invalid Tracetoon run id.');
   return { id: name, dir: join(base, name) };
 }
 

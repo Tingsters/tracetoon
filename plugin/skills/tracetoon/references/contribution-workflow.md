@@ -108,6 +108,12 @@ drafter; preserve author text during revisions.
 
 ## 3. Independent reviewer prompt
 
+`digest.verification` contains exact-content validation receipts with `V` fact ids;
+cite them as `digest:V1` (or inspect them with `expand V1 --run <id>`). These are
+distinct from inferred historical `R` runs in session logs. `digest.validation`
+also lists stale, failed, CI-only and unavailable checks; a missing or skipped
+result is not a passing test or a human attestation.
+
 > Read review-input.json and its referenced evidence, collected original source
 > snapshots, and relevant submitted code. Do not consume the drafter's reasoning.
 > Independently re-read the original repository guidance and available hosted

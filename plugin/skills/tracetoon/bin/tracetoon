@@ -14,8 +14,20 @@ ver=$(cat "$skill/VERSION" 2>/dev/null || echo 0.0.0)
 # Fonts and the rasterizer live in the skill; a cached binary can't find them alone.
 TRACETOON_ASSETS="${TRACETOON_ASSETS:-$skill/assets}"
 export TRACETOON_ASSETS
+TRACETOON_LAUNCHER="$here/tracetoon"
+export TRACETOON_LAUNCHER
 
-if [ -n "${TRACETOON_BIN:-}" ]; then exec "$TRACETOON_BIN" "$@"; fi
+build=$(sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$skill/build.json" 2>/dev/null || true)
+matches() {
+  [ -n "$build" ] || return 1
+  info=$("$@" build-info --json 2>/dev/null) || return 1
+  compact=$(printf '%s' "$info" | tr -d ' \r\n')
+  case "$compact" in *"\"buildId\":\"$build\""*) return 0 ;; *) return 1 ;; esac
+}
+if [ -n "${TRACETOON_BIN:-}" ]; then
+  matches "$TRACETOON_BIN" || { echo 'tracetoon: explicit runtime does not match this skill build; update it.' >&2; exit 3; }
+  exec "$TRACETOON_BIN" "$@"
+fi
 
 case "$(uname -s)" in
   Darwin) os=darwin ;;
@@ -42,15 +54,15 @@ if [ "$os" = windows ] && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev
   win_cache="$(cygpath -u "$LOCALAPPDATA")/tracetoon/cache/$ver/$name"
 fi
 for candidate in "$here/$name" "$installed" "$cache/$name" $win_cache; do
-  if [ -x "$candidate" ]; then exec "$candidate" "$@"; fi
+  if [ -x "$candidate" ] && matches "$candidate"; then exec "$candidate" "$@"; fi
 done
 
 bundle="$skill/dist/tracetoon.mjs"
 if [ -f "$bundle" ]; then
-  if command -v bun >/dev/null 2>&1; then exec bun "$bundle" "$@"; fi
+  if command -v bun >/dev/null 2>&1 && matches bun "$bundle"; then exec bun "$bundle" "$@"; fi
   if command -v node >/dev/null 2>&1; then
     major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
-    if [ "$major" -ge 22 ]; then exec node "$bundle" "$@"; fi
+    if [ "$major" -ge 22 ] && matches node "$bundle"; then exec node "$bundle" "$@"; fi
   fi
 fi
 
@@ -69,13 +81,15 @@ if [ "${TRACETOON_ALLOW_DOWNLOAD:-}" = 1 ] && command -v gh >/dev/null 2>&1; the
       mv "$tmp/$name" "$cache/$name"
       chmod +x "$cache/$name"
       rm -rf "$tmp"
-      exec "$cache/$name" "$@"
+      if matches "$cache/$name"; then exec "$cache/$name" "$@"; fi
+      echo 'tracetoon: downloaded runtime does not match the skill build; update both.' >&2
+      exit 3
     fi
     echo "tracetoon: downloaded binary failed its checksum; not running it." >&2
   fi
   rm -rf "$tmp"
 fi
 
-echo "tracetoon: no way to run Tracetoon here (no bun, no node 22+, no cached binary)." >&2
+echo "tracetoon: no matching runtime for this skill build. Update the skill and runtime together, or use Bun/Node 22+ with its matching bundle." >&2
 echo "tracetoon: set TRACETOON_ALLOW_DOWNLOAD=1 to fetch the release binary with gh." >&2
 exit 3

@@ -6,6 +6,7 @@ import {
   managedBlock,
   regionContent,
   regionEdited,
+  stampSubmission,
   type PrMeta,
 } from '../src/github/body.ts';
 
@@ -33,6 +34,18 @@ describe('edits on GitHub', () => {
       'empty CSV export',
     );
     expect(regionEdited(edited)).toBe(true);
+  });
+
+  test('publication identity replaces metadata without altering content or human text', () => {
+    const body = `Human introduction.\n\n${managedBlock(content, meta(content))}\nHuman closing.`;
+    const first = stampSubmission(body, 'abc123');
+    const again = stampSubmission(first, 'def456');
+    expect(regionContent(again)).toBe(content);
+    expect(regionEdited(again)).toBe(false);
+    expect(again).toStartWith('Human introduction.');
+    expect(again).toEndWith('Human closing.');
+    expect(again).not.toContain('abc123');
+    expect(again.match(/"submission"/g)).toHaveLength(1);
   });
 
   test('older blocks without a hash are unknown, not edited', () => {

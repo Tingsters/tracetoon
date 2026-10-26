@@ -8,6 +8,8 @@ import {
 import { prTruth, type PrTruth, type TruthOptions } from './git/pr.ts';
 import { ADAPTERS } from './trace/registry.ts';
 import type { TraceSession } from './trace/types.ts';
+import { join } from 'node:path';
+import { tasks } from './workflow/state.ts';
 
 export interface ScanResult {
   truth: PrTruth;
@@ -44,12 +46,18 @@ export function scan(cwd: string, opts: TruthOptions = {}): ScanResult {
   const warnings: string[] = [];
   const needles = truth.commits.map((c) => c.sha.slice(0, 7));
   const sessions: TraceSession[] = [];
+  const activeTranscript = tasks(truth.gitDir).find(
+    (t) =>
+      t.task.branch === truth.head && t.task.state !== 'published' && t.task.transcript,
+  )?.task.transcript;
   for (const adapter of ADAPTERS) {
     if (!adapter.home()) continue;
     for (const ref of adapter.discover({
       roots: truth.roots,
       sinceMs: window.startMs,
       needles,
+      cacheDir: join(truth.gitDir, 'tracetoon', 'discovery'),
+      currentSessionPath: activeTranscript,
     })) {
       const session = adapter.read(ref);
       warnings.push(...session.warnings);

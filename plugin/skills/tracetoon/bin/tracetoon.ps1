@@ -9,8 +9,21 @@ $ver = '0.0.0'
 if (Test-Path (Join-Path $skill 'VERSION')) { $ver = (Get-Content (Join-Path $skill 'VERSION') -Raw).Trim() }
 # Fonts and the rasterizer live in the skill; a cached binary can't find them alone.
 if (-not $env:TRACETOON_ASSETS) { $env:TRACETOON_ASSETS = Join-Path $skill 'assets' }
+$env:TRACETOON_LAUNCHER = Join-Path $here 'tracetoon.cmd'
 
-if ($env:TRACETOON_BIN) { & $env:TRACETOON_BIN @args; exit $LASTEXITCODE }
+$buildInfoPath = Join-Path $skill 'build.json'
+$buildId = if (Test-Path $buildInfoPath) { (Get-Content $buildInfoPath -Raw | ConvertFrom-Json).buildId } else { $null }
+function Test-MatchingRuntime([string]$program, [string[]]$leading = @()) {
+  if (-not $buildId) { return $false }
+  try {
+    $info = & $program @leading build-info --json 2>$null | ConvertFrom-Json
+    return $LASTEXITCODE -eq 0 -and $info.buildId -eq $buildId
+  } catch { return $false }
+}
+if ($env:TRACETOON_BIN) {
+  if (-not (Test-MatchingRuntime $env:TRACETOON_BIN)) { [Console]::Error.WriteLine('tracetoon: explicit runtime does not match this skill build; update it.'); exit 3 }
+  & $env:TRACETOON_BIN @args; exit $LASTEXITCODE
+}
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 $name = "tracetoon-windows-$arch.exe"
@@ -20,15 +33,15 @@ $cache = Join-Path (Join-Path (Join-Path $cacheRoot 'tracetoon') 'cache') $ver
 # Where the installer puts the binary (a fixed path, so hooks survive updates).
 $installed = Join-Path (Join-Path (Join-Path $cacheRoot 'tracetoon') 'bin') 'tracetoon.exe'
 foreach ($c in @((Join-Path $here $name), $installed, (Join-Path $cache $name))) {
-  if (Test-Path $c) { & $c @args; exit $LASTEXITCODE }
+  if ((Test-Path $c) -and (Test-MatchingRuntime $c)) { & $c @args; exit $LASTEXITCODE }
 }
 
 $bundle = Join-Path (Join-Path $skill 'dist') 'tracetoon.mjs'
 if (Test-Path $bundle) {
-  if (Get-Command bun -ErrorAction SilentlyContinue) { & bun $bundle @args; exit $LASTEXITCODE }
+  if ((Get-Command bun -ErrorAction SilentlyContinue) -and (Test-MatchingRuntime 'bun' @($bundle))) { & bun $bundle @args; exit $LASTEXITCODE }
   if (Get-Command node -ErrorAction SilentlyContinue) {
     $major = [int](& node -p 'process.versions.node.split(".")[0]')
-    if ($major -ge 22) { & node $bundle @args; exit $LASTEXITCODE }
+    if ($major -ge 22 -and (Test-MatchingRuntime 'node' @($bundle))) { & node $bundle @args; exit $LASTEXITCODE }
   }
 }
 
@@ -50,6 +63,7 @@ if ($env:TRACETOON_ALLOW_DOWNLOAD -eq '1' -and (Get-Command gh -ErrorAction Sile
       New-Item -ItemType Directory -Force -Path $cache | Out-Null
       Move-Item -Force $file (Join-Path $cache $name)
       Remove-Item -Recurse -Force $tmp
+      if (-not (Test-MatchingRuntime (Join-Path $cache $name))) { [Console]::Error.WriteLine('tracetoon: downloaded runtime does not match the skill build; update both.'); exit 3 }
       & (Join-Path $cache $name) @args
       exit $LASTEXITCODE
     }
@@ -58,6 +72,6 @@ if ($env:TRACETOON_ALLOW_DOWNLOAD -eq '1' -and (Get-Command gh -ErrorAction Sile
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
-[Console]::Error.WriteLine('tracetoon: no way to run Tracetoon here (no bun, no node 22+, no cached binary).')
+[Console]::Error.WriteLine('tracetoon: no matching runtime for this skill build. Update the skill and runtime together, or use Bun/Node 22+ with its matching bundle.')
 [Console]::Error.WriteLine('tracetoon: set TRACETOON_ALLOW_DOWNLOAD=1 to fetch the release binary with gh.')
 exit 3

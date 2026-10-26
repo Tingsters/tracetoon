@@ -3,6 +3,9 @@
 // the file reads the same in any runtime whatever encoding it assumes.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { buildManifest } from './build-info.ts';
+
+buildManifest();
 
 const out = resolve(
   import.meta.dir,

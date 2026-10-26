@@ -1,6 +1,6 @@
 {
   "name": "tracetoon",
-  "version": "1.0.0-rc.19",
+  "version": "1.0.0-rc.20",
   "description": "Write pull request descriptions from the AI agent session logs already on your machine, plus a one-off comic.",
   "type": "module",
   "license": "Apache-2.0",
@@ -10,10 +10,13 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "test": "bun test",
+    "test:bundled": "bun run scripts/test-packaged.ts",
+    "test:compiled": "bun run scripts/test-packaged.ts --compiled",
     "typecheck": "bun x tsc --noEmit",
     "format": "bun x prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "bundle": "bun run scripts/bundle.ts",
-    "build": "bun build --compile --minify ./src/cli.ts --outfile dist/tracetoon"
+    "build": "bun run scripts/build.ts",
+    "build:check": "bun run scripts/build-info.ts --check"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "2.6.2",

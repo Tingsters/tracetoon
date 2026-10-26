@@ -176,8 +176,11 @@ describe('installing the hook', () => {
       readFileSync(join(h, '.claude', 'settings.json'), 'utf8'),
     );
     expect(settings.model).toBe('opus');
-    expect(settings.hooks.Stop).toEqual(existingClaude.hooks.Stop);
-    expect(settings.hooks.PreToolUse).toHaveLength(2);
+    expect(settings.hooks.Stop[0]).toEqual(existingClaude.hooks.Stop[0]);
+    expect(settings.hooks.Stop[1].hooks[0].command).toContain(
+      'hook lifecycle --agent claude --event Stop',
+    );
+    expect(settings.hooks.PreToolUse).toHaveLength(3);
     expect(settings.hooks.PreToolUse[1]).toMatchObject({
       matcher: 'Bash|PowerShell',
       hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent claude' }],

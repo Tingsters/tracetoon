@@ -19,9 +19,14 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - run: bun run bundle
+      - run: bun run build:check
+      - run: bun run typecheck
       - run: bun test
       - name: Check the tag matches the skill version
-        run: test "v$(cat plugin/skills/tracetoon/VERSION)" = "$GITHUB_REF_NAME"
+        run: |
+          test "v$(cat plugin/skills/tracetoon/VERSION)" = "$GITHUB_REF_NAME"
+          test "v$(bun run src/cli.ts --version)" = "$GITHUB_REF_NAME"
       - name: Build binaries
         run: |
           mkdir -p release

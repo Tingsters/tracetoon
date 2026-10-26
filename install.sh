@@ -129,6 +129,20 @@ mkdir -p "$tmp/skill"
 unzip_to "$tmp/tracetoon-skill.zip" "$tmp/skill"
 [ -f "$tmp/skill/tracetoon/SKILL.md" ] || die "skill archive is missing SKILL.md"
 chmod +x "$tmp/skill/tracetoon/bin/tracetoon" 2>/dev/null || true
+build=$(sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/skill/tracetoon/build.json")
+skill_version=$(cat "$tmp/skill/tracetoon/VERSION")
+chmod +x "$tmp/$bin"
+info=$("$tmp/$bin" build-info --json | tr -d ' \r\n') || die "downloaded runtime does not run"
+[ "$skill_version" = "$ver" ] && [ -n "$build" ] || die "skill version does not match the release"
+case "$info" in *"\"buildId\":\"$build\""*) ;; *) die "skill and runtime builds differ; nothing activated" ;; esac
+targets > "$tmp/targets"
+while IFS='|' read -r name dir; do
+  [ "$(basename "$dir")" = tracetoon ] || die "unexpected skill install target: $dir"
+  stage="$dir.new-$$"
+  [ ! -e "$stage" ] || die "staging directory already exists: $stage"
+  mkdir -p "$(dirname "$dir")"
+  cp -R "$tmp/skill/tracetoon" "$stage"
+done < "$tmp/targets"
 
 mkdir -p "$(dirname "$stable")"
 cp "$tmp/$bin" "$stable.new"
@@ -139,12 +153,17 @@ mv -f "$stable.new" "$stable"
 rm -rf "$cache_root" "$home_root/cache"
 
 say "Skill:"
-targets | while IFS='|' read -r name dir; do
-  rm -rf "$dir"
-  mkdir -p "$(dirname "$dir")"
-  cp -R "$tmp/skill/tracetoon" "$dir"
+while IFS='|' read -r name dir; do
+  backup="$dir.old-$$"
+  [ ! -e "$backup" ] || die "backup directory already exists: $backup"
+  [ ! -e "$dir" ] || mv "$dir" "$backup"
+  if ! mv "$dir.new-$$" "$dir"; then
+    [ ! -e "$backup" ] || mv "$backup" "$dir"
+    die "could not activate $dir; previous skill restored"
+  fi
+  rm -rf "$backup"
   say "  $name: $dir"
-done
+done < "$tmp/targets"
 
 if [ "${TRACETOON_NO_HOOK:-}" = 1 ]; then
   say "PR hook: skipped (add it later with: tracetoon hook install)"

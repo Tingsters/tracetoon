@@ -86,6 +86,10 @@ then in any repo with your work on a branch, ask:
 
 Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
 again. Downloads are checked against the release's SHA-256 checksums.
+After an update, reload your host; Codex may require trusting the new entries
+in `/hooks`. `tracetoon doctor --json` distinguishes configured hooks, observed
+handler invocations, and mismatched runtimes. Missing completion hooks mean
+automatic preparation is not active, even if the older PR-command hook exists.
 
 ### Set up comics
 
@@ -149,6 +153,22 @@ Turn it off at whichever level you need. Any "off" wins:
 
 ## How it works
 
+When a cohesive coding change is finished, the agent prepares a local Tracetoon
+automatically. You do not need to remember to ask for a PR. Planning, questions
+and unfinished work stay in progress; refinements update the same unpublished
+draft. If another PR is awaiting review, its reminder and link remain available.
+
+Local checks finish before the author handoff. Open the prominent preview link,
+skim the description and comic, and reply **"Publish this PR"**. That approval
+covers pushing the approved branch, hosting its comic, and creating/updating the
+PR. The GitHub URL is returned without waiting for remote CI. Merging is separate.
+
+The host uses `task begin`, `check`, `task complete`, and `ready` to track these
+steps. Completed checks are tied to their tested content and environment, so
+unchanged approval does not repeat tests or regenerate the comic. CI-only checks,
+failures and unavailable evidence stay visible. `task defer --reason` records
+unfinished work; `task block --reason` records a preparation problem.
+
 1. **`tracetoon doctor`** checks git and gh, whether you can push to the repo,
    and whether a comic can be drawn, before any work starts.
 2. **`tracetoon digest`** reads the branch from git (base, commits, the exact
@@ -184,13 +204,15 @@ Turn it off at whichever level you need. Any "off" wins:
    current findings, source citations, collection gaps and missing evidence in
    the preview. Changed inputs invalidate old reviews. Reviews are advisory;
    existing publishing restrictions still apply.
-7. **Open the local preview** using the standalone link under the compact
+7. **`tracetoon ready --run <id>`**, then open the local preview using the standalone link under the compact
    Tracetoon logo at the end of the output. Skim the description and comic,
    then tell your agent "Publish this PR". The note below the link explains
    how to enable YOLO for future PRs if you prefer to skip that pause.
 8. **`tracetoon publish --code <code>`** posts exactly what you approved: the
    comic goes on the repo's `tracetoon-assets` branch (or as a GitHub
-   attachment for private repos), and `gh` creates or updates the PR.
+   attachment for private repos), and `gh` creates or updates the PR. The approved
+   branch is pushed automatically if necessary; `--no-push` requires it to already
+   be on the remote. Network retries reconcile an existing PR before creating one.
 
 Other commands: `images`, `status`, `on`/`off`, `hook install`/`uninstall`,
 `scan`, `expand`, `preview`, `pending dismiss --run <id>`, `comic prompts`/`reroll`, `export --agent-trace`

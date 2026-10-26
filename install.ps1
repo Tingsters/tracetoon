@@ -89,21 +89,45 @@ try {
   Expand-Archive -Path (Join-Path $tmp 'tracetoon-skill.zip') -DestinationPath $skillTmp
   $skill = Join-Path $skillTmp 'tracetoon'
   if (-not (Test-Path (Join-Path $skill 'SKILL.md'))) { throw 'Skill archive is missing SKILL.md.' }
+  $manifest = Get-Content (Join-Path $skill 'build.json') -Raw | ConvertFrom-Json
+  $binaryInfo = & (Join-Path $tmp $bin) build-info --json | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or $manifest.version -ne $ver -or $binaryInfo.version -ne $ver -or $manifest.buildId -ne $binaryInfo.buildId) {
+    throw 'Downloaded skill and runtime are different builds; nothing was activated.'
+  }
+  # Stage every skill before replacing any installed component. All moves stay
+  # beside their explicitly selected tracetoon directory.
+  $staged = @()
+  foreach ($t in $targets) {
+    $targetPath = [IO.Path]::GetFullPath($t.Dir)
+    if ((Split-Path -Leaf $targetPath) -ne 'tracetoon') { throw "Unexpected install target: $targetPath" }
+    $stagePath = $targetPath + '.new-' + [guid]::NewGuid().ToString('N')
+    $backupPath = $targetPath + '.old-' + [guid]::NewGuid().ToString('N')
+    $parentPath = Split-Path -Parent $targetPath
+    if ((Split-Path -Parent ([IO.Path]::GetFullPath($stagePath))) -ne $parentPath -or (Split-Path -Parent ([IO.Path]::GetFullPath($backupPath))) -ne $parentPath) { throw 'Install staging escaped its target parent.' }
+    New-Item -ItemType Directory -Force -Path $parentPath | Out-Null
+    Copy-Item -LiteralPath $skill -Destination $stagePath -Recurse
+    $staged += [pscustomobject]@{ Name = $t.Name; Target = $targetPath; Stage = $stagePath; Backup = $backupPath }
+  }
 
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stable) | Out-Null
   & (Join-Path $tmp $bin) --version | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Downloaded binary does not run.' }
-  Copy-Item -Force (Join-Path $tmp $bin) $stable
+  Copy-Item -LiteralPath (Join-Path $tmp $bin) -Destination ($stable + '.new') -Force
+  Move-Item -LiteralPath ($stable + '.new') -Destination $stable -Force
   $exe = $stable
   # Binaries cached by older versions are no longer needed.
   Remove-Item -Recurse -Force (Join-Path $homeRoot 'cache') -ErrorAction SilentlyContinue
 
   Write-Host 'Skill:'
-  foreach ($t in $targets) {
-    if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $t.Dir) | Out-Null
-    Copy-Item -Recurse $skill $t.Dir
-    Write-Host "  $($t.Name): $($t.Dir)"
+  foreach ($t in $staged) {
+    if (Test-Path -LiteralPath $t.Target) { Move-Item -LiteralPath $t.Target -Destination $t.Backup }
+    try { Move-Item -LiteralPath $t.Stage -Destination $t.Target }
+    catch {
+      if (Test-Path -LiteralPath $t.Backup) { Move-Item -LiteralPath $t.Backup -Destination $t.Target }
+      throw
+    }
+    if (Test-Path -LiteralPath $t.Backup) { Remove-Item -LiteralPath $t.Backup -Recurse -Force }
+    Write-Host "  $($t.Name): $($t.Target)"
   }
 
   if ($env:TRACETOON_NO_HOOK -eq '1') {

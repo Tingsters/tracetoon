@@ -7,6 +7,7 @@
  */
 import { switchState } from './switches.ts';
 import { pendingReminder } from '../review/reminder.ts';
+import { leadingCd } from '../trace/pathMatch.ts';
 
 export type HookAgent = 'claude' | 'codex' | 'antigravity';
 
@@ -60,7 +61,12 @@ export function commandFrom(payload: unknown): { command?: string; cwd?: string 
       /* keep as is */
     }
   }
-  const cwd = p.cwd ?? p.toolCall?.args?.Cwd ?? p.workspace;
+  const cwd =
+    p.tool_input?.workdir ??
+    p.tool_input?.cwd ??
+    p.toolCall?.args?.Cwd ??
+    p.cwd ??
+    p.workspace;
   return {
     command: typeof command === 'string' ? command : undefined,
     cwd: typeof cwd === 'string' ? cwd : undefined,
@@ -75,7 +81,8 @@ export function decide(
 ): string | undefined {
   const { command, cwd } = commandFrom(payload);
   if (!command || BYPASS_RE.test(command)) return undefined;
-  if (!switchState(cwd ?? process.cwd(), env).enabled) return undefined;
+  const effectiveCwd = leadingCd(command, cwd ?? process.cwd()) ?? cwd ?? process.cwd();
+  if (!switchState(effectiveCwd, env).enabled) return undefined;
   if (!writesPr(command)) {
     const reminder = pendingReminder(
       agent,

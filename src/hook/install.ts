@@ -1,12 +1,12 @@
 /**
- * Registers the PR hook with each agent found on the machine, and removes it.
+ * Registers PR routing plus session, observation and completion hooks per host.
  *
  *   Claude Code  ~/.claude/settings.json        PreToolUse, matcher Bash|PowerShell
  *   Codex        ~/.codex/hooks.json            PreToolUse, matcher Bash
  *   Antigravity  ~/.gemini/config/hooks.json    a "tracetoon" block, matcher run_command
  *
  * Only Tracetoon's own entries are ever touched (recognized by "tracetoon … hook
- * pre-pr" in the command), re-running replaces them instead of adding more, a
+ * pre-pr/lifecycle" in the command), re-running replaces them instead of adding more, a
  * file that isn't valid JSON is left alone, and each file is backed up once
  * (<file>.tracetoon.bak) before the first change.
  */
@@ -64,7 +64,7 @@ export function hookTargets(
 const isOurs = (command: unknown) =>
   typeof command === 'string' &&
   /tracetoon/i.test(command) &&
-  command.includes('hook pre-pr');
+  /hook (?:pre-pr|lifecycle)\b/.test(command);
 
 /** The shell command each agent runs. Forward slashes work in bash, cmd and PowerShell. */
 export function hookCommand(agent: HookAgent, program: string | string[]): string {
@@ -120,6 +120,14 @@ function setPreToolUse(data: Json, group: Json | undefined): Json {
 }
 
 function apply(target: HookTarget, data: Json, command: string | undefined): Json {
+  const lifecycle = (event: string) =>
+    command!.replace(/hook pre-pr --agent/, 'hook lifecycle --agent') +
+    ` --event ${event}`;
+  const handler = (event: string) => ({
+    type: 'command',
+    command: lifecycle(event),
+    timeout: 10,
+  });
   if (target.agent === 'antigravity') {
     const out = { ...data };
     delete out.tracetoon;
@@ -127,15 +135,35 @@ function apply(target: HookTarget, data: Json, command: string | undefined): Jso
       out.tracetoon = {
         enabled: true,
         PreToolUse: [{ matcher: 'run_command', hooks: [{ type: 'command', command }] }],
+        SessionStart: [handler('SessionStart')],
+        PostToolUse: [{ matcher: '.*', hooks: [handler('PostToolUse')] }],
+        Stop: [handler('Stop')],
       };
+      out.tracetoon.PreToolUse.push({ matcher: '.*', hooks: [handler('PreToolUse')] });
     }
     return out;
   }
   const matcher = target.agent === 'claude' ? 'Bash|PowerShell' : 'Bash';
-  return setPreToolUse(
+  const out = setPreToolUse(
     data,
     command ? { matcher, hooks: [{ type: 'command', command, timeout: 10 }] } : undefined,
   );
+  const hooks = { ...(out.hooks ?? {}) };
+  for (const event of ['SessionStart', 'PostToolUse', 'Stop']) {
+    const kept = withoutOurGroups(hooks[event]);
+    if (command)
+      kept.push(
+        event === 'PostToolUse'
+          ? { matcher: '.*', hooks: [handler(event)] }
+          : { hooks: [handler(event)] },
+      );
+    if (kept.length) hooks[event] = kept;
+    else delete hooks[event];
+  }
+  if (command) hooks.PreToolUse.push({ matcher: '.*', hooks: [handler('PreToolUse')] });
+  if (Object.keys(hooks).length) out.hooks = hooks;
+  else delete out.hooks;
+  return out;
 }
 
 export interface HookChange {
@@ -284,6 +312,10 @@ export interface HookState {
   file: string;
   /** Something that stops the hook from running even though it's installed. */
   problem?: string;
+  completionInstalled?: boolean;
+  /** Configured command; installation is not proof the host trusted/reloaded it. */
+  command?: string;
+  coverage?: string;
 }
 
 /** Whether each agent currently has the Tracetoon hook, and whether it will actually run. */
@@ -306,6 +338,19 @@ export function hookStatus(targets = hookTargets()): HookState[] {
       present: t.present,
       installed,
       file: t.file,
+      completionInstalled:
+        JSON.stringify(data).includes('hook lifecycle') &&
+        JSON.stringify(data).includes('--event Stop'),
+      command: (() => {
+        const groups =
+          t.agent === 'antigravity' ? data.tracetoon?.PreToolUse : data.hooks?.PreToolUse;
+        return (groups ?? [])
+          .flatMap((g: Json) => g.hooks ?? [])
+          .find((h: Json) => isOurs(h.command) && h.command.includes('hook pre-pr'))
+          ?.command;
+      })(),
+      coverage:
+        'Recognized shell push/PR commands and GitHub connector mutations; arbitrary network scripts and host opt-out paths are not intercepted.',
     };
     if (unreadable) state.problem = `${t.file} is not valid JSON`;
     else if (installed && t.agent === 'antigravity') {

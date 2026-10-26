@@ -1,6 +1,6 @@
 // Stands in for the GitHub CLI in tests: logs each call and fakes the few
 // commands Tracetoon uses.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const log = process.env.FAKE_GH_LOG;
@@ -10,12 +10,43 @@ if (log) appendFileSync(log, JSON.stringify({ args, body }) + '\n');
 
 const [a, b] = args;
 if (a === 'pr' && b === 'create') {
+  const state = process.env.FAKE_GH_STATE;
+  if (state) {
+    const arg = (name: string) => args[args.indexOf(name) + 1];
+    writeFileSync(
+      state,
+      JSON.stringify([
+        {
+          number: 7,
+          url: 'https://github.com/acme/demo/pull/7',
+          headRefName: arg('--head'),
+          baseRefName: arg('--base'),
+          body,
+        },
+      ]),
+    );
+    if (process.env.FAKE_GH_FAIL_CREATE_ONCE) {
+      process.stderr.write('Simulated connection lost after PR creation.');
+      process.exit(1);
+    }
+  }
   process.stdout.write('https://github.com/acme/demo/pull/7\n');
   process.exit(0);
 }
-if (a === 'pr' && b === 'view') process.exit(1); // no existing PR
+if (a === 'pr' && b === 'view') {
+  if (/^\d+$/.test(args[2] ?? '') && args[args.indexOf('--json') + 1] === 'url') {
+    process.stdout.write(`https://github.com/acme/demo/pull/${args[2]}\n`);
+    process.exit(0);
+  }
+  process.exit(1); // no existing PR for discovery
+}
 if (a === 'pr' && b === 'list') {
-  process.stdout.write(process.env.FAKE_GH_PRS ?? '[]');
+  const state = process.env.FAKE_GH_STATE;
+  process.stdout.write(
+    state && existsSync(state)
+      ? readFileSync(state, 'utf8')
+      : (process.env.FAKE_GH_PRS ?? '[]'),
+  );
   process.exit(0);
 }
 if (a === 'repo' && b === 'view' && args.some((x) => x.includes('viewerPermission'))) {
