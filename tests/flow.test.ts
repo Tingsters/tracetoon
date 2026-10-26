@@ -290,7 +290,7 @@ describe('render and publish', () => {
     expect(finalBody).toContain('<!-- tracetoon:start -->');
     expect(finalBody).toContain('@​octocat');
     expect(existsSync(join(runDir, 'preview.html'))).toBe(true);
-    // A clickable absolute file:/// link, in both render and preview output.
+    // Keep browser transport as file: while chat uses an actionable file path.
     const url = pathToFileURL(join(runDir, 'preview.html')).href;
     expect(r.json.previewUrl).toBe(url);
     const shown = cli(repo.root, 'preview');
@@ -300,9 +300,12 @@ describe('render and publish', () => {
       env,
       encoding: 'utf8',
     });
-    expect(text.stdout).toContain(`OPEN YOUR LOCAL PR PREVIEW\n${url}\n`);
+    expect(text.stdout).toContain(`OPEN YOUR LOCAL PR PREVIEW: ${url}\n`);
     expect(text.stdout.trimEnd()).toEndWith(r.json.previewHandoff.terminal);
-    expect(shown.json.previewHandoff.markdown).toContain(`\n\n${url}\n\n`);
+    expect(shown.json.previewHandoff.markdown).toContain(
+      `preview --run ${r.json.run} --serve --open`,
+    );
+    expect(shown.json.previewHandoff.markdown).not.toContain('file://');
 
     expect(cli(repo.root, 'publish').code).toBe(1);
     expect(cli(repo.root, 'publish', '--code', 'deadbeef').code).toBe(1);

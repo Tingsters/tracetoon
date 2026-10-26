@@ -58,7 +58,7 @@ export function taskCmd(
   }
   const next =
     task.state === 'preparing'
-      ? `${info.branch === task.base ? `Create a local feature branch first (PR head and base cannot both be ${task.base}), then adopt it with task begin --run ${run.id}. ` : ''}Finish applicable checks, then use the tracetoon skill with digest --run ${run.id}, context, research, drafting, comic and independent review. End with ready --run ${run.id} and its exact handoff.`
+      ? `${info.branch === task.base ? `Create a local feature branch first (PR head and base cannot both be ${task.base}), then adopt it with task begin --run ${run.id}. ` : ''}Finish applicable checks, then use the tracetoon skill with digest --run ${run.id}, context, research, drafting, comic and independent review. End with ready --run ${run.id} --serve and its exact handoff.`
       : `Resume this task with --run ${run.id}; complete it when the cohesive change is finished.`;
   emit(
     opts,
@@ -111,7 +111,10 @@ export function checkCmd(
     process.exitCode = receipt.exitCode && receipt.exitCode > 0 ? receipt.exitCode : 1;
 }
 
-export function readyCmd(cwd: string, opts: OutOpts & { run: string }) {
+export async function readyCmd(
+  cwd: string,
+  opts: OutOpts & { run: string; serve?: boolean; open?: boolean },
+) {
   const { root, gitDir, branch } = repository(cwd);
   const run = findRun(gitDir, opts.run);
   const task = readTask(run);
@@ -131,5 +134,5 @@ export function readyCmd(cwd: string, opts: OutOpts & { run: string }) {
   saveTask(run, task);
   setReviewState(run, approval, 'pending');
   // Return the standard branded handoff; the host Stop hook records actual presentation.
-  previewCmd(cwd, opts);
+  await previewCmd(cwd, opts);
 }

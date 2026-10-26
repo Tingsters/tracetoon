@@ -100,6 +100,11 @@ program
   .command('ready')
   .description('finish preparation and return the author review handoff')
   .requiredOption('--run <id>', 'task run')
+  .option(
+    '--serve',
+    'keep a local HTTP preview running until stopped or idle for one hour',
+  )
+  .option('--open', 'open the preview in a browser')
   .action((o) => readyCmd(cwd, { ...g(), ...o }));
 
 program
@@ -186,6 +191,10 @@ program
   .description('show the rendered PR')
   .option('--run <id>', 'run id (default: latest)')
   .option('--open', 'open the HTML preview in a browser')
+  .option(
+    '--serve',
+    'keep a local HTTP preview running until stopped or idle for one hour',
+  )
   .action((o) => previewCmd(cwd, { ...g(), ...o }));
 
 program

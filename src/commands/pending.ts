@@ -4,6 +4,7 @@ import { userCommand } from '../util/userCommand.ts';
 import { prTruth } from '../git/pr.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { readTask, saveTask } from '../workflow/state.ts';
+import { fileURLToPath } from 'node:url';
 
 export function pendingNotice(root: string, gitDir: string) {
   const pending = pendingDrafts(root, gitDir);
@@ -15,16 +16,17 @@ export function pendingNotice(root: string, gitDir: string) {
         const handoff = previewHandoff({
           root,
           command,
-          url: draft.previewUrl,
+          url: draft.browserUrl ?? draft.previewUrl,
+          filePath: fileURLToPath(draft.previewUrl),
           run: draft.run,
           pending: true,
           problem: draft.problem,
         });
         return [
           `Branch: ${draft.branch} -> ${draft.base} | ${draft.title}`,
-          `Resume: ${command} preview --run ${draft.run}`,
+          `Resume: ${command} preview --run ${draft.run} --serve`,
           `Dismiss: ${command} pending dismiss --run ${draft.run}`,
-          terminalHandoff(handoff, draft.previewUrl),
+          terminalHandoff(handoff, draft.browserUrl ?? draft.previewUrl),
         ].join('\n');
       })
       .join('\n\n'),
