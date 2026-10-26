@@ -20,6 +20,13 @@ not a claim about which cast or layout is statistically most successful.
 
 ## Make three distinct proposals, then draw one
 
+Use this selection order: supported story anchor, understandable premise and
+comic turn, economical visible storytelling, then art direction and recent
+variety. Keep a short evidence reference, expected reader assumption, payoff,
+necessary visible clues, and likely failure for each concept. Explain why the
+winner has the strongest joke, not only why its format is novel. These are
+editorial judgments, not a numeric humor score or a rotation quota.
+
 Write brief candidates to `comic-design.json` in the local run: the joke,
 necessary beats, frame arrangement, visible-title treatment, cast, visual style
 and why each could work. Choose one and state why it beats the other two.

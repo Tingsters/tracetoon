@@ -6,6 +6,33 @@ digest: no invented features, no fake results.
 
 ## 1. Find the joke
 
+Start with a supported event, decision, or changed behavior from the digest, not
+just the feature name. Keep the evidence reference in local comic-design.json.
+Fictional exaggeration inside the metaphor is welcome; it must not invent real
+test outcomes, measured delays, deployments, or decisions by real people.
+
+For each of the three short concepts, state the reader's expectation, the
+specific comic turn (reversal, consequence, incongruity, escalation, wordplay,
+or another mechanism), and the visible clues that make it understandable.
+"The bug is fixed" and "this explains the feature" are not themselves jokes.
+Name one likely misreading or weak point. Choose the strongest premise before
+styling it; novelty is a secondary consideration, not a reason to keep a weaker
+story. A recurring layout is acceptable when it serves the best joke.
+
+Before drawing, reconcile the synopsis, panel actions, dialogue and alt text.
+List the important props/identities that stay consistent, what actually changes,
+and what the reader can reasonably infer. A last remaining seat cannot be
+surrounded by unexplained available seats; preservation needs recognizable
+contents; waiting alone cannot establish a later retry or successful response.
+Put necessary meaning in the actual scenes, not only in metadata. Do not ask
+the image model to rescue an underspecified story.
+
+This is not a requirement to show every action or to end with success. Static
+contradictions, verbal jokes, inferred transitions, and unresolved technical
+outcomes can work. The reader needs enough cues to understand this particular
+joke without reading the PR. A caption may deliver a punchline; check whether it
+adds a turn rather than merely announcing the technical lesson.
+
 Read the digest for the moment that's funny *because it really happened*:
 - a twist (`milestones`: "tests went from failing to passing", "edits did not
   survive");
@@ -156,7 +183,12 @@ image, lettering included**, so the words look like part of the comic. Then:
    exactly, with nothing extra or garbled. Check the actual panel count, reading
    order, title treatment, framing and payoff at PR-column and phone widths.
    A good prompt is not proof that the generated image followed it.
-3. If something is off, run `tracetoon comic art --force` to redraw (up to 2
+3. Diagnose before retrying. A weak premise or missing/contradictory action needs
+   a script rewrite. A sound script drawn incorrectly needs a redraw. Wrong
+   lettering needs lettering repair. Tell the user the concrete reason for an
+   additional generation; do not draw routine hidden alternatives. Draw one
+   finished image initially; the three concepts are text, not image requests.
+   For an art defect, run `tracetoon comic art --force` to redraw (up to 2
    times). If it's still wrong, run `tracetoon comic art --lettering overlay
    --force`: the art is drawn without text and Tracetoon adds the bubbles.
 4. Not loving the look? `tracetoon comic reroll` keeps the story and redraws it
@@ -166,6 +198,12 @@ image, lettering included**, so the words look like part of the comic. Then:
    different story beats, have the drafter rewrite the script first. Changed
    scripts invalidate cached art and rendered output; do not reuse an old page
    with a newly named layout.
+
+The independent review starts with the image alone, before the synopsis,
+transcript, technical explanation, or design reasoning. The reviewer records
+literal panel observations separately from inference and the perceived joke,
+then compares the script and factual evidence. See contribution-workflow.md.
+Structural checks and a matching transcript do not certify comic quality.
 
 With your own image tool instead: `tracetoon comic prompts` prints the
 whole-page prompt and where to save it (`art/page.png`). After a script change,
