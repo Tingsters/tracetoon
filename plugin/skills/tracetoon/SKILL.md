@@ -239,8 +239,10 @@ that bypass on your own initiative.
    for this run. Stop it after publication; it also stops after one hour idle.
    Preserve the prominent linked label exactly, outside the logo's fence. The
    loopback HTTP address works in Codex TUI, where ordinary file/path Markdown
-   references do not become terminal hyperlinks. Do not append a duplicate bare
-   URL below it. The host chooses the link's color.
+   references do not become terminal hyperlinks. Preserve the full, copyable
+   `Local file:` path directly beneath the link as a fallback for people whose
+   host cannot open it. Do not replace that path with a duplicate HTTP address.
+   The host chooses the link's color.
    Put diagnostics and local report links before the handoff so the review link
    is easy to find. Every ancillary Tracetoon artifact (including an "Also ready"
    list) must also use a descriptive Markdown link using `artifactUrls` returned

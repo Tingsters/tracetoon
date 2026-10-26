@@ -488,7 +488,7 @@ describe('author review to publication rehearsal', () => {
     expect(ready.previewHandoff.markdown).toContain(
       `[OPEN YOUR LOCAL PR PREVIEW](${browser.url})`,
     );
-    expect(ready.previewHandoff.markdown).not.toContain('file:');
+    expect(ready.previewHandoff.markdown).not.toContain('file://');
     const p = {
       cwd: repo.root,
       session_id: 'rehearsal',

@@ -305,7 +305,7 @@ describe('render and publish', () => {
     expect(shown.json.previewHandoff.markdown).toContain(
       `preview --run ${r.json.run} --serve --open`,
     );
-    expect(shown.json.previewHandoff.markdown).not.toContain('file:');
+    expect(shown.json.previewHandoff.markdown).not.toContain('file://');
 
     expect(cli(repo.root, 'publish').code).toBe(1);
     expect(cli(repo.root, 'publish', '--code', 'deadbeef').code).toBe(1);

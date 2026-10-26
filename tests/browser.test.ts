@@ -32,6 +32,7 @@ test('real HTTP links open the rendered page and named artifacts; updated render
     root: dir,
     command: 'tracetoon',
     url: browser.url,
+    filePath: join(dir, 'preview.html'),
     run: 'run',
   });
   expect(handoff.markdown).toContain(`[OPEN YOUR LOCAL PR PREVIEW](${browser.url})`);

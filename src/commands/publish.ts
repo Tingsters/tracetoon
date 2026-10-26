@@ -435,6 +435,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     root: truth.toplevel,
     command: userCommand().run,
     url: fileUrl(previewPath),
+    filePath: previewPath,
     run: run.id,
   });
   emit(
@@ -559,6 +560,7 @@ export async function previewCmd(
     root: truth.toplevel,
     command: userCommand().run,
     url: handoffUrl,
+    filePath: htmlPath,
     run: run.id,
     problem,
   });

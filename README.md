@@ -253,8 +253,8 @@ before publishing. Working-tree drafts must be committed and refreshed first.
 JSON output adds `previewHandoff` (terminal and Markdown presentations) to
 render/preview and `pendingDrafts` to status/digest.
 
-The handoff makes **OPEN YOUR LOCAL PR PREVIEW** a local HTTP link, without a
-duplicate URL underneath. Codex TUI does not turn ordinary file/path Markdown
+The handoff makes **OPEN YOUR LOCAL PR PREVIEW** a local HTTP link, with the full
+copyable local file path directly underneath as a fallback. Codex TUI does not turn ordinary file/path Markdown
 references into terminal hyperlinks. `--serve` supplies a loopback browser URL
 and keeps the command running during review; it stops on Ctrl+C or after one hour
 idle. Re-running `preview --run <id> --serve` reuses a live server or starts a new

@@ -4,6 +4,7 @@ import { userCommand } from '../util/userCommand.ts';
 import { prTruth } from '../git/pr.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { readTask, saveTask } from '../workflow/state.ts';
+import { fileURLToPath } from 'node:url';
 
 export function pendingNotice(root: string, gitDir: string) {
   const pending = pendingDrafts(root, gitDir);
@@ -16,6 +17,7 @@ export function pendingNotice(root: string, gitDir: string) {
           root,
           command,
           url: draft.browserUrl ?? draft.previewUrl,
+          filePath: fileURLToPath(draft.previewUrl),
           run: draft.run,
           pending: true,
           problem: draft.problem,

@@ -115,6 +115,7 @@ describe('compact review handoff', () => {
       root,
       command: 'tracetoon',
       url,
+      filePath: join(root, 'My project (draft) #100% café', 'preview.html'),
       run: '20250101-000000',
     });
     expect(WORDMARK.split('\n')).toEqual([
@@ -125,7 +126,10 @@ describe('compact review handoff', () => {
     const prefix = out.markdown.slice(0, out.markdown.indexOf('**['));
     expect((prefix.match(/```/g) ?? []).length % 2).toBe(0);
     expect(out.markdown).toContain(`**[OPEN YOUR LOCAL PR PREVIEW](${url})**`);
-    expect(out.markdown).not.toContain('file:');
+    expect(out.markdown).toContain(
+      `](${url})**\n\nLocal file: \` ${join(root, 'My project (draft) #100% café', 'preview.html')} \``,
+    );
+    expect(out.markdown).not.toContain('file://');
     expect(out.markdown.split(url)).toHaveLength(2);
     expect(out.markdown).toContain('Enable Tracetoon yolo mode for future PRs');
     expect(out.terminal).toContain('tracetoon config set yolo true');
@@ -142,13 +146,14 @@ describe('compact review handoff', () => {
         root: tempDir(),
         command: 'tracetoon',
         url,
+        filePath: decodeURIComponent(new URL(url).pathname),
         run: 'run',
       });
       const html = marked.parse(handoff.markdown) as string;
       // Codex 0.164's terminal_hyperlinks::web_destination accepts only http(s).
       // marked accepting file/path anchors is not evidence of a usable TUI link.
       expect(handoff.markdown).toContain('tracetoon preview --run run --serve --open');
-      expect(handoff.markdown).not.toContain('file:');
+      expect(handoff.markdown).not.toContain('file://');
       expect(html).not.toContain('<a href=');
       const styled = terminalHandoff(handoff, url, {
         isTTY: true,
@@ -201,6 +206,7 @@ describe('compact review handoff', () => {
       root: tempDir(),
       command: 'tracetoon',
       url,
+      filePath: '/preview.html',
       run: 'run',
       pending: true,
     });
@@ -219,7 +225,13 @@ describe('compact review handoff', () => {
 
   test('shows effective YOLO state and never suggests an ineffective user toggle', () => {
     const root = tempDir();
-    const input = { root, command: 'launcher', url: 'file:///preview.html', run: 'run' };
+    const input = {
+      root,
+      command: 'launcher',
+      url: 'file:///preview.html',
+      filePath: '/preview.html',
+      run: 'run',
+    };
     writeFileSync(config, '{"yolo":true}');
     expect(previewHandoff(input).terminal).toContain('launcher config set yolo false');
     mkdirSync(join(root, '.github'));
@@ -290,6 +302,10 @@ describe('pending review lifecycle', () => {
       });
       expect(shown.browserUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{48}\/$/);
       expect(shown.previewHandoff.markdown).toContain(`](${shown.browserUrl})`);
+      expect(shown.previewHandoff.markdown).toContain(
+        `Local file: \` ${shown.previewPath} \``,
+      );
+      expect(shown.previewHandoff.terminal).toContain(`Local file: ${shown.previewPath}`);
       expect((await fetch(shown.browserUrl)).status).toBe(200);
       const reused = cli(repo.root, 'preview', '--run', run, '--serve');
       expect(reused.code).toBe(0);

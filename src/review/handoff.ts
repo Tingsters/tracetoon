@@ -68,6 +68,7 @@ export function previewHandoff(input: {
   root: string;
   command: string;
   url: string;
+  filePath: string;
   run: string;
   pending?: boolean;
   problem?: string;
@@ -80,10 +81,16 @@ export function previewHandoff(input: {
   const next = input.problem
     ? `${input.problem}\nResume with: ${input.command} preview --run ${input.run}. Refresh the digest, description, review and preview before publishing.`
     : 'Open the preview, skim the description and comic, then reply "Publish this PR".';
+  // A copyable filesystem path also works when the host cannot open links.
+  const fence = '`'.repeat(
+    Math.max(0, ...(input.filePath.match(/`+/g) ?? []).map((s) => s.length)) + 1,
+  );
+  const localFile = `Local file: ${fence} ${input.filePath} ${fence}`;
   return {
     terminal: [
       WORDMARK,
       `${caption}: ${input.url}`,
+      `Local file: ${input.filePath}`,
       yoloHint(input.root, input.command),
       next,
     ].join('\n'),
@@ -94,6 +101,8 @@ export function previewHandoff(input: {
       input.url.startsWith('http://127.0.0.1:')
         ? `**[${caption}](${input.url})**`
         : `**${caption}**\n\nStart a clickable browser preview: \`${input.command} preview --run ${input.run} --serve --open\`.`,
+      '',
+      localFile,
       '',
       yoloHint(input.root, input.command, true),
       '',
