@@ -22,7 +22,7 @@ jobs:
       - run: bun run bundle
       - run: bun run build:check
       - run: bun run typecheck
-      - run: bun test
+      - run: bun run test
       - name: Check the tag matches the skill version
         run: |
           test "v$(cat plugin/skills/tracetoon/VERSION)" = "$GITHUB_REF_NAME"
