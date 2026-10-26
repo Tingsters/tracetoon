@@ -92,6 +92,36 @@ export interface ContributionReview {
   drafter: AgentRole;
   reviewer: AgentRole;
   assessments: Assessment[];
+  comicReview?: ComicReview;
+}
+
+export const COMIC_REVIEW_CHECKS = [
+  'clarity',
+  'continuity',
+  'fidelity',
+  'payoff',
+  'readability',
+] as const;
+export type ComicReviewCheck = (typeof COMIC_REVIEW_CHECKS)[number];
+export interface ComicReview {
+  /** Host-reported image-first reading, not a machine certification of humor. */
+  imageSha256: string;
+  observedPanels: string[];
+  inferredStory: string;
+  perceivedJoke: string;
+  checks: Record<
+    ComicReviewCheck,
+    {
+      state: 'satisfied' | 'needs-revision' | 'uncertain' | 'inapplicable';
+      reason: string;
+      /** One-based references to the observed panels. */
+      panels: number[];
+    }
+  >;
+  correction?: {
+    target: 'premise' | 'script' | 'art' | 'lettering';
+    instruction: string;
+  };
 }
 
 export interface ReviewInput {
@@ -105,6 +135,8 @@ export interface ReviewInput {
   headSha: string;
   authorSha256: string;
   comicSha256: string;
+  /** Present on new comic renders; absent on legacy packets and comic-free PRs. */
+  comic?: { imagePath: string; scriptPath: string; panelCount: number };
   /** Run-relative evidence paths for the reviewer. */
   artifacts: string[];
 }
@@ -117,4 +149,5 @@ export interface ReviewResult {
   assessments: Assessment[];
   requirements: Requirement[];
   sources: GuidanceSource[];
+  comicReview?: ComicReview;
 }

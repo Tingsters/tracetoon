@@ -7,6 +7,7 @@ import type { ContextNote } from '../digest/notes.ts';
 import type { TitleFinding } from '../digest/titleCheck.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
 import type { ReviewResult } from '../contribution/types.ts';
+import { comicReviewLines } from '../contribution/comicReview.ts';
 
 const esc = (s: string) =>
   s
@@ -175,6 +176,7 @@ ${
 ${policyHtml(policy, comicHeldBack)}
 <div class="card">${html}</div>
 ${marked_.notes}
+${contributionReview?.comicReview ? `<section class="checks">${comicReviewLines(contributionReview.comicReview).map(esc).join('<br>')}</section>` : ''}
 ${contributionReview ? contributionReviewHtml(contributionReview) : ''}
 ${digest.validation?.length ? `<section class="checks"><p><b>Local validation before author review</b></p><ul>${digest.validation.map((c) => `<li><b>${esc(c.name)}</b>: ${esc(c.outcome)}${c.current ? '' : ' (stale)'} — ${esc(c.command || 'not run')}; ${c.durationMs}ms${c.reason ? `<br>${esc(c.reason)}` : ''}</li>`).join('')}</ul></section>` : ''}
 ${

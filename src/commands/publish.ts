@@ -18,8 +18,14 @@ import {
   reviewSummary,
 } from '../contribution/review.ts';
 import type { GuidanceRequest, ReviewResult } from '../contribution/types.ts';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+} from 'node:fs';
+import { join, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
 import { transcript } from '../comic/script.ts';
@@ -61,6 +67,7 @@ import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
 import { recordRendered, setReviewState } from '../review/pending.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { comicSummary } from '../comic/composition.ts';
+import { comicObservationInput } from '../contribution/comicReview.ts';
 import { readTask, saveTask, workFingerprint } from '../workflow/state.ts';
 import { fileHash, readyProblem } from '../workflow/readiness.ts';
 import { receipts } from '../workflow/checks.ts';
@@ -324,7 +331,20 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     headSha: packet.request.headSha,
     authorText: readText(run, 'author.md'),
     comicSha256: comicSha,
+    ...(comic && script
+      ? {
+          comic: {
+            imagePath: relative(run.dir, comic.path).replaceAll('\\', '/'),
+            scriptPath: 'comic.json',
+            panelCount: script.panels.length,
+          },
+        }
+      : {}),
   });
+  const observationInput = comicObservationInput(reviewPacket);
+  if (observationInput) writeJson(run, 'comic-observation-input.json', observationInput);
+  else if (existsSync(join(run.dir, 'comic-observation-input.json')))
+    unlinkSync(join(run.dir, 'comic-observation-input.json'));
   writeJson(run, 'review-input.json', reviewPacket);
   const contributionReview = loadReview(
     run,
@@ -427,6 +447,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       titleChecks: titleFindings,
       contributionReview: reviewSummary(contributionReview),
       reviewInputPath: join(run.dir, 'review-input.json'),
+      comicObservationInputPath: observationInput
+        ? join(run.dir, 'comic-observation-input.json')
+        : null,
       reviewFingerprint: reviewPacket.fingerprint,
       ...(titleNote ? { titleNote } : {}),
       claims: {

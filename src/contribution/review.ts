@@ -1,5 +1,6 @@
 /** A review describes one exact render. It is advisory, never a publish gate. */
 import type { TraceDigest } from '../digest/build.ts';
+import { comicReviewLines, parseComicReview } from './comicReview.ts';
 import { readText, type Run } from '../run.ts';
 import {
   checkRole,
@@ -25,6 +26,7 @@ export function reviewInput(input: {
   headSha: string;
   authorText?: string;
   comicSha256?: string;
+  comic?: ReviewInput['comic'];
 }): ReviewInput {
   const { generatedAt: _time, ...digest } = input.digest;
   const stable = {
@@ -38,6 +40,7 @@ export function reviewInput(input: {
     headSha: input.headSha,
     authorSha256: textHash(input.authorText ?? ''),
     comicSha256: input.comicSha256 ?? '',
+    ...(input.comic ? { comic: input.comic } : {}),
   };
   return {
     v: 1,
@@ -53,6 +56,9 @@ export function reviewInput(input: {
       'final-body.md',
       'preview.html',
       'approval.json',
+      ...(input.comic
+        ? ['comic-observation-input.json', input.comic.imagePath, input.comic.scriptPath]
+        : []),
     ],
   };
 }
@@ -170,6 +176,30 @@ export function loadReview(
         ],
       };
     const review = value as unknown as ContributionReview;
+    const comicReview =
+      value.comicReview === undefined ? undefined : parseComicReview(value.comicReview);
+    if (comicReview && comicReview.imageSha256 !== input.comicSha256)
+      return {
+        ...base,
+        mode,
+        status: 'stale',
+        issues: [
+          ...base.issues,
+          'The comic content review describes a different image; inspect the current image first.',
+        ],
+      };
+    if (input.comic && !comicReview)
+      base.issues.push(
+        'Comic content assessment is missing. Read comic-observation-input.json with the image before reading its script or the full review packet.',
+      );
+    if (
+      input.comic &&
+      comicReview &&
+      comicReview.observedPanels.length !== input.comic.panelCount
+    )
+      base.issues.push(
+        `Comic reviewer observed ${comicReview.observedPanels.length} panels; the script specifies ${input.comic.panelCount}. Check the reading order and actual framing.`,
+      );
     const seen = new Set<string>();
     const author = readText(run, 'author.md') ?? '';
     for (const finding of review.assessments) {
@@ -231,7 +261,18 @@ export function loadReview(
       guidance.status !== 'current' ||
       seen.size !== base.requirements.length ||
       extraIssues.length > 0;
-    return { ...base, mode, status: incomplete ? 'incomplete' : 'current', assessments };
+    return {
+      ...base,
+      mode,
+      status:
+        incomplete ||
+        (input.comic && !comicReview) ||
+        (input.comic && comicReview?.observedPanels.length !== input.comic.panelCount)
+          ? 'incomplete'
+          : 'current',
+      assessments,
+      ...(comicReview ? { comicReview } : {}),
+    };
   } catch (e) {
     return { ...base, status: 'invalid', issues: [...base.issues, (e as Error).message] };
   }
@@ -251,6 +292,7 @@ export function reviewLine(review: ReviewResult): string {
       (a) =>
         `  - ${a.state} (${a.requirement}): ${a.reason}${a.correction ? ` Suggested correction: ${a.correction}` : ''}`,
     ),
+    ...(review.comicReview ? comicReviewLines(review.comicReview) : []),
   ].join('\n');
 }
 

@@ -469,6 +469,60 @@ describe('independent contribution reviews', () => {
     expect(reviewLine(result)).toContain('violated');
   });
 
+  test('new comic packets expose missing image-first assessment; old packets remain readable', () => {
+    const f = reviewed();
+    expect(f.loadReview().status).toBe('current');
+    const input = reviewInput({
+      ...f.inputArgs,
+      comicSha256: 'a'.repeat(64),
+      comic: { imagePath: 'out/comic.png', scriptPath: 'comic.json', panelCount: 1 },
+    });
+    f.review.inputFingerprint = input.fingerprint;
+    f.saveReview();
+    const result = f.loadReview(input);
+    expect(result.status).toBe('incomplete');
+    expect(result.issues.join(' ')).toContain('Comic content assessment is missing');
+    expect(input.artifacts).toContain('out/comic.png');
+    expect(input.artifacts).toContain('comic.json');
+  });
+
+  test('comic image identity and panel observations remain bound to the rendered packet', () => {
+    const f = reviewed();
+    const input = reviewInput({
+      ...f.inputArgs,
+      comicSha256: 'a'.repeat(64),
+      comic: { imagePath: 'out/comic.png', scriptPath: 'comic.json', panelCount: 1 },
+    });
+    f.review.inputFingerprint = input.fingerprint;
+    const value: any = f.review;
+    value.comicReview = {
+      imageSha256: 'a'.repeat(64),
+      observedPanels: ['A single static contradiction.'],
+      inferredStory: 'An interpretation.',
+      perceivedJoke: 'A modest visual reversal.',
+      checks: Object.fromEntries(
+        ['clarity', 'continuity', 'fidelity', 'payoff', 'readability'].map((name) => [
+          name,
+          {
+            state: 'uncertain',
+            reason: 'A concrete concern remains visible.',
+            panels: [1],
+          },
+        ]),
+      ),
+    };
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('current');
+    expect(reviewLine(f.loadReview(input))).toContain('payoff: uncertain');
+    value.comicReview.imageSha256 = 'b'.repeat(64);
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('stale');
+    value.comicReview.imageSha256 = 'a'.repeat(64);
+    value.comicReview.observedPanels.push('An unexpected extra panel.');
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('incomplete');
+  });
+
   test('unknown applicability cannot silently pass', () => {
     const f = reviewed();
     f.rule.applicability = 'unknown';

@@ -166,7 +166,10 @@ that bypass on your own initiative.
    funny that someone outside the repo would want to share:
    - compare three distinct short story/composition/cast concepts in local
      `comic-design.json`, following [comic-direction.md](references/comic-direction.md).
-     Choose one against `context.comic.recentComics`; draw one finished image.
+     First choose the strongest supported joke: record its evidence anchor,
+     reader expectation, comic turn, visible clues and likely misreading.
+     Reconcile synopsis, scenes, dialogue and alt text before drawing. Then use
+     `context.comic.recentComics` for art direction; draw one finished image.
      Panel count follows necessary story beats, not diff length. Pick a format
      and any art style that suits it (ideas in
      [references/styles.md](references/styles.md), or your own description);
@@ -191,13 +194,25 @@ that bypass on your own initiative.
    - `tracetoon comic render`, then **look at `out/comic.png` and proofread** the
      lettering against the printed list. Also inspect actual composition, panel
      count, title placement, reading order and payoff at PR and phone widths.
-     Redraw with `comic art --force` (up to 2
+     Diagnose a defect before another image request: rewrite a weak premise or
+     script, redraw a missed art instruction, or repair lettering. Tell the user
+     why a redraw is needed. Do not routinely draw hidden alternatives.
+     Redraw an art defect with `comic art --force` (up to 2
      times), then fall back to `--lettering overlay`. Offer
      `tracetoon comic reroll` if the user wants a different look.
 6. **Render and independent review.** `tracetoon render --json` composes the full
    PR and writes `review-input.json`. Launch a fresh reviewer, distinct from the
-   researcher and drafter, with that packet, the original sources, submitted code,
-   digest and author evidence. It independently checks source interpretation and
+   researcher and drafter. When the render includes a comic, give it ONLY
+   `comic-observation-input.json` and the actual image for its first pass. With no
+   prior context, it records literal panel observations, inferred story and
+   perceived joke. Wait for that account before sending `review-input.json`, the
+   script, original sources, submitted code, digest and author evidence. Never
+   supply the drafter's private selection reasoning. Record the reported
+   image-first account in `review.json.comicReview`, followed by separate clarity,
+   continuity, fidelity, payoff and readability judgments and panel evidence.
+   If fresh/vision-capable delegation is unavailable, disclose the limitation
+   rather than claiming an independent image-first reading. The reviewer
+   independently checks source interpretation and
    the full rendered PR, then writes `review.json` using
    [contribution-workflow.md](references/contribution-workflow.md). Re-render to
    validate and display the assessment. Return draftable findings to the drafter
