@@ -6,7 +6,7 @@
 git clone https://github.com/Tingsters/Showtail ../Showtail
 git clone https://github.com/Tingsters/tracetoon && cd tracetoon
 bun install
-bun test
+bun run test
 ```
 
 ## Layout
@@ -36,10 +36,17 @@ bun test
 
 ## Before sending a change
 
-- `bun run typecheck && bun test`
+- Development checks require Bun 1.3.14 or newer (the CI pin). `bun run test`
+  runs the complete source suite with four isolated file workers; tests within
+  each file remain sequential. `bun run typecheck && bun run test`
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
 - `bun run test:bundled` exercises the shipped bundle; `bun run build` followed
   by `bun run test:compiled` rehearses publication against the native executable.
+  Packaged runs select the public CLI/asset/launcher contracts declared in
+  scripts/packaged-contracts.ts. Their JUnit results must contain every selected
+  contract; renamed, skipped, failed, or empty selections cannot pass silently.
+  All source tests still run on each supported CI platform. Publication itself
+  reuses current validation; it never launches these suites after approval.
 - Never commit real session logs. Fixtures are synthetic or scrubbed.
 
 Contributor research and review handoffs live in `src/contribution/`; their host
