@@ -4,6 +4,11 @@ Prompts, decisions, plans and runs carry short ids (`S1`, `D1`, `P1`, `R1`) so
 you can keep track of which fact supports which sentence. Don't print the ids in
 the PR.
 
+Exact-content validation receipts have separate `V1`, `V2` ids. Reviewers cite
+them as `digest:V1`; `tracetoon expand V1 --run <id>` prints their evidence.
+They do not turn historical runs into proof of the current revision, and a
+passing receipt supports only the command and environment that were checked.
+
 | Field | Meaning |
 |---|---|
 | `pr` | Base, head, merge base, commits (short SHA, subject, trailers, commit time), existing PR number and URL |
@@ -20,6 +25,9 @@ the PR.
 | `sessions[].artifacts` | Documents the agent kept (Antigravity task, implementation plan, walkthrough), with its own summary |
 | `sessions[].decisions` | Questions the agent asked and the answers. `questions[]` (when recorded) has each question's `options` and the exact `answer`; `ownWords` means the user answered in their own words instead of picking an option. An option that wasn't picked is only that: not picked |
 | `sessions[].runs` | Individual verification runs: `kind` (test, build, lint, typecheck, eval), `outcome` (passed, failed, unknown), `basis` (exit status, output, none), up to three result lines in `summary`, and `revision`: `before later edits` (PR files changed after it), `no later edits seen`, `after later work` (ran after the PR's last commit and further edits, so it tested code that isn't in this PR: don't cite it), or `unknown`. A run never proves the final revision passes; word it as what ran and what it showed |
+| `verification` | Current explicit receipts as `V#` facts, with `verificationBasis: exact-content-receipt`. Their recorded command outcome is bound to the current content and execution environment; inferred `R#` session runs remain separate |
+| `validation` | All check statuses, including failed, stale, running, skipped and CI-only checks, their reasons and durations. Skipped/unavailable checks are never passing evidence |
+| `checksSha` | Fingerprint of the local receipt collection at digest time. Changed receipts require refreshed evidence and review |
 | `sessions[].commands` | Grouped shell commands with counts, failures, and an `isTest` flag |
 | `sessions[].milestones` | Deterministic events: plan approved, tests went from failing to passing, edits that didn't survive |
 | `sessions[].usage`, `sessionCostUsd` | Token totals for the matched part; cost is for the whole session |

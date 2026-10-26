@@ -3,6 +3,7 @@ import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { prTruth } from '../git/pr.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
+import { readTask, saveTask } from '../workflow/state.ts';
 
 export function pendingNotice(root: string, gitDir: string) {
   const pending = pendingDrafts(root, gitDir);
@@ -38,6 +39,12 @@ export function dismissPendingCmd(cwd: string, opts: OutOpts & { run: string }):
       `Run ${opts.run} is not awaiting review. Check tracetoon status.`,
     );
   setReviewState(draft.run, draft.approval, 'dismissed');
+  const task = readTask(draft.run);
+  if (task) {
+    task.state = 'deferred';
+    task.reason = 'The author dismissed this local review reminder.';
+    saveTask(draft.run, task);
+  }
   emit(
     opts,
     { run: opts.run, dismissed: true },

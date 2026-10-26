@@ -176,6 +176,7 @@ ${policyHtml(policy, comicHeldBack)}
 <div class="card">${html}</div>
 ${marked_.notes}
 ${contributionReview ? contributionReviewHtml(contributionReview) : ''}
+${digest.validation?.length ? `<section class="checks"><p><b>Local validation before author review</b></p><ul>${digest.validation.map((c) => `<li><b>${esc(c.name)}</b>: ${esc(c.outcome)}${c.current ? '' : ' (stale)'} — ${esc(c.command || 'not run')}; ${c.durationMs}ms${c.reason ? `<br>${esc(c.reason)}` : ''}</li>`).join('')}</ul></section>` : ''}
 ${
   notes.length
     ? `<section class="checks"><p><b>Optional additions</b> (skip any that don't apply; "not captured" doesn't mean "not done"):</p><ul>${notes.map((n) => `<li>${esc(n.text)}</li>`).join('')}</ul></section>`

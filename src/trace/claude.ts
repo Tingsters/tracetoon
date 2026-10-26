@@ -10,6 +10,7 @@ import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
 import { resolvePlanResult } from '@showtail/agent-traces/transcript/plans';
 import { headTail } from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
+import { discoveryIndex } from './discovery.ts';
 import type {
   DecisionQuestion,
   SessionRef,
@@ -397,40 +398,28 @@ export const claudeAdapter: TraceAdapter = {
     return existsSync(dir) ? claudeHome() : undefined;
   },
   count: () => claude.findTranscripts().length,
-  discover({ roots, sinceMs, needles = [], all }) {
+  discover(query) {
+    const { sinceMs } = query;
     const out: SessionRef[] = [];
-    const lowered = needles.map((n) => n.toLowerCase());
+    const index = discoveryIndex(query, 'claude-code');
     for (const t of claude.findTranscripts()) {
-      if (t.mtimeMs < sinceMs) continue;
-      let relevant =
-        !!all || (t.cwd !== undefined && mentionsAnyRoot(JSON.stringify(t.cwd), roots));
-      if (!relevant) {
-        // Sessions can start elsewhere and move into the repo, or work in a worktree
-        // that's gone: check the whole file and its subagents for a repo root or a
-        // PR commit SHA. Correlation decides later whether it really belongs.
-        for (const p of [t.path, ...subagentFiles(t.path)]) {
-          try {
-            const text = readFileSync(p, 'utf8');
-            const low = lowered.length ? text.toLowerCase() : '';
-            if (mentionsAnyRoot(text, roots) || lowered.some((n) => low.includes(n))) {
-              relevant = true;
-              break;
-            }
-          } catch {
-            /* unreadable: skip */
-          }
-        }
-      }
-      if (relevant) {
+      const files = [t.path, ...subagentFiles(t.path)];
+      const info = files.map((p) => index.inspect(p)).filter((p) => p !== undefined);
+      const active =
+        query.currentSessionPath &&
+        files.some((p) => resolve(p) === resolve(query.currentSessionPath!));
+      const recent = Math.max(t.mtimeMs, ...info.map((p) => p.recent));
+      if ((active || recent >= sinceMs) && (active || info.some((p) => p.match))) {
         out.push({
           agent: 'claude-code',
           sessionId: t.sessionId,
           path: t.path,
-          mtimeMs: t.mtimeMs,
+          mtimeMs: recent,
           cwd: t.cwd,
         });
       }
     }
+    index.save();
     return out;
   },
   read(ref) {

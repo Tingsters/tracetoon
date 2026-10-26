@@ -13,6 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { antigravity, antigravityIde } from '@showtail/agent-traces';
 import { headTail, splitLines } from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
+import { discoveryIndex } from './discovery.ts';
 import type {
   AgentId,
   SessionRef,
@@ -316,39 +317,36 @@ function makeAdapter(
       return find().length || existsSync(join(home, id)) ? home : undefined;
     },
     count: () => find().length,
-    discover({ roots, sinceMs, needles = [], all }) {
-      const lowered = needles.map((n) => n.toLowerCase());
+    discover(query) {
+      const { roots, sinceMs, all } = query;
       const history = readHistory(antigravity.geminiHome());
+      const historyNeedles = history
+        .filter((h) => h.ms >= sinceMs && mentionsAnyRoot(h.workspace, roots))
+        .map((h) => h.display.slice(0, 40))
+        .filter((s) => s.trim().length >= 10);
+      const index = discoveryIndex(
+        { ...query, needles: [...(query.needles ?? []), ...historyNeedles] },
+        id,
+      );
       const out: SessionRef[] = [];
       for (const t of find()) {
-        if (t.mtimeMs < sinceMs) continue;
-        let text: string;
-        try {
-          text = readFileSync(t.path, 'utf8');
-        } catch {
-          continue;
-        }
-        const low = lowered.length ? text.toLowerCase() : '';
-        const viaHistory = history.some(
-          (h) =>
-            h.ms >= sinceMs &&
-            mentionsAnyRoot(h.workspace, roots) &&
-            text.includes(h.display.slice(0, 40)),
-        );
-        if (
-          all ||
-          viaHistory ||
-          mentionsAnyRoot(text, roots) ||
-          lowered.some((n) => low.includes(n))
-        ) {
+        const info = index.inspect(t.path);
+        if (!info) continue;
+        const active =
+          query.currentSessionPath &&
+          resolve(t.path) === resolve(query.currentSessionPath);
+        const recent = Math.max(t.mtimeMs, info.recent);
+        if (!active && recent < sinceMs) continue;
+        if (all || info.match || active) {
           out.push({
             agent: id,
             sessionId: t.sessionId,
             path: t.path,
-            mtimeMs: t.mtimeMs,
+            mtimeMs: recent,
           });
         }
       }
+      index.save();
       return out;
     },
     read(ref) {

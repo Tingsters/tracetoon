@@ -12,6 +12,11 @@ import { findRun, newRun, readJson, writeJson } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { submissionSnapshot } from '../review/snapshot.ts';
 import { pendingNotice } from './pending.ts';
+import { checkReport, receiptEvidence } from '../workflow/checks.ts';
+import { readTask } from '../workflow/state.ts';
+import { receipts } from '../workflow/checks.ts';
+import { fileHash } from '../workflow/readiness.ts';
+import { makeScrubber } from '../digest/sanitize.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -61,8 +66,16 @@ export function digestHash(d: TraceDigest): string {
 
 export function digestCmd(cwd: string, opts: DigestOpts): void {
   const { truth, matches } = scan(cwd, { base: opts.base, noGh: opts.offline });
+  const run = opts.run ? findRun(truth.gitDir, opts.run) : newRun(truth.gitDir);
   const config = loadConfig(truth.toplevel);
-  const build = { include: opts.include, exclude: opts.exclude };
+  const selected = readJson<{ include?: string[]; exclude?: string[] }>(
+    run,
+    'session-selection.json',
+  );
+  const build = {
+    include: opts.include ?? selected?.include,
+    exclude: opts.exclude ?? selected?.exclude,
+  };
   const digest = buildDigest(truth, matches, {
     ...build,
     budgetTokens: opts.budget ?? config.budgetTokens,
@@ -72,7 +85,32 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     budgetTokens: Number.MAX_SAFE_INTEGER,
   });
   const pending = pendingNotice(truth.toplevel, truth.gitDir);
-  const run = opts.run ? findRun(truth.gitDir, opts.run) : newRun(truth.gitDir);
+  if (readTask(run)) {
+    const validation = checkReport(truth.toplevel, run).map((c) => ({
+      name: c.name,
+      command: c.command.join(' '),
+      outcome: c.outcome,
+      current: c.current,
+      reason: c.reason,
+      durationMs: c.durationMs,
+    }));
+    const verification = receiptEvidence(truth.toplevel, run);
+    digest.verification = full.verification = verification;
+    digest.checksSha = full.checksSha = receipts(run).length
+      ? fileHash(run, 'checks.json')
+      : undefined;
+    const noChecks = readTask(run)?.noChecksReason;
+    if (noChecks)
+      validation.push({
+        name: 'No local checks applicable',
+        command: '',
+        outcome: 'not-run',
+        current: true,
+        reason: makeScrubber([truth.toplevel]).text(noChecks),
+        durationMs: 0,
+      });
+    digest.validation = full.validation = validation;
+  }
   const previous = opts.run
     ? readJson<{ head: string }>(run, 'approval.json')
     : undefined;
@@ -80,6 +118,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     throw new UserError(
       `This run belongs to branch ${previous.head}. Switch to that branch before refreshing it.`,
     );
+  writeJson(run, 'session-selection.json', build);
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
   writeJson(run, 'submission.json', submissionSnapshot(truth));
@@ -128,7 +167,9 @@ export function expandCmd(
   const truth = prTruth(cwd, { noGh: true });
   const run = findRun(truth.gitDir, opts.run);
   const full = readJson<TraceDigest>(run, 'digest-full.json');
-  const s = full?.sessions.find((x) => x.ref === ref);
+  const s =
+    full?.sessions.find((x) => x.ref === ref) ??
+    full?.verification?.find((x) => x.id === ref.replace(/^digest:/, ''));
   if (!s) throw new UserError(`No session ${ref} in run ${run.id}.`);
   emit(opts, s, () => JSON.stringify(s, null, 2));
 }

@@ -36,7 +36,7 @@ export interface ClaimInput {
   title: string;
   /** The description markdown (without the comic block or disclosure). */
   body: string;
-  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr'>;
+  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr' | 'verification'>;
   /** Repository root, to tell a stale reference from a file outside the diff. */
   root?: string;
   /** Things the author told Tracetoon (author.md), treated as author-reported. */
@@ -87,8 +87,7 @@ function runKindsFor(s: string): Run['kind'][] {
 
 function allRuns(d: ClaimInput['digest']): Run[] {
   return (
-    d.sessions
-      .flatMap((s) => s.runs ?? [])
+    [...d.sessions.flatMap((s) => s.runs ?? []), ...(d.verification ?? [])]
       // Runs on later work (after the PR's last commit and further edits) say nothing about this PR.
       .filter((r) => r.revision !== 'after later work')
       .slice()
@@ -182,14 +181,15 @@ function checkVerification(
         `${lastPass.id} passed, but files in the PR changed afterwards; say it passed before the final edits, or re-run.`,
         ids,
       );
-    const dirty = input.digest.pr.dirty
-      ? ' Uncommitted changes existed, so it may have covered code outside the PR.'
-      : '';
+    const dirty =
+      input.digest.pr.dirty && lastPass.verificationBasis !== 'exact-content-receipt'
+        ? ' Uncommitted changes existed, so it may have covered code outside the PR.'
+        : '';
     return finding(
       s,
       'verification',
       'observed',
-      `${lastPass.id} (${lastPass.cmd}) passed${lastPass.summary.length ? `: ${lastPass.summary.join(', ')}` : ''}, with no later edits seen.${dirty}`,
+      `${lastPass.id} (${lastPass.cmd}) passed${lastPass.summary.length ? `: ${lastPass.summary.join(', ')}` : ''}${lastPass.verificationBasis === 'exact-content-receipt' ? '; its receipt matches the current content and environment' : ', with no later edits seen'}.${dirty}`,
       ids,
     );
   }

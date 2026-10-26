@@ -1,12 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { hostHome } from '@showtail/agent-traces/paths/hostHome';
 import { hookStatus } from '../hook/install.ts';
 import { switchState } from '../hook/switches.ts';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
-import { gh, git } from '../util/exec.ts';
-import { TOOL_VERSION } from '../version.ts';
+import { gh, git, run } from '../util/exec.ts';
+import { TOOL_VERSION, BUILD_INFO } from '../version.ts';
+import { userConfigPath } from '../config.ts';
+import { readLocal } from '../util/localJson.ts';
 import { emit, type OutOpts } from './output.ts';
 import { nextStep, routeStatuses } from '../comic/routes.ts';
 
@@ -85,7 +87,13 @@ export function describeRuntime(
 export function skillInstalls(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
-): { agent: string; dir: string; version: string | null }[] {
+): {
+  agent: string;
+  dir: string;
+  version: string | null;
+  buildId: string | null;
+  matchesRuntime: boolean;
+}[] {
   const gemini = env.GEMINI_HOME || join(home, '.gemini');
   const places = [
     {
@@ -105,7 +113,14 @@ export function skillInstalls(
       } catch {
         /* older installs have no VERSION file */
       }
-      return { ...p, version };
+      const buildId =
+        readLocal<{ buildId: string }>(join(p.dir, 'build.json'))?.buildId ?? null;
+      return {
+        ...p,
+        version,
+        buildId,
+        matchesRuntime: buildId === BUILD_INFO.buildId && version === TOOL_VERSION,
+      };
     });
 }
 
@@ -114,6 +129,28 @@ export function doctor(
   opts: OutOpts & { probe?: boolean; strict?: boolean },
 ): void {
   const runtime = describeRuntime();
+  const hooks = hookStatus().filter((h) => h.present);
+  const hookRuntimes = hooks.map((h) => {
+    const prefix = h.command?.split(/\s+hook pre-pr\b/)[0];
+    const argv = prefix
+      ?.match(/"[^"]*"|'[^']*'|[^\s]+/g)
+      ?.map((s) => s.replace(/^["']|["']$/g, ''));
+    const result = argv?.length
+      ? run(argv[0]!, [...argv.slice(1), 'build-info', '--json'], { timeoutMs: 2000 })
+      : undefined;
+    let build: typeof BUILD_INFO | null = null;
+    try {
+      if (result?.ok) build = JSON.parse(result.stdout);
+    } catch {
+      /* legacy runtime */
+    }
+    return {
+      agent: h.agent,
+      command: h.command ?? null,
+      build,
+      matchesRuntime: build?.buildId === BUILD_INFO.buildId,
+    };
+  });
   const installs = skillInstalls();
   const gitV = version(git(cwd, ['--version']).stdout);
   const ghOut = gh(cwd, ['--version']);
@@ -136,6 +173,16 @@ export function doctor(
   const report = {
     tool: `tracetoon ${TOOL_VERSION}`,
     runtime,
+    runtimeInfo: {
+      ...BUILD_INFO,
+      executable: process.execPath,
+      entrypoint: process.argv[1] ?? null,
+      launcher: process.env.TRACETOON_LAUNCHER ?? null,
+    },
+    hookRuntimes,
+    lastHookError:
+      readLocal(join(dirname(userConfigPath()), 'last-hook-error.json')) ?? null,
+    observedHooks: readLocal(join(dirname(userConfigPath()), 'hook-health.json')) ?? {},
     git: gitV ?? null,
     gh: ghV ?? null,
     ghAuthenticated: ghAuth,
@@ -144,7 +191,7 @@ export function doctor(
     agents: [...agents, ...planned],
     installs,
     switch: switchState(cwd),
-    prHook: hookStatus().filter((h) => h.present),
+    prHook: hooks,
     ...(opts.probe ? { unknownRecordTypes: probe() } : {}),
     imageProviders: routeStatuses(top.ok ? top.stdout.trim() : undefined),
     push: top.ok && ghAuth ? (pushAccess(cwd) ?? null) : null,
@@ -177,10 +224,9 @@ export function doctor(
         ? 'skill installed for:'
         : 'skill not installed for any agent (run the installer)',
       ...installs.map((i) => {
-        const stale =
-          i.version && i.version !== TOOL_VERSION
-            ? ' (older version: re-run the installer)'
-            : '';
+        const stale = !i.matchesRuntime
+          ? ' (different or unknown build: update the runtime and skill together)'
+          : '';
         return `  ${i.agent.padEnd(14)} ${i.version ?? 'unknown version'}${stale}`;
       }),
       `tracetoon here: ${report.switch.enabled ? 'on' : 'off'} (${report.switch.why})`,
@@ -192,6 +238,18 @@ export function doctor(
           .join(', ') || 'no agents found'
       }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
       ...report.prHook.filter((h) => h.problem).map((h) => `  ${h.label}: ${h.problem}`),
+      ...hookRuntimes
+        .filter((h) => !h.matchesRuntime)
+        .map(
+          (h) =>
+            `  ${h.agent} hook runtime differs or predates build identity; update it.`,
+        ),
+      ...hooks
+        .filter((h) => h.installed && !h.completionInstalled)
+        .map(
+          (h) =>
+            `  ${h.label}: completion hooks are missing; reinstall hooks and reload/trust them.`,
+        ),
     );
     const found = report.imageProviders.filter((p) => p.available);
     lines.push(

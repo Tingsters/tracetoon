@@ -54,7 +54,9 @@ export function previewHandoff(input: {
   problem?: string;
 }): PreviewHandoff {
   const caption = input.pending
-    ? 'You have a PR awaiting review'
+    ? input.problem
+      ? 'Your PR preview needs refreshing'
+      : 'You have a PR awaiting review'
     : 'OPEN YOUR LOCAL PR PREVIEW';
   const next = input.problem
     ? `${input.problem}\nResume with: ${input.command} preview --run ${input.run}. Refresh the digest, description, review and preview before publishing.`

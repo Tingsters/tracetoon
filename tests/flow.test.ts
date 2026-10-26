@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { git } from '../src/util/exec.ts';
+import { decodeMeta, regionContent } from '../src/github/body.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
 
 // Set TRACETOON_TEST_CLI to run these against the bundled build instead of the source.
@@ -172,6 +173,12 @@ describe('other agents', () => {
       jsonl([{ id, thread_name: 'Greeting helper' }]),
     );
     repo.commit('src/greet.ts', GREET, 'feat: greeting');
+    // An open Windows writer may retain an old mtime while recent events append.
+    utimesSync(
+      join(dir, `rollout-2026-10-23T10-00-00-${id}.jsonl`),
+      new Date('2020-01-01'),
+      new Date('2020-01-01'),
+    );
     const r = cli(repo.root, 'digest', '--offline');
     expect(r.code).toBe(0);
     expect(r.json.sessions).toMatchObject([
@@ -310,7 +317,7 @@ describe('render and publish', () => {
     );
     writeFileSync(join(runDir, 'final-body.md'), finalBody);
 
-    const notPushed = cli(repo.root, 'publish', '--code', code);
+    const notPushed = cli(repo.root, 'publish', '--code', code, '--no-push');
     expect(notPushed.json.error).toContain('not on GitHub yet');
     expect(existsSync(ghLog)).toBe(false);
 
@@ -323,7 +330,8 @@ describe('render and publish', () => {
       .map((l) => JSON.parse(l));
     const create = calls.find((c) => c.args[1] === 'create');
     expect(create.args).toContain('Add greeting helper');
-    expect(create.body).toBe(finalBody);
+    expect(regionContent(create.body)).toBe(regionContent(finalBody));
+    expect(decodeMeta(create.body)?.submission).toBe(code);
   });
 
   test('yolo publishes without a code only when enabled and clean', () => {

@@ -20,6 +20,7 @@ import {
 } from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
 import type { SessionRef, TraceAdapter, TraceSession } from './types.ts';
+import { discoveryIndex } from './discovery.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj =>
@@ -335,28 +336,29 @@ export const codexAdapter: TraceAdapter = {
     return existsSync(dir) ? dirname(dir) : undefined;
   },
   count: () => codex.findRollouts().length,
-  discover({ roots, sinceMs, needles = [], all }) {
-    const lowered = needles.map((n) => n.toLowerCase());
+  discover(query) {
+    const { sinceMs } = query;
+    const index = discoveryIndex(query);
     const out: SessionRef[] = [];
     for (const r of codex.findRollouts()) {
-      if (r.mtimeMs < sinceMs) continue;
-      let text: string;
-      try {
-        text = readFileSync(r.path, 'utf8');
-      } catch {
-        continue;
-      }
-      const low = lowered.length ? text.toLowerCase() : '';
-      if (all || mentionsAnyRoot(text, roots) || lowered.some((n) => low.includes(n))) {
+      const info = index.inspect(r.path);
+      if (!info) continue;
+      const active =
+        query.currentSessionPath && resolve(r.path) === resolve(query.currentSessionPath);
+      if (
+        (active || Math.max(info.recent, r.mtimeMs) >= sinceMs) &&
+        (info.match || active)
+      ) {
         out.push({
           agent: 'codex',
           sessionId: r.sessionId,
           path: r.path,
-          mtimeMs: r.mtimeMs,
+          mtimeMs: Math.max(r.mtimeMs, info.recent),
           cwd: r.cwd,
         });
       }
     }
+    index.save();
     return out;
   },
   read(ref) {

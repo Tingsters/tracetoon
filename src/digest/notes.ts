@@ -22,15 +22,16 @@ const VISUAL =
   /\b(screenshot|by eye|visually|in the browser|manually checked|looked at)\b/i;
 
 export function contextNotes(
-  digest: Pick<TraceDigest, 'sessions' | 'files' | 'stats'>,
+  digest: Pick<TraceDigest, 'sessions' | 'files' | 'stats' | 'verification'>,
   body: string,
   claims: ClaimFinding[] = [],
 ): ContextNote[] {
   const notes: ContextNote[] = [];
   const included = digest.sessions.filter((s) => s.band === 'included');
-  const runs = included
-    .flatMap((s) => s.runs ?? [])
-    .filter((r) => r.revision !== 'after later work');
+  const runs = [
+    ...included.flatMap((s) => s.runs ?? []),
+    ...(digest.verification ?? []),
+  ].filter((r) => r.revision !== 'after later work');
   const behavior = digest.files.filter((f) => (f.role ?? 'behavior') === 'behavior');
   const behaviorAdded = behavior.reduce((n, f) => n + f.added, 0);
 
@@ -79,7 +80,7 @@ export function contextNotes(
  * (or must, by the repo's policy). Facts only, grouped; no prose to copy.
  */
 export function evidenceNotes(
-  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr'>,
+  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr' | 'verification'>,
 ): string {
   const included = digest.sessions.filter((s) => s.band === 'included');
   const lines: string[] = ['# Notes to write from', ''];
@@ -114,9 +115,10 @@ export function evidenceNotes(
       );
     lines.push('');
   }
-  const runs = included
-    .flatMap((s) => s.runs ?? [])
-    .filter((r) => r.revision !== 'after later work');
+  const runs = [
+    ...included.flatMap((s) => s.runs ?? []),
+    ...(digest.verification ?? []),
+  ].filter((r) => r.revision !== 'after later work');
   const lastByKind = new Map(
     runs.map((r) => [`${r.kind}:${r.cmd.split(' ').slice(0, 2).join(' ')}`, r]),
   );
@@ -124,7 +126,7 @@ export function evidenceNotes(
     lines.push('## Checks captured (last run of each)');
     for (const r of lastByKind.values())
       lines.push(
-        `- \`${r.cmd}\`: ${r.outcome}${r.summary.length ? ` (${r.summary.join(', ')})` : ''}; ${r.revision}`,
+        `- ${r.id ? `${r.id}: ` : ''}\`${r.cmd}\`: ${r.outcome}${r.summary.length ? ` (${r.summary.join(', ')})` : ''}; ${r.verificationBasis === 'exact-content-receipt' ? 'receipt matches current content and environment' : r.revision}`,
       );
     lines.push('');
   }

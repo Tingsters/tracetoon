@@ -29,7 +29,12 @@ import {
   statusCmd,
 } from './commands/switch.ts';
 import { runPrHook, type HookAgent } from './hook/prHook.ts';
-import { TOOL_VERSION } from './version.ts';
+import { TOOL_VERSION, BUILD_INFO } from './version.ts';
+import { taskCmd, checkCmd, readyCmd } from './commands/workflow.ts';
+import { runLifecycle, type LifecycleEvent } from './hook/lifecycle.ts';
+import { findRun } from './run.ts';
+import { repository } from './workflow/state.ts';
+import { recordTiming } from './workflow/publication.ts';
 
 const list = (v: string) =>
   v
@@ -47,6 +52,55 @@ const program = new Command()
   .option('--json', 'print machine-readable JSON');
 
 const g = () => program.opts<{ json?: boolean }>();
+let timedAction: { name: string; run?: string; started: number } | undefined;
+program.hook('preAction', (_command, action) => {
+  timedAction = {
+    name: action.name(),
+    run: action.opts().run,
+    started: performance.now(),
+  };
+});
+
+program
+  .command('build-info')
+  .description('runtime identity and supported workflow capabilities')
+  .action(() => emit(g(), BUILD_INFO, () => JSON.stringify(BUILD_INFO)));
+const task = program
+  .command('task')
+  .description('register and finish a cohesive local change');
+for (const action of ['begin', 'complete', 'defer', 'block'] as const) {
+  task
+    .command(action)
+    .option('--run <id>', 'resume this task')
+    .option('--base <ref>', 'PR base')
+    .option('--session <id>', 'actual host session id')
+    .option('--transcript <path>', 'active host transcript')
+    .option('--reason <text>', 'reason work is unfinished')
+    .option('--checks <names>', 'comma-separated applicable check names')
+    .option('--no-checks <reason>', 'explain why no local checks apply')
+    .action((o) => taskCmd(cwd, action, { ...g(), ...o }));
+}
+program
+  .command('check')
+  .description('run validation and record exact tested content')
+  .requiredOption('--run <id>', 'task run')
+  .option('--name <name>', 'check name')
+  .option('--cwd <path>', 'directory inside the repository')
+  .option('--skip <reason>', 'explicit CI-only or unavailable check')
+  .option('--force', 'rerun even if unchanged')
+  .option(
+    '--input <path>',
+    'also fingerprint an ignored generated artifact (repeatable)',
+    (value: string, previous: string[]) => [...previous, value],
+    [],
+  )
+  .argument('[command...]', 'program and arguments after --')
+  .action((command, o) => checkCmd(cwd, command, { ...g(), ...o }));
+program
+  .command('ready')
+  .description('finish preparation and return the author review handoff')
+  .requiredOption('--run <id>', 'task run')
+  .action((o) => readyCmd(cwd, { ...g(), ...o }));
 
 program
   .command('images')
@@ -141,6 +195,7 @@ program
   .option('--code <code>', 'approval code from render/preview')
   .option('--yolo', 'publish without a code when yolo is enabled and every check passes')
   .option('--push', 'push the branch if GitHub does not have the approved revision')
+  .option('--no-push', 'require the approved revision to already be on the remote')
   .option('--draft', 'open the PR as a draft')
   .option('--ack-policy', 'the user read the repo AI policy and still wants to post')
   .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
@@ -234,6 +289,18 @@ program
   .requiredOption('--run <id>', 'run awaiting review')
   .action((o) => dismissPendingCmd(cwd, { ...g(), ...o }));
 hook
+  .command('lifecycle')
+  .requiredOption('--agent <agent>', 'claude, codex or antigravity')
+  .requiredOption('--event <event>', 'SessionStart, PreToolUse, PostToolUse or Stop')
+  .action(async (o) => {
+    if (
+      !['claude', 'codex', 'antigravity'].includes(o.agent) ||
+      !['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop'].includes(o.event)
+    )
+      throw new UserError('Unknown host lifecycle event.');
+    await runLifecycle(o.agent as HookAgent, o.event as LifecycleEvent);
+  });
+hook
   .command('pre-pr')
   .description('called by agents before shell commands; blocks direct gh pr create/edit')
   .requiredOption('--agent <agent>', 'claude, codex or antigravity')
@@ -270,5 +337,22 @@ try {
   const err = e as Error & { exitCode?: number };
   if (g().json) process.stdout.write(JSON.stringify({ error: err.message }) + '\n');
   else process.stderr.write(`tracetoon: ${err.message}\n`);
-  process.exit(exitCodeOf(err));
+  process.exitCode = exitCodeOf(err);
+} finally {
+  if (
+    timedAction?.run &&
+    ['digest', 'context', 'render', 'ready', 'preview', 'art', 'check'].includes(
+      timedAction.name,
+    )
+  ) {
+    try {
+      recordTiming(
+        findRun(repository(cwd).gitDir, timedAction.run),
+        timedAction.name,
+        performance.now() - timedAction.started,
+      );
+    } catch {
+      /* timing must not break the workflow */
+    }
+  }
 }

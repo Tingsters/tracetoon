@@ -369,6 +369,29 @@ describe('contributor research', () => {
 });
 
 describe('independent contribution reviews', () => {
+  test('exact-content receipts are citeable independently of historical session runs', () => {
+    const f = reviewed();
+    f.evidence.verification = [
+      {
+        id: 'V1',
+        cmd: 'bun test',
+        kind: 'test',
+        outcome: 'passed',
+        basis: 'exit status',
+        summary: ['1 pass'],
+        revision: 'no later edits seen',
+        verificationBasis: 'exact-content-receipt',
+      },
+    ];
+    const input = reviewInput(f.inputArgs);
+    f.review.inputFingerprint = input.fingerprint;
+    f.review.assessments[0]!.evidence = ['digest:V1'];
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('current');
+    f.review.assessments[0]!.evidence = ['digest:V9'];
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('invalid');
+  });
   test('a current review references exact rendered evidence', () => {
     const f = reviewed();
     expect(f.loadReview().status).toBe('current');

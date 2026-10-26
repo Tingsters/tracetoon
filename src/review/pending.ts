@@ -6,6 +6,8 @@ import type { Approval } from '../commands/publish.ts';
 import type { Run } from '../run.ts';
 import { git } from '../util/exec.ts';
 import { snapshotProblem } from './snapshot.ts';
+import { readTask } from '../workflow/state.ts';
+import { readyProblem } from '../workflow/readiness.ts';
 
 export const RUN_NAME = /^\d{8}-\d{6}(-\d+)?$/;
 type ReviewState = {
@@ -61,6 +63,8 @@ export function activePendingRuns(gitDir: string): Draft[] {
   const latest = new Map<string, Draft>();
   for (const draft of drafts(gitDir)) latest.set(target(draft.approval), draft);
   return [...latest.values()].filter(({ run, approval }) => {
+    const task = readTask(run);
+    if (task && task.state !== 'ready' && !task.readyAt) return false;
     const state = json<ReviewState>(run.dir, 'review-state.json');
     if (state?.code === approval.code && state.status !== 'pending') return false;
     return json<{ code?: string }>(run.dir, 'published.json')?.code !== approval.code;
@@ -79,6 +83,8 @@ export function setReviewState(
 }
 
 export function recordRendered(gitDir: string, run: Run, approval: Approval): void {
+  // Managed renders can be internal reviewer artifacts. `ready` registers their handoff.
+  if (readTask(run)) return;
   for (const older of drafts(gitDir)) {
     if (older.run.id !== run.id && target(older.approval) === target(approval))
       setReviewState(older.run, older.approval, 'superseded');
@@ -96,9 +102,13 @@ export function pendingDrafts(root: string, gitDir: string): PendingDraft[] {
   return active
     .map(({ run, approval }): PendingDraft => {
       const other = branch !== approval.head;
+      const task = readTask(run);
       const problem = other
         ? `Switch to branch ${approval.head} to resume this preview.`
-        : snapshotProblem(root, approval.submission);
+        : task && task.state !== 'ready'
+          ? 'This task is being refreshed; its previous preview is not ready for publication.'
+          : (snapshotProblem(root, approval.submission) ??
+            (task ? readyProblem(root, run, approval) : undefined));
       return {
         run: run.id,
         code: approval.code,

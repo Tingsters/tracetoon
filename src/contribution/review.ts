@@ -78,13 +78,16 @@ function evidenceExists(
   if (ref === 'title') return true;
   const fact = /^digest:([^:]+)$/.exec(ref);
   if (fact)
-    return digest.sessions.some((s) =>
-      [
-        ...(s.prompts ?? []),
-        ...(s.plans ?? []),
-        ...(s.decisions ?? []),
-        ...(s.runs ?? []),
-      ].some((f) => f.id === fact[1]),
+    return (
+      !!digest.verification?.some((r) => r.id === fact[1]) ||
+      digest.sessions.some((s) =>
+        [
+          ...(s.prompts ?? []),
+          ...(s.plans ?? []),
+          ...(s.decisions ?? []),
+          ...(s.runs ?? []),
+        ].some((f) => f.id === fact[1]),
+      )
     );
   const range = /^(body|diff|author|source:([^:]+)):(\d+)(?:-(\d+))?$/.exec(ref);
   if (!range) return false;

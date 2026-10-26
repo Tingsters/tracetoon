@@ -113,9 +113,13 @@ export interface TraceSession {
 }
 
 export interface DiscoverQuery {
+  /** Local metadata cache, normally under this worktree's git directory. */
+  cacheDir?: string;
+  /** The active host transcript is always inspected, even with stale timestamps. */
+  currentSessionPath?: string;
   /** Repository roots (main checkout plus worktrees). */
   roots: string[];
-  /** Ignore logs last written before this time (ms since epoch). */
+  /** Earliest relevant event time (ms since epoch). Filesystem mtime alone cannot exclude a live log. */
   sinceMs: number;
   /**
    * Extra strings that make a log relevant even if it never names a root: the

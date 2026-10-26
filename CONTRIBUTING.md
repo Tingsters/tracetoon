@@ -20,6 +20,7 @@ bun test
 | `src/comic/` | Script format, style ideas, bubbles, rasterizing, image providers |
 | `src/github/` | PR body region and metadata, assets branch, repo templates and policy |
 | `src/hook/` | The agent PR hook (`hook pre-pr`), its install/uninstall into each agent's config, and the on/off switches |
+| `src/workflow/` | Worktree-local task lifecycle, exact-content validation receipts, host-session registry and publication recovery |
 | `src/commands/` | The CLI commands |
 | `plugin/skills/tracetoon/` | The Agent Skills folder that ships: SKILL.md, references, launchers, bundle, assets |
 
@@ -37,6 +38,8 @@ bun test
 
 - `bun run typecheck && bun test`
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
+- `bun run test:bundled` exercises the shipped bundle; `bun run build` followed
+  by `bun run test:compiled` rehearses publication against the native executable.
 - Never commit real session logs. Fixtures are synthetic or scrubbed.
 
 Contributor research and review handoffs live in `src/contribution/`; their host
@@ -56,6 +59,10 @@ tests is not a visual quality result. Gallery artifacts stay under `.git/`.
 
 ## Releasing
 
-Bump the version in `package.json`, `src/version.ts`,
-`plugin/.claude-plugin/plugin.json` and `plugin/skills/tracetoon/VERSION`, then
-push a tag `vX.Y.Z`. The release workflow builds binaries and skill zips.
+Bump only `package.json`, then run `bun run bundle`. The build stamps the skill
+VERSION, plugin version and shared build identity; `bun run build:check` detects
+drift. Commit the generated files, then push a matching `vX.Y.Z` tag after review.
+The release workflow rebuilds the bundle, verifies versions and builds binaries
+and skill zips from that same identity. Never publish a source-only update as
+though it updated installed runtimes. `tracetoon doctor --json` reports actual
+runtime and hook identities, installed skill mismatches and observed hook events.

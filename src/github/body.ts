@@ -11,6 +11,8 @@ const META_RE = /<!-- tracetoon:meta (\{[\s\S]*?\}) -->/;
 
 export interface PrMeta {
   v: 1;
+  /** Exact approved submission, used to reconcile a create after a connection loss. */
+  submission?: string;
   /** The comic's art style, so later comics in the repo pick a different one. */
   style?: string;
   /** Compact creative choices only: no character descriptions, plots or trace data. */
@@ -49,6 +51,22 @@ export function defuseMentions(markdown: string): string {
 
 export function managedBlock(content: string, meta: PrMeta): string {
   return `${START}\n${content.trim()}\n\n${encodeMeta(meta)}\n${END}`;
+}
+
+/** Publication changes only our metadata; retained human text is untouched. */
+export function stampSubmission(body: string, code: string): string {
+  const start = body.indexOf(START);
+  const end = body.indexOf(END);
+  if (start < 0 || end <= start)
+    throw new Error('The rendered PR has no managed submission region.');
+  const region = body.slice(start, end);
+  const meta = decodeMeta(region);
+  if (!meta) throw new Error('The rendered PR has no submission metadata.');
+  return (
+    body.slice(0, start) +
+    region.replace(META_RE, encodeMeta({ ...meta, submission: code })) +
+    body.slice(end)
+  );
 }
 
 /** Replace our block in an existing body, or append it after the human's text. */

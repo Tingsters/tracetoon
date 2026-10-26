@@ -34,6 +34,7 @@ import {
   decodeMeta,
   titleHash,
   defuseMentions,
+  stampSubmission,
   managedBlock,
   mergeIntoBody,
   type PrMeta,
@@ -60,6 +61,12 @@ import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
 import { recordRendered, setReviewState } from '../review/pending.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { comicSummary } from '../comic/composition.ts';
+import { readTask, saveTask, workFingerprint } from '../workflow/state.ts';
+import { fileHash, readyProblem } from '../workflow/readiness.ts';
+import { receipts } from '../workflow/checks.ts';
+import { publicationLock, recordTiming } from '../workflow/publication.ts';
+import { readLocal, writeLocal } from '../util/localJson.ts';
+import { acknowledgeRepository } from '../workflow/hostSession.ts';
 
 export const COMIC_SRC = '{{tracetoon:comic-src}}';
 const COMIC_MARKER = '{{tracetoon:comic}}';
@@ -97,6 +104,10 @@ export function disclosureLine(
 }
 
 export interface Approval {
+  /** Managed tasks bind validation and the public worktree to the author handoff. */
+  workspaceFingerprint?: string;
+  checksSha?: string;
+  originSha?: string;
   code: string;
   title: string;
   bodySha: string;
@@ -121,7 +132,7 @@ export interface Approval {
 const sha = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex');
 const codeFor = (approval: Approval, body: string) =>
   approvalCode(
-    `${approval.title}\n\0${body}\n\0${approval.comicSha ?? ''}\n\0${objectHash({ submission: approval.submission, head: approval.head, base: approval.base, mode: approval.mode, prNumber: approval.prNumber })}`,
+    `${approval.title}\n\0${body}\n\0${approval.comicSha ?? ''}\n\0${objectHash({ submission: approval.submission, head: approval.head, base: approval.base, mode: approval.mode, prNumber: approval.prNumber, ...(approval.workspaceFingerprint ? { workspaceFingerprint: approval.workspaceFingerprint, checksSha: approval.checksSha, originSha: approval.originSha } : {}) })}`,
   );
 
 /**
@@ -180,6 +191,13 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const digest = readJson<TraceDigest>(run, 'digest.json');
   if (!digest)
     throw new UserError('This run has no digest.json. Run `tracetoon digest` first.');
+  if (
+    readTask(run) &&
+    digest.checksSha !== (receipts(run).length ? fileHash(run, 'checks.json') : undefined)
+  )
+    throw new UserError(
+      'Validation evidence changed after the digest. Refresh digest --run before rendering and review.',
+    );
   const ctx = readJson<Context>(run, 'context.json');
   if (!ctx)
     throw new UserError('This run has no context.json. Run `tracetoon context` first.');
@@ -266,6 +284,15 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   );
   const comicSha = comic ? sha(comic.data) : undefined;
   const approval: Approval = {
+    ...(readTask(run)
+      ? {
+          workspaceFingerprint: workFingerprint(truth.toplevel),
+          originSha: sha(
+            git(truth.toplevel, ['remote', 'get-url', 'origin']).stdout.trim(),
+          ),
+          ...(receipts(run).length ? { checksSha: fileHash(run, 'checks.json') } : {}),
+        }
+      : {}),
     code: '',
     title,
     bodySha: sha(body),
@@ -368,6 +395,18 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   );
   writeJson(run, 'approval.json', approval);
   recordRendered(truth.gitDir, run, approval);
+  const task = readTask(run);
+  if (
+    task &&
+    task.state !== 'published' &&
+    (task.readyCode !== approval.code ||
+      task.readyReviewSha !==
+        (existsSync(join(run.dir, 'review.json')) ? fileHash(run, 'review.json') : ''))
+  ) {
+    task.state = 'preparing';
+    task.readyCode = undefined;
+    saveTask(run, task);
+  }
 
   const previewPath = join(run.dir, 'preview.html');
   const stale = digestStale(truth.toplevel, digest);
@@ -652,6 +691,20 @@ export interface PublishOpts extends OutOpts {
 }
 
 export function publishCmd(cwd: string, opts: PublishOpts): void {
+  const { run } = loadRun(cwd, opts.run);
+  const start = performance.now();
+  try {
+    publicationLock(run, () => publishImpl(cwd, opts));
+  } finally {
+    try {
+      recordTiming(run, 'publish', performance.now() - start);
+    } catch {
+      /* timing is not a publish gate */
+    }
+  }
+}
+
+function publishImpl(cwd: string, opts: PublishOpts): void {
   const { run, truth } = loadRun(cwd, opts.run);
   const approval = readJson<Approval>(run, 'approval.json');
   const bodyPath = join(run.dir, 'final-body.md');
@@ -666,6 +719,8 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     throw new UserError(
       `This preview includes uncommitted work. Commit the changes, then run tracetoon digest --run ${run.id} and refresh the preview before publishing.`,
     );
+  const preparationProblem = readyProblem(truth.toplevel, run, approval);
+  if (preparationProblem) throw new UserError(preparationProblem);
   const body = readFileSync(bodyPath, 'utf8');
   const current = codeFor(approval, body);
   if (current !== approval.code || sha(body) !== approval.bodySha) {
@@ -710,6 +765,44 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     );
   }
 
+  if (approval.comicFile && sha(readFileSync(approval.comicFile)) !== approval.comicSha)
+    throw new UserError('The comic image changed after approval. Refresh the preview.');
+  const published = readLocal<{ code: string; url: string; hosting: string }>(
+    join(run.dir, 'published.json'),
+  );
+  if (published?.code === approval.code && published.url) {
+    // Repair a crash between the durable publication receipt and local lifecycle updates.
+    setReviewState(run, approval, 'published');
+    const task = readTask(run);
+    if (task) {
+      task.state = 'published';
+      saveTask(run, task);
+      if (task.session)
+        acknowledgeRepository(
+          task.session,
+          truth.toplevel,
+          workFingerprint(truth.toplevel),
+        );
+    }
+    emit(
+      opts,
+      {
+        url: published.url,
+        mode: approval.mode,
+        hosting: published.hosting,
+        reused: true,
+        ci: 'not-waited',
+        merged: false,
+      },
+      () => `Published: ${published.url}\nGitHub checks run separately.`,
+    );
+    return;
+  }
+  type Progress = { code: string; hosted?: Hosted; attemptedCreate?: boolean };
+  const progressPath = join(run.dir, 'publish-progress.json');
+  let progress = readLocal<Progress>(progressPath);
+  if (progress?.code !== approval.code) progress = { code: approval.code };
+
   {
     const remote = git(truth.toplevel, [
       'ls-remote',
@@ -720,7 +813,7 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     ]);
     const remoteSha = remote.stdout.trim().split(/\s/)[0];
     if (!remote.ok || remoteSha !== approval.submission!.headSha) {
-      if (!opts.push) {
+      if (opts.push === false) {
         throw new UserError(
           remoteSha
             ? `Branch ${approval.head} on GitHub differs from the approved code. Push it (or re-run with --push) and publish again.`
@@ -732,9 +825,13 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     }
   }
 
-  const hosted = hostComic(truth, run, approval, body, opts.hosting ?? config.hosting);
+  const hosted =
+    progress.hosted ??
+    hostComic(truth, run, approval, body, opts.hosting ?? config.hosting);
+  progress.hosted = hosted;
+  writeLocal(progressPath, progress);
   const postedPath = join(run.dir, 'posted-body.md');
-  writeFileSync(postedPath, hosted.body, 'utf8');
+  writeFileSync(postedPath, stampSubmission(hosted.body, approval.code), 'utf8');
   const args = ['--title', approval.title, '--body-file', postedPath];
   if (hosted.attach) args.push('--attach', hosted.attach);
   let url: string;
@@ -751,21 +848,82 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
       '.url',
     ]).stdout.trim();
   } else {
-    const create = [
+    // A timed-out create may have succeeded on GitHub. Reconcile before every create.
+    const listing = gh(truth.toplevel, [
       'pr',
-      'create',
-      '--base',
-      approval.base,
+      'list',
+      '--state',
+      'open',
       '--head',
       approval.head,
-      ...args,
-    ];
-    if (opts.draft) create.push('--draft');
-    const r = gh(truth.toplevel, create);
-    if (!r.ok) throw new UserError(`gh pr create failed: ${r.stderr.trim()}`);
-    url = r.stdout.trim().split(/\s+/).pop() ?? '';
+      '--base',
+      approval.base,
+      '--json',
+      'number,url,title,body,headRefName,baseRefName,headRefOid',
+    ]);
+    if (!listing.ok)
+      throw new UserError(
+        'Could not check for an existing PR. Retry publication when GitHub is reachable.',
+      );
+    let existing: {
+      url?: string;
+      body?: string;
+      headRefName?: string;
+      baseRefName?: string;
+      headRefOid?: string;
+    }[];
+    try {
+      existing = JSON.parse(listing.stdout);
+      if (!Array.isArray(existing)) throw new Error();
+    } catch {
+      throw new UserError(
+        'GitHub returned an unreadable PR list; publication stopped before creating a duplicate.',
+      );
+    }
+    const matching = existing.find(
+      (pr) =>
+        pr.headRefName === approval.head &&
+        pr.baseRefName === approval.base &&
+        pr.body &&
+        decodeMeta(pr.body)?.submission === approval.code,
+    );
+    if (matching?.url) {
+      if (matching.headRefOid && matching.headRefOid !== approval.submission!.headSha)
+        throw new UserError(
+          'The existing PR head changed; refresh this preview before retrying.',
+        );
+      url = matching.url;
+    } else {
+      if (
+        existing.some(
+          (pr) => pr.headRefName === approval.head && pr.baseRefName === approval.base,
+        )
+      )
+        throw new UserError(
+          'A PR already exists for this branch and base. Refresh context and review its update instead of creating another.',
+        );
+      const create = [
+        'pr',
+        'create',
+        '--base',
+        approval.base,
+        '--head',
+        approval.head,
+        ...args,
+      ];
+      if (opts.draft) create.push('--draft');
+      progress.attemptedCreate = true;
+      writeLocal(progressPath, progress);
+      const r = gh(truth.toplevel, create);
+      if (!r.ok) throw new UserError(`gh pr create failed: ${r.stderr.trim()}`);
+      url = r.stdout.trim().split(/\s+/).pop() ?? '';
+    }
   }
-  writeJson(run, 'published.json', {
+  if (!/^https:\/\/[^\s]+\/pull\/\d+$/.test(url))
+    throw new UserError(
+      'Publication returned no PR URL. Retry to reconcile the existing PR.',
+    );
+  writeLocal(join(run.dir, 'published.json'), {
     url,
     at: new Date().toISOString(),
     code: approval.code,
@@ -774,6 +932,17 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
     assetsCommit: hosted.assetsCommit,
   });
   setReviewState(run, approval, 'published');
+  const task = readTask(run);
+  if (task) {
+    task.state = 'published';
+    saveTask(run, task);
+    if (task.session)
+      acknowledgeRepository(
+        task.session,
+        truth.toplevel,
+        workFingerprint(truth.toplevel),
+      );
+  }
   const shareScript = readJson<ComicScript>(run, 'comic.json');
   const share =
     hosted.hosting !== 'none'
@@ -782,14 +951,25 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
           image: hosted.imageUrl ?? null,
         }
       : undefined;
-  emit(opts, { url, mode: approval.mode, hosting: hosted.hosting, share }, () =>
-    [
-      `Published: ${url}${hosted.hosting !== 'none' ? ` (comic hosted via ${hosted.hosting})` : ''}`,
-      share
-        ? `\nShare it (offer this to the user):\n${share.caption}${share.image ? `\nImage: ${share.image}` : ''}`
-        : '',
-    ]
-      .filter(Boolean)
-      .join('\n'),
+  emit(
+    opts,
+    {
+      url,
+      mode: approval.mode,
+      hosting: hosted.hosting,
+      share,
+      ci: 'not-waited',
+      merged: false,
+    },
+    () =>
+      [
+        `Published: ${url}${hosted.hosting !== 'none' ? ` (comic hosted via ${hosted.hosting})` : ''}`,
+        'GitHub checks run separately. The PR has not been merged.',
+        share
+          ? `\nShare it (offer this to the user):\n${share.caption}${share.image ? `\nImage: ${share.image}` : ''}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
   );
 }
