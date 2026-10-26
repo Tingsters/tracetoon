@@ -7,6 +7,7 @@ import { git } from '../util/exec.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { activePendingRuns, pendingDrafts } from './pending.ts';
 import { previewHandoff } from './handoff.ts';
+import { fileURLToPath } from 'node:url';
 
 export function pendingReminder(
   agent: string,
@@ -48,7 +49,7 @@ export function pendingReminder(
       continue;
     shown[key] = now;
     messages.push(
-      `Branch: ${draft.branch}. Resume: ${command} preview --run ${draft.run}. Dismiss: ${command} pending dismiss --run ${draft.run}.\n${previewHandoff({ root, command, url: draft.previewUrl, run: draft.run, pending: true, problem: draft.problem }).markdown}`,
+      `Branch: ${draft.branch}. Resume: ${command} preview --run ${draft.run} --serve. Dismiss: ${command} pending dismiss --run ${draft.run}.\n${previewHandoff({ root, command, url: draft.browserUrl ?? draft.previewUrl, filePath: fileURLToPath(draft.previewUrl), run: draft.run, pending: true, problem: draft.problem }).markdown}`,
     );
   }
   if (!messages.length) return;

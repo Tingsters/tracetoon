@@ -18,8 +18,14 @@ import {
   reviewSummary,
 } from '../contribution/review.ts';
 import type { GuidanceRequest, ReviewResult } from '../contribution/types.ts';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+} from 'node:fs';
+import { join, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
 import { transcript } from '../comic/script.ts';
@@ -58,9 +64,11 @@ import {
   type SubmissionSnapshot,
 } from '../review/snapshot.ts';
 import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
+import { activeBrowserPreview, serveBrowserPreview } from '../review/browser.ts';
 import { recordRendered, setReviewState } from '../review/pending.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { comicSummary } from '../comic/composition.ts';
+import { comicObservationInput } from '../contribution/comicReview.ts';
 import { readTask, saveTask, workFingerprint } from '../workflow/state.ts';
 import { fileHash, readyProblem } from '../workflow/readiness.ts';
 import { receipts } from '../workflow/checks.ts';
@@ -324,7 +332,20 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     headSha: packet.request.headSha,
     authorText: readText(run, 'author.md'),
     comicSha256: comicSha,
+    ...(comic && script
+      ? {
+          comic: {
+            imagePath: relative(run.dir, comic.path).replaceAll('\\', '/'),
+            scriptPath: 'comic.json',
+            panelCount: script.panels.length,
+          },
+        }
+      : {}),
   });
+  const observationInput = comicObservationInput(reviewPacket);
+  if (observationInput) writeJson(run, 'comic-observation-input.json', observationInput);
+  else if (existsSync(join(run.dir, 'comic-observation-input.json')))
+    unlinkSync(join(run.dir, 'comic-observation-input.json'));
   writeJson(run, 'review-input.json', reviewPacket);
   const contributionReview = loadReview(
     run,
@@ -414,6 +435,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     root: truth.toplevel,
     command: userCommand().run,
     url: fileUrl(previewPath),
+    filePath: previewPath,
     run: run.id,
   });
   emit(
@@ -427,6 +449,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       titleChecks: titleFindings,
       contributionReview: reviewSummary(contributionReview),
       reviewInputPath: join(run.dir, 'review-input.json'),
+      comicObservationInputPath: observationInput
+        ? join(run.dir, 'comic-observation-input.json')
+        : null,
       reviewFingerprint: reviewPacket.fingerprint,
       ...(titleNote ? { titleNote } : {}),
       claims: {
@@ -515,10 +540,10 @@ function claimLine(claims: ClaimFinding[]): string {
   ].join('\n');
 }
 
-export function previewCmd(
+export async function previewCmd(
   cwd: string,
-  opts: OutOpts & { run?: string; open?: boolean },
-): void {
+  opts: OutOpts & { run?: string; open?: boolean; serve?: boolean },
+): Promise<void> {
   const { run, truth } = loadRun(cwd, opts.run);
   const approval = readJson<Approval>(run, 'approval.json');
   const body = readText(run, 'final-body.md');
@@ -526,15 +551,20 @@ export function previewCmd(
   if (!approval || body === undefined)
     throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
   const htmlPath = join(run.dir, 'preview.html');
+  const browser =
+    activeBrowserPreview(run.dir) ??
+    (opts.serve ? await serveBrowserPreview(run.dir) : undefined);
+  const handoffUrl = browser?.url ?? fileUrl(htmlPath);
   const problem = snapshotProblem(truth.toplevel, approval.submission);
   const handoff = previewHandoff({
     root: truth.toplevel,
     command: userCommand().run,
-    url: fileUrl(htmlPath),
+    url: handoffUrl,
+    filePath: htmlPath,
     run: run.id,
     problem,
   });
-  if (opts.open) openInBrowser(htmlPath);
+  if (opts.open) openInBrowser(browser?.url ?? htmlPath);
   const shown = approval.comicFile
     ? body.replaceAll(COMIC_SRC, approval.comicFile)
     : body;
@@ -548,6 +578,7 @@ export function previewCmd(
       comic: approval.comicFile ?? null,
       previewPath: htmlPath,
       previewUrl: fileUrl(htmlPath),
+      ...(browser ? { browserUrl: browser.url, artifactUrls: browser.artifacts } : {}),
       previewHandoff: handoff,
       contributionReview: contributionReview && reviewSummary(contributionReview),
     },
@@ -562,7 +593,7 @@ export function previewCmd(
         approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
         `Approval code: ${approval.code}`,
         '',
-        terminalHandoff(handoff, fileUrl(htmlPath)),
+        terminalHandoff(handoff, handoffUrl),
       ]
         .filter(Boolean)
         .join('\n'),

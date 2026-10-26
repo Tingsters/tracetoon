@@ -37,8 +37,9 @@ bun run test
 ## Before sending a change
 
 - Development checks require Bun 1.3.14 or newer (the CI pin). `bun run test`
-  runs the complete source suite with four isolated file workers; tests within
-  each file remain sequential. `bun run typecheck && bun run test`
+  runs the complete source suite with up to four fresh Bun processes. Each file
+  gets a new process so native state cannot leak between files; tests within each
+  file remain sequential. `bun run typecheck && bun run test`
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
 - `bun run test:bundled` exercises the shipped bundle; `bun run build` followed
   by `bun run test:compiled` rehearses publication against the native executable.
@@ -57,12 +58,17 @@ prepare`, supply separate baseline and three-phase drafts, then run
 Its lexical probes are smoke checks, not a semantic quality score. Evaluation
 artifacts stay under `.git/tracetoon/eval-contributions/`.
 
-For visual comic changes, `bun scripts/eval-comics.ts prepare` creates six
-synthetic PR scenarios. Draw and render each printed run through the normal
-approved image route, then run `bun scripts/eval-comics.ts gallery` for a local
-gallery at PR-column and phone widths, with schematic overlay geometry proofs.
-Inspect actual hierarchy, lettering, story fidelity and payoff; passing prompt
-tests is not a visual quality result. Gallery artifacts stay under `.git/`.
+For visual comic changes, `bun scripts/eval-comics.ts prepare` allocates paired
+baseline/candidate runs for six synthetic scenarios and two held-out cases
+(cache invalidation and documentation only). Existing flawed originals remain
+negative controls. Have a drafter write candidates from each scenario.json;
+draw and render explicitly through an approved image route. Preparation never
+requests images, moves the latest task, or overwrites candidate scripts.
+Run `bun scripts/eval-comics.ts blind` for image-only review, then `gallery` to
+compare with facts, reader probes and schematic geometry proofs at PR/phone
+widths. Optional scenario ids after any command select a subset. Record actual
+observations, inference, payoff and factual fidelity separately; structural
+tests and reader probes are not automated humor scores. Artifacts stay in .git/.
 
 ## Releasing
 

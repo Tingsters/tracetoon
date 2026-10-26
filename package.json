@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "test": "bun test --parallel=4",
+    "test": "bun run scripts/test-source.ts",
     "test:bundled": "bun run scripts/test-packaged.ts",
     "test:compiled": "bun run scripts/test-packaged.ts --compiled",
     "typecheck": "bun x tsc --noEmit",

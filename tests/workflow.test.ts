@@ -35,6 +35,7 @@ import { readLocal, writeLocal } from '../src/util/localJson.ts';
 import { git } from '../src/util/exec.ts';
 import { findRun, pruneRuns } from '../src/run.ts';
 import { makeRepo, tempDir } from './helpers.ts';
+import { serveBrowserPreview } from '../src/review/browser.ts';
 
 setDefaultTimeout(180_000);
 const CLI = process.env.TRACETOON_TEST_CLI ?? resolve(import.meta.dir, '../src/cli.ts');
@@ -42,12 +43,14 @@ const binary = process.env.TRACETOON_TEST_BINARY;
 const program = binary ? [binary] : [process.execPath, CLI];
 let previous: string | undefined;
 let config: string;
+const previewClosers: Array<() => Promise<void>> = [];
 beforeEach(() => {
   previous = process.env.TRACETOON_CONFIG;
   config = join(tempDir('tracetoon-workflow-'), 'config.json');
   process.env.TRACETOON_CONFIG = config;
 });
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(previewClosers.splice(0).map((close) => close()));
   if (previous === undefined) delete process.env.TRACETOON_CONFIG;
   else process.env.TRACETOON_CONFIG = previous;
 });
@@ -424,7 +427,7 @@ describe('active transcript discovery', () => {
 });
 
 describe('author review to publication rehearsal', () => {
-  test('prepares, detects missing handoff, publishes without rerunning work, and recovers an interrupted create', () => {
+  test('prepares, detects missing handoff, publishes without rerunning work, and recovers an interrupted create', async () => {
     const repo = makeRepo();
     const remote = tempDir('tracetoon-remote-');
     git(remote, ['init', '-q', '--bare']);
@@ -476,11 +479,16 @@ describe('author review to publication rehearsal', () => {
       assessments: [],
     });
     ok(repo.root, 'render', '--run', run.id, '--no-comic');
-    const ready = ok(repo.root, 'ready', '--run', run.id);
+    const browser = await serveBrowserPreview(run.dir);
+    previewClosers.push(browser.close);
+    const ready = ok(repo.root, 'ready', '--run', run.id, '--serve');
     expect(readFileSync(join(run.dir, 'preview.html'), 'utf8')).toContain(
       'Local validation before author review',
     );
-    expect(ready.previewHandoff.markdown).toContain(ready.previewUrl);
+    expect(ready.previewHandoff.markdown).toContain(
+      `[OPEN YOUR LOCAL PR PREVIEW](${browser.url})`,
+    );
+    expect(ready.previewHandoff.markdown).not.toContain('file://');
     const p = {
       cwd: repo.root,
       session_id: 'rehearsal',

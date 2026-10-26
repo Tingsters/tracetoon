@@ -13,6 +13,12 @@ export const PUBLICATION_CONTRACT: PackagedContract = {
 };
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
   {
+    id: 'local-http-preview',
+    file: 'tests/review.test.ts',
+    pattern: 'served CLI preview emits a supported HTTP handoff',
+    minimum: 1,
+  },
+  {
     id: 'trace-selection-and-redaction',
     file: 'tests/flow.test.ts',
     pattern: 'matches the session that wrote the code and drops other repos',

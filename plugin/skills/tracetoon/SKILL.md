@@ -166,7 +166,10 @@ that bypass on your own initiative.
    funny that someone outside the repo would want to share:
    - compare three distinct short story/composition/cast concepts in local
      `comic-design.json`, following [comic-direction.md](references/comic-direction.md).
-     Choose one against `context.comic.recentComics`; draw one finished image.
+     First choose the strongest supported joke: record its evidence anchor,
+     reader expectation, comic turn, visible clues and likely misreading.
+     Reconcile synopsis, scenes, dialogue and alt text before drawing. Then use
+     `context.comic.recentComics` for art direction; draw one finished image.
      Panel count follows necessary story beats, not diff length. Pick a format
      and any art style that suits it (ideas in
      [references/styles.md](references/styles.md), or your own description);
@@ -191,13 +194,25 @@ that bypass on your own initiative.
    - `tracetoon comic render`, then **look at `out/comic.png` and proofread** the
      lettering against the printed list. Also inspect actual composition, panel
      count, title placement, reading order and payoff at PR and phone widths.
-     Redraw with `comic art --force` (up to 2
+     Diagnose a defect before another image request: rewrite a weak premise or
+     script, redraw a missed art instruction, or repair lettering. Tell the user
+     why a redraw is needed. Do not routinely draw hidden alternatives.
+     Redraw an art defect with `comic art --force` (up to 2
      times), then fall back to `--lettering overlay`. Offer
      `tracetoon comic reroll` if the user wants a different look.
 6. **Render and independent review.** `tracetoon render --json` composes the full
    PR and writes `review-input.json`. Launch a fresh reviewer, distinct from the
-   researcher and drafter, with that packet, the original sources, submitted code,
-   digest and author evidence. It independently checks source interpretation and
+   researcher and drafter. When the render includes a comic, give it ONLY
+   `comic-observation-input.json` and the actual image for its first pass. With no
+   prior context, it records literal panel observations, inferred story and
+   perceived joke. Wait for that account before sending `review-input.json`, the
+   script, original sources, submitted code, digest and author evidence. Never
+   supply the drafter's private selection reasoning. Record the reported
+   image-first account in `review.json.comicReview`, followed by separate clarity,
+   continuity, fidelity, payoff and readability judgments and panel evidence.
+   If fresh/vision-capable delegation is unavailable, disclose the limitation
+   rather than claiming an independent image-first reading. The reviewer
+   independently checks source interpretation and
    the full rendered PR, then writes `review.json` using
    [contribution-workflow.md](references/contribution-workflow.md). Re-render to
    validate and display the assessment. Return draftable findings to the drafter
@@ -207,7 +222,7 @@ that bypass on your own initiative.
    If the leak scan reports findings, return them to the drafter and render again.
    Don't use `--allow-findings` unless the user has
    looked at the finding and says it is fine.
-7. **Author handoff.** `tracetoon ready --run <id> --json` validates finished checks
+7. **Author handoff.** `tracetoon ready --run <id> --serve --json` validates finished checks
    and current review, then returns the preview. `preview` alone is useful for
    internal inspection and does not mark a managed task ready. Briefly describe the
    change and any remaining findings, then end your response with
@@ -218,13 +233,28 @@ that bypass on your own initiative.
     |_ |  (_| (_ (/_  |_ (_) (_) | |
    ```
 
-   The complete `previewUrl` must remain on its own line outside the logo's
-   fence, never shortened or wrapped in backticks. Put diagnostics and local
-   report links before the handoff so the review link is easy to find.
-   Preserve the prominent Markdown link in the handoff as well as its full URL;
-   the host renders it using its link color. Do not turn the linked label back
-   into plain text. The URL points to the preview on this user's own machine
-   on Windows, macOS or Linux.
+   Keep the serving command running during author review; a tool may return its
+   process/session handle after printing the JSON. This is a foreground local
+   preview server, not a command to wait on until exit. It reuses an active server
+   for this run. Stop it after publication; it also stops after one hour idle.
+   Preserve the prominent linked label exactly, outside the logo's fence. The
+   loopback HTTP address works in Codex TUI, where ordinary file/path Markdown
+   references do not become terminal hyperlinks. Preserve the full, copyable
+   `Local file:` path directly beneath the link as a fallback for people whose
+   host cannot open it. Do not replace that path with a duplicate HTTP address.
+   The host chooses the link's color.
+   Put diagnostics and local report links before the handoff so the review link
+   is easy to find. Every ancillary Tracetoon artifact (including an "Also ready"
+   list) must also use a descriptive Markdown link using `artifactUrls` returned
+   by the serving command. Use `browserUrl` for another preview; start it with
+   `preview --run <id> --serve` if needed. Do not invent HTTP addresses or turn a
+   file path into a claimed browser link. An unserved/expired preview provides a
+   restart command instead of an inert linked caption. `previewUrl` remains a
+   file URL for compatibility. The server binds only to loopback and exposes the
+   rendered preview, final description and comic, never a repository directory or
+   private run context. It uses the same workflow on Windows, macOS and Linux;
+   remote sessions need their host's port forwarding before browser links can
+   reach the coding machine.
    The comic is embedded in the page, so it shows in any browser.
    - If code changed, refresh `digest --run <id>`, context, description, review
      and preview before asking for approval. Rendering an old digest cannot

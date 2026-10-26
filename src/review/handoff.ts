@@ -1,4 +1,4 @@
-/** Keep the clickable URL outside the wordmark's Markdown fence. */
+/** Keep local file links outside the wordmark's Markdown fence. */
 import { loadConfig, repoConfigPath } from '../config.ts';
 import { readFileSync } from 'node:fs';
 
@@ -10,6 +10,21 @@ export interface PreviewHandoff {
   markdown: string;
 }
 
+/** Legacy file-reference format; Codex TUI does not hyperlink these targets.
+ * Keep URI escapes for reserved filename characters and normalize drive paths
+ * without consulting this machine's OS (a host may render another OS's output).
+ * Use the same format for ancillary previews, images and local reports.
+ */
+export function localFileLink(label: string, fileUrl: string): string {
+  const url = new URL(fileUrl);
+  if (url.protocol !== 'file:') throw new TypeError('Expected a local file URL');
+  const path = url.hostname
+    ? `//${url.hostname}${url.pathname}`
+    : url.pathname.replace(/^\/([a-z]:\/)/i, '$1');
+  const safeLabel = label.replace(/[\\\[\]]/g, '\\$&');
+  return `[${safeLabel}](<${path}>)`;
+}
+
 /** Style only interactive output; JSON and redirected logs retain the plain URL. */
 export function terminalHandoff(
   handoff: PreviewHandoff,
@@ -19,10 +34,14 @@ export function terminalHandoff(
   const isTTY = display.isTTY ?? process.stdout.isTTY;
   const env = display.env ?? process.env;
   if (!isTTY || env.NO_COLOR || env.TERM === 'dumb') return handoff.terminal;
-  // OSC 8 keeps wrapped file URLs clickable in supporting terminals. The full
-  // URL is still visible when a terminal only understands the ANSI styling.
-  const link = `\u001b]8;;${url}\u001b\\\u001b[4;94m${url}\u001b[0m\u001b]8;;\u001b\\`;
-  return handoff.terminal.replace(url, () => link);
+  // Make the preview label itself clickable; plain output retains one full URL.
+  const lines = handoff.terminal.split('\n');
+  const index = lines.findIndex((line) => line.endsWith(`: ${url}`));
+  if (index < 0) return handoff.terminal;
+  const caption = lines[index]!.slice(0, -`: ${url}`.length);
+  lines[index] =
+    `\u001b]8;;${url}\u001b\\\u001b[4;94m${caption}\u001b[0m\u001b]8;;\u001b\\`;
+  return lines.join('\n');
 }
 
 export function yoloHint(root: string, command: string, chat = false): string {
@@ -49,6 +68,7 @@ export function previewHandoff(input: {
   root: string;
   command: string;
   url: string;
+  filePath: string;
   run: string;
   pending?: boolean;
   problem?: string;
@@ -61,11 +81,16 @@ export function previewHandoff(input: {
   const next = input.problem
     ? `${input.problem}\nResume with: ${input.command} preview --run ${input.run}. Refresh the digest, description, review and preview before publishing.`
     : 'Open the preview, skim the description and comic, then reply "Publish this PR".';
+  // A copyable filesystem path also works when the host cannot open links.
+  const fence = '`'.repeat(
+    Math.max(0, ...(input.filePath.match(/`+/g) ?? []).map((s) => s.length)) + 1,
+  );
+  const localFile = `Local file: ${fence} ${input.filePath} ${fence}`;
   return {
     terminal: [
       WORDMARK,
-      caption,
-      input.url,
+      `${caption}: ${input.url}`,
+      `Local file: ${input.filePath}`,
       yoloHint(input.root, input.command),
       next,
     ].join('\n'),
@@ -73,9 +98,11 @@ export function previewHandoff(input: {
       '```text',
       WORDMARK,
       '```',
-      `**[${caption}](<${input.url}>)**`,
+      input.url.startsWith('http://127.0.0.1:')
+        ? `**[${caption}](${input.url})**`
+        : `**${caption}**\n\nStart a clickable browser preview: \`${input.command} preview --run ${input.run} --serve --open\`.`,
       '',
-      input.url,
+      localFile,
       '',
       yoloHint(input.root, input.command, true),
       '',

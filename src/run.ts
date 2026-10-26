@@ -50,6 +50,18 @@ export function pruneRuns(gitDir: string, keep?: string): void {
     .map((d) => d.name)
     .sort();
   const pending = new Set(activePendingRuns(gitDir).map((d) => d.run.id));
+  // A paired evaluation is durable evidence, not disposable task scratch.
+  try {
+    const evaluation = JSON.parse(
+      readFileSync(join(gitDir, 'tracetoon', 'comic-gallery', 'manifest.json'), 'utf8'),
+    );
+    if (evaluation.v === 1 && Array.isArray(evaluation.cases))
+      for (const item of evaluation.cases)
+        for (const id of [item?.baseline, item?.candidate])
+          if (typeof id === 'string' && /^\d{8}-\d{6}(-\d+)?$/.test(id)) pending.add(id);
+  } catch {
+    /* No valid local evaluation manifest. */
+  }
   for (const name of runs) {
     try {
       const task = JSON.parse(readFileSync(join(base, name, 'task.json'), 'utf8'));
