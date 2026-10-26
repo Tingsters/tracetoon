@@ -2,6 +2,7 @@
 import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { localFileLink } from '../review/handoff.ts';
+import { activeBrowserPreview } from '../review/browser.ts';
 import { closeSync, openSync, readSync, statSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { readLocal, writeLocal } from '../util/localJson.ts';
@@ -321,6 +322,7 @@ export function lifecycle(
         reason = `Task ${run.id} changed after its preview. Classify the current work and refresh its checks, digest, review and handoff when finished.`;
       } else {
         const url = pathToFileURL(join(run.dir, 'preview.html')).href;
+        const browserUrl = activeBrowserPreview(run.dir)?.url;
         const replies = tail?.records.filter((r) => r.kind === 'assistant') ?? [];
         const last = replies[replies.length - 1];
         const message =
@@ -329,7 +331,8 @@ export function lifecycle(
           (last?.kind === 'assistant' ? last.text : '');
         if (
           typeof message === 'string' &&
-          (message.includes(localFileLink('OPEN YOUR LOCAL PR PREVIEW', url)) ||
+          ((browserUrl && message.includes(browserUrl)) ||
+            message.includes(localFileLink('OPEN YOUR LOCAL PR PREVIEW', url)) ||
             message.includes(url))
         ) {
           task.presentedCode = task.readyCode;
@@ -338,7 +341,7 @@ export function lifecycle(
           continue;
         }
         if (task.presentedCode === task.readyCode) continue;
-        reason = `The ready Tracetoon ${run.id} has not been shown to the user. Run tracetoon ready --run ${run.id} and end your response with its exact previewHandoff.markdown. Do not publish before approval.`;
+        reason = `The ready Tracetoon ${run.id} has not been shown to the user. Run tracetoon ready --run ${run.id} --serve, keep that local preview process running, and end your response with its exact previewHandoff.markdown. Do not publish before approval.`;
       }
     } else if (task.state === 'working')
       reason = `Changed task ${run.id} has no completion disposition. If the requested cohesive change is finished, run task complete --run ${run.id} and prepare its Tracetoon automatically. If work remains or you need user input, record task defer/block --run ${run.id} --reason <actual reason>. Do not treat a commit as a user review.`;

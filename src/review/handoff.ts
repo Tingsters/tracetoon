@@ -10,7 +10,7 @@ export interface PreviewHandoff {
   markdown: string;
 }
 
-/** Chat file openers recognize absolute paths, rather than file: URI anchors.
+/** Legacy file-reference format; Codex TUI does not hyperlink these targets.
  * Keep URI escapes for reserved filename characters and normalize drive paths
  * without consulting this machine's OS (a host may render another OS's output).
  * Use the same format for ancillary previews, images and local reports.
@@ -91,7 +91,9 @@ export function previewHandoff(input: {
       '```text',
       WORDMARK,
       '```',
-      `**${localFileLink(caption, input.url)}**`,
+      input.url.startsWith('http://127.0.0.1:')
+        ? `**[${caption}](${input.url})**`
+        : `**${caption}**\n\nStart a clickable browser preview: \`${input.command} preview --run ${input.run} --serve --open\`.`,
       '',
       yoloHint(input.root, input.command, true),
       '',

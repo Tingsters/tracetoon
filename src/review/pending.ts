@@ -8,6 +8,7 @@ import { git } from '../util/exec.ts';
 import { snapshotProblem } from './snapshot.ts';
 import { readTask } from '../workflow/state.ts';
 import { readyProblem } from '../workflow/readiness.ts';
+import { activeBrowserPreview } from './browser.ts';
 
 export const RUN_NAME = /^\d{8}-\d{6}(-\d+)?$/;
 type ReviewState = {
@@ -22,6 +23,7 @@ export interface PendingDraft {
   base: string;
   title: string;
   previewUrl: string;
+  browserUrl?: string;
   freshness: 'current' | 'stale' | 'needs-refresh' | 'other-branch';
   problem?: string;
 }
@@ -116,6 +118,7 @@ export function pendingDrafts(root: string, gitDir: string): PendingDraft[] {
         base: approval.base,
         title: approval.title,
         previewUrl: pathToFileURL(join(run.dir, 'preview.html')).href,
+        browserUrl: activeBrowserPreview(run.dir)?.url,
         freshness: other
           ? 'other-branch'
           : !approval.submission

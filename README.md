@@ -204,7 +204,7 @@ unfinished work; `task block --reason` records a preparation problem.
    current findings, source citations, collection gaps and missing evidence in
    the preview. Changed inputs invalidate old reviews. Reviews are advisory;
    existing publishing restrictions still apply.
-7. **`tracetoon ready --run <id>`**, then open the local preview using the linked label under the compact
+7. **`tracetoon ready --run <id> --serve`**, then open the local preview using the linked label under the compact
    Tracetoon logo at the end of the output. Skim the description and comic,
    then tell your agent "Publish this PR". The note below the link explains
    how to enable YOLO for future PRs if you prefer to skip that pause.
@@ -253,15 +253,22 @@ before publishing. Working-tree drafts must be committed and refreshed first.
 JSON output adds `previewHandoff` (terminal and Markdown presentations) to
 render/preview and `pendingDrafts` to status/digest.
 
-The handoff makes **OPEN YOUR LOCAL PR PREVIEW** the link, without a duplicate URL
-underneath. Chat uses an absolute file-path Markdown target; supporting interactive
-terminals make the label a blue, underlined terminal hyperlink. Redirected output
-keeps the full file URL beside the label; `NO_COLOR` and `TERM=dumb` also keep
-terminal output plain. JSON preserves the file URL separately as `previewUrl`.
-Windows, macOS and Linux paths retain escapes for special filename characters.
-Supporting Tracetoon artifact links, including "Also ready" lists, use the same
-absolute-path Markdown format. If an app blocks
-local links, `tracetoon preview --open` opens the preview through the system's
+The handoff makes **OPEN YOUR LOCAL PR PREVIEW** a local HTTP link, without a
+duplicate URL underneath. Codex TUI does not turn ordinary file/path Markdown
+references into terminal hyperlinks. `--serve` supplies a loopback browser URL
+and keeps the command running during review; it stops on Ctrl+C or after one hour
+idle. Re-running `preview --run <id> --serve` reuses a live server or starts a new
+one. Pending reminders reuse the live link and offer a restart command when it
+has stopped. The server exposes only the rendered preview, final description and
+comic. It does not expose repository directories or private run context.
+
+JSON preserves the file URL as `previewUrl` and adds `browserUrl` and `artifactUrls`
+for clickable preview, description and comic links, including "Also ready" lists.
+The same HTTP transport works on Windows, macOS and Linux without embedding local
+file paths in the browser link. Remote coding sessions need port forwarding from
+their host. Supporting terminals underline the label; redirected output stays
+plain with the URL beside it. `NO_COLOR` and `TERM=dumb` keep it plain too.
+`tracetoon preview --open` can still open the saved HTML through the system's
 browser launcher (`start`, `open` or `xdg-open`). Link colors in chat follow the
 host's theme. CI tests all three operating systems.
 

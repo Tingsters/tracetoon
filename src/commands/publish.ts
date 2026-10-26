@@ -64,6 +64,7 @@ import {
   type SubmissionSnapshot,
 } from '../review/snapshot.ts';
 import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
+import { activeBrowserPreview, serveBrowserPreview } from '../review/browser.ts';
 import { recordRendered, setReviewState } from '../review/pending.ts';
 import { userCommand } from '../util/userCommand.ts';
 import { comicSummary } from '../comic/composition.ts';
@@ -538,10 +539,10 @@ function claimLine(claims: ClaimFinding[]): string {
   ].join('\n');
 }
 
-export function previewCmd(
+export async function previewCmd(
   cwd: string,
-  opts: OutOpts & { run?: string; open?: boolean },
-): void {
+  opts: OutOpts & { run?: string; open?: boolean; serve?: boolean },
+): Promise<void> {
   const { run, truth } = loadRun(cwd, opts.run);
   const approval = readJson<Approval>(run, 'approval.json');
   const body = readText(run, 'final-body.md');
@@ -549,15 +550,19 @@ export function previewCmd(
   if (!approval || body === undefined)
     throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
   const htmlPath = join(run.dir, 'preview.html');
+  const browser =
+    activeBrowserPreview(run.dir) ??
+    (opts.serve ? await serveBrowserPreview(run.dir) : undefined);
+  const handoffUrl = browser?.url ?? fileUrl(htmlPath);
   const problem = snapshotProblem(truth.toplevel, approval.submission);
   const handoff = previewHandoff({
     root: truth.toplevel,
     command: userCommand().run,
-    url: fileUrl(htmlPath),
+    url: handoffUrl,
     run: run.id,
     problem,
   });
-  if (opts.open) openInBrowser(htmlPath);
+  if (opts.open) openInBrowser(browser?.url ?? htmlPath);
   const shown = approval.comicFile
     ? body.replaceAll(COMIC_SRC, approval.comicFile)
     : body;
@@ -571,6 +576,7 @@ export function previewCmd(
       comic: approval.comicFile ?? null,
       previewPath: htmlPath,
       previewUrl: fileUrl(htmlPath),
+      ...(browser ? { browserUrl: browser.url, artifactUrls: browser.artifacts } : {}),
       previewHandoff: handoff,
       contributionReview: contributionReview && reviewSummary(contributionReview),
     },
@@ -585,7 +591,7 @@ export function previewCmd(
         approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
         `Approval code: ${approval.code}`,
         '',
-        terminalHandoff(handoff, fileUrl(htmlPath)),
+        terminalHandoff(handoff, handoffUrl),
       ]
         .filter(Boolean)
         .join('\n'),

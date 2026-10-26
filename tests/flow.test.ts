@@ -302,9 +302,8 @@ describe('render and publish', () => {
     });
     expect(text.stdout).toContain(`OPEN YOUR LOCAL PR PREVIEW: ${url}\n`);
     expect(text.stdout.trimEnd()).toEndWith(r.json.previewHandoff.terminal);
-    const target = new URL(url).pathname.replace(/^\/([a-z]:\/)/i, '$1');
     expect(shown.json.previewHandoff.markdown).toContain(
-      `[OPEN YOUR LOCAL PR PREVIEW](<${target}>)`,
+      `preview --run ${r.json.run} --serve --open`,
     );
     expect(shown.json.previewHandoff.markdown).not.toContain('file:');
 

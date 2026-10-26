@@ -48,7 +48,7 @@ export function pendingReminder(
       continue;
     shown[key] = now;
     messages.push(
-      `Branch: ${draft.branch}. Resume: ${command} preview --run ${draft.run}. Dismiss: ${command} pending dismiss --run ${draft.run}.\n${previewHandoff({ root, command, url: draft.previewUrl, run: draft.run, pending: true, problem: draft.problem }).markdown}`,
+      `Branch: ${draft.branch}. Resume: ${command} preview --run ${draft.run} --serve. Dismiss: ${command} pending dismiss --run ${draft.run}.\n${previewHandoff({ root, command, url: draft.browserUrl ?? draft.previewUrl, run: draft.run, pending: true, problem: draft.problem }).markdown}`,
     );
   }
   if (!messages.length) return;

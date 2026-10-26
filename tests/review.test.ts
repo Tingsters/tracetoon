@@ -6,7 +6,7 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -108,9 +108,9 @@ function prepared() {
 }
 
 describe('compact review handoff', () => {
-  test('keeps the exact two-line logo and one linked preview label outside its fence', () => {
+  test('keeps the exact two-line logo and one supported HTTP preview link outside its fence', () => {
     const root = tempDir();
-    const url = pathToFileURL(join(root, 'a folder with spaces', 'preview.html')).href;
+    const url = 'http://127.0.0.1:12345/local-preview/';
     const out = previewHandoff({
       root,
       command: 'tracetoon',
@@ -124,16 +124,14 @@ describe('compact review handoff', () => {
     expect(out.terminal).toContain(`\nOPEN YOUR LOCAL PR PREVIEW: ${url}\n`);
     const prefix = out.markdown.slice(0, out.markdown.indexOf('**['));
     expect((prefix.match(/```/g) ?? []).length % 2).toBe(0);
-    expect(out.markdown).toContain(
-      `**${localFileLink('OPEN YOUR LOCAL PR PREVIEW', url)}**`,
-    );
+    expect(out.markdown).toContain(`**[OPEN YOUR LOCAL PR PREVIEW](${url})**`);
     expect(out.markdown).not.toContain('file:');
-    expect(out.markdown.match(/preview\.html/g)).toHaveLength(1);
+    expect(out.markdown.split(url)).toHaveLength(2);
     expect(out.markdown).toContain('Enable Tracetoon yolo mode for future PRs');
     expect(out.terminal).toContain('tracetoon config set yolo true');
   });
 
-  test('chat uses absolute file targets on every OS; terminal hyperlinks the label with the full URI', () => {
+  test('file transports on every OS offer a browser command instead of an inert chat anchor', () => {
     const urls = [
       'file:///C:/Users/Sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
       'file:///Users/sam/My%20Project%20(draft)/caf%C3%A9%20%23100%25%20$&%20$$/preview.html',
@@ -147,18 +145,11 @@ describe('compact review handoff', () => {
         run: 'run',
       });
       const html = marked.parse(handoff.markdown) as string;
-      const target = new URL(url).pathname.replace(/^\/([a-z]:\/)/i, '$1');
-      // An ordinary HTML anchor with file: passes marked but can be disabled by
-      // the chat host. Assert its supported absolute-path format separately.
-      expect(handoff.markdown).toContain(`](<${target}>)`);
-      expect(target).toMatch(/^(?:[a-z]:\/|\/)/i);
+      // Codex 0.164's terminal_hyperlinks::web_destination accepts only http(s).
+      // marked accepting file/path anchors is not evidence of a usable TUI link.
+      expect(handoff.markdown).toContain('tracetoon preview --run run --serve --open');
       expect(handoff.markdown).not.toContain('file:');
-      expect(html).toContain(
-        `<a href="${target}">OPEN YOUR LOCAL PR PREVIEW</a>`,
-      );
-      expect(decodeURIComponent(target)).toContain(
-        'My Project (draft)/café #100% $& $$/preview.html',
-      );
+      expect(html).not.toContain('<a href=');
       const styled = terminalHandoff(handoff, url, {
         isTTY: true,
         env: { TERM: 'xterm-256color' },
@@ -213,9 +204,7 @@ describe('compact review handoff', () => {
       run: 'run',
       pending: true,
     });
-    expect(handoff.markdown).toContain(
-      '**[You have a PR awaiting review](</preview.html>)**',
-    );
+    expect(handoff.markdown).toContain('**You have a PR awaiting review**');
     for (const display of [
       { isTTY: false, env: { TERM: 'xterm-256color', FORCE_COLOR: '1' } },
       { isTTY: true, env: { NO_COLOR: '1' } },
@@ -256,6 +245,70 @@ describe('compact review handoff', () => {
 });
 
 describe('pending review lifecycle', () => {
+  test('served CLI preview emits a supported HTTP handoff, reuses its listener and clears it on stop', async () => {
+    const { repo, run } = prepared();
+    const child = spawn(
+      process.execPath,
+      [CLI, 'preview', '--run', run, '--serve', '--json'],
+      {
+        cwd: repo.root,
+        windowsHide: true,
+        env: { ...process.env, TRACETOON_GH_SCRIPT: FAKE_GH },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    let stdout = '';
+    let stderr = '';
+    child.stderr!.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    try {
+      const shown = await new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error(`No HTTP handoff: ${stderr}`)),
+          20_000,
+        );
+        child.stdout!.on('data', (chunk) => {
+          stdout += String(chunk);
+          try {
+            const value = JSON.parse(stdout);
+            clearTimeout(timeout);
+            resolve(value);
+          } catch {
+            /* wait for the full JSON document */
+          }
+        });
+        child.once('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+        child.once('exit', () => {
+          clearTimeout(timeout);
+          reject(new Error(`Preview exited: ${stderr}`));
+        });
+      });
+      expect(shown.browserUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{48}\/$/);
+      expect(shown.previewHandoff.markdown).toContain(`](${shown.browserUrl})`);
+      expect((await fetch(shown.browserUrl)).status).toBe(200);
+      const reused = cli(repo.root, 'preview', '--run', run, '--serve');
+      expect(reused.code).toBe(0);
+      expect(reused.json.browserUrl).toBe(shown.browserUrl);
+      expect(cli(repo.root, 'status').json.pendingDrafts[0].browserUrl).toBe(
+        shown.browserUrl,
+      );
+    } finally {
+      child.kill('SIGTERM');
+      await Promise.race([
+        exited,
+        Bun.sleep(3_000).then(() => {
+          child.kill('SIGKILL');
+        }),
+      ]);
+    }
+    expect(cli(repo.root, 'status').json.pendingDrafts[0].browserUrl).toBeUndefined();
+  });
+
   test('finds legacy drafts, supersedes older previews and does not revive them after dismissal', () => {
     const repo = makeRepo();
     const first = draft(repo.root);

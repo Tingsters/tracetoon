@@ -15,16 +15,16 @@ export function pendingNotice(root: string, gitDir: string) {
         const handoff = previewHandoff({
           root,
           command,
-          url: draft.previewUrl,
+          url: draft.browserUrl ?? draft.previewUrl,
           run: draft.run,
           pending: true,
           problem: draft.problem,
         });
         return [
           `Branch: ${draft.branch} -> ${draft.base} | ${draft.title}`,
-          `Resume: ${command} preview --run ${draft.run}`,
+          `Resume: ${command} preview --run ${draft.run} --serve`,
           `Dismiss: ${command} pending dismiss --run ${draft.run}`,
-          terminalHandoff(handoff, draft.previewUrl),
+          terminalHandoff(handoff, draft.browserUrl ?? draft.previewUrl),
         ].join('\n');
       })
       .join('\n\n'),
