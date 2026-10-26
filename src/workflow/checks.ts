@@ -59,7 +59,11 @@ export function checkEnvironment(): string {
     process.version,
     (globalThis as { Bun?: { version: string } }).Bun?.version ?? null,
     Object.entries(process.env)
-      .filter(([k]) => !/^(TRACETOON|FAKE_|_|PWD$|OLDPWD$|SHLVL$)/.test(k))
+      // Codex changes this correlation id for every shell invocation. It does
+      // not change the code, toolchain or user-selected test environment.
+      .filter(
+        ([k]) => !/^(TRACETOON|FAKE_|_|CODEX_TOOL_CALL_ID$|PWD$|OLDPWD$|SHLVL$)/.test(k),
+      )
       .sort(([a], [b]) => a.localeCompare(b)),
   ]);
 }

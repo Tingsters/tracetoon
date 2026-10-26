@@ -336,6 +336,14 @@ describe('receipts follow tested content', () => {
     const first = executeCheck(repo.root, run, { name: 'tests', command });
     expect(first.outcome).toBe('passed');
     expect(first.summary).toContain('1 pass');
+    const originalCall = process.env.CODEX_TOOL_CALL_ID;
+    process.env.CODEX_TOOL_CALL_ID = 'another-host-tool-invocation';
+    try {
+      expect(executeCheck(repo.root, run, { name: 'tests', command }).reused).toBe(true);
+    } finally {
+      if (originalCall === undefined) delete process.env.CODEX_TOOL_CALL_ID;
+      else process.env.CODEX_TOOL_CALL_ID = originalCall;
+    }
     git(repo.root, ['add', 'code.ts']);
     git(repo.root, ['commit', '-qm', 'Add code']);
     mkdirSync(join(repo.root, '.showtail'));
