@@ -1,6 +1,7 @@
 /** Native host lifecycle adapters. Hooks inspect local state; they never run models or checks. */
 import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { localFileLink } from '../review/handoff.ts';
 import { closeSync, openSync, readSync, statSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { readLocal, writeLocal } from '../util/localJson.ts';
@@ -326,7 +327,11 @@ export function lifecycle(
           p.last_assistant_message ??
           p.lastAssistantMessage ??
           (last?.kind === 'assistant' ? last.text : '');
-        if (typeof message === 'string' && message.includes(url)) {
+        if (
+          typeof message === 'string' &&
+          (message.includes(localFileLink('OPEN YOUR LOCAL PR PREVIEW', url)) ||
+            message.includes(url))
+        ) {
           task.presentedCode = task.readyCode;
           task.presentedAt = new Date().toISOString();
           saveTask(run, task);
