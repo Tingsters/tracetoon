@@ -204,7 +204,7 @@ unfinished work; `task block --reason` records a preparation problem.
    current findings, source citations, collection gaps and missing evidence in
    the preview. Changed inputs invalidate old reviews. Reviews are advisory;
    existing publishing restrictions still apply.
-7. **`tracetoon ready --run <id>`**, then open the local preview using the standalone link under the compact
+7. **`tracetoon ready --run <id>`**, then open the local preview using the linked label under the compact
    Tracetoon logo at the end of the output. Skim the description and comic,
    then tell your agent "Publish this PR". The note below the link explains
    how to enable YOLO for future PRs if you prefer to skip that pause.
@@ -253,12 +253,14 @@ before publishing. Working-tree drafts must be committed and refreshed first.
 JSON output adds `previewHandoff` (terminal and Markdown presentations) to
 render/preview and `pendingDrafts` to status/digest.
 
-The handoff includes an explicit Markdown link and the full local file URL.
-Interactive terminals show that URL in blue with an underline; supporting
-terminals also make it a terminal hyperlink. Redirected output and JSON stay
-plain; `NO_COLOR` and `TERM=dumb` also keep terminal output plain. Links use
-the native file URL on Windows, macOS and Linux, with spaces and special
-characters encoded. If an app blocks
+The handoff makes **OPEN YOUR LOCAL PR PREVIEW** the link, without a duplicate URL
+underneath. Chat uses an absolute file-path Markdown target; supporting interactive
+terminals make the label a blue, underlined terminal hyperlink. Redirected output
+keeps the full file URL beside the label; `NO_COLOR` and `TERM=dumb` also keep
+terminal output plain. JSON preserves the file URL separately as `previewUrl`.
+Windows, macOS and Linux paths retain escapes for special filename characters.
+Supporting Tracetoon artifact links, including "Also ready" lists, use the same
+absolute-path Markdown format. If an app blocks
 local links, `tracetoon preview --open` opens the preview through the system's
 browser launcher (`start`, `open` or `xdg-open`). Link colors in chat follow the
 host's theme. CI tests all three operating systems.

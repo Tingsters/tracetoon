@@ -480,7 +480,11 @@ describe('author review to publication rehearsal', () => {
     expect(readFileSync(join(run.dir, 'preview.html'), 'utf8')).toContain(
       'Local validation before author review',
     );
-    expect(ready.previewHandoff.markdown).toContain(ready.previewUrl);
+    const target = new URL(ready.previewUrl).pathname.replace(/^\/([a-z]:\/)/i, '$1');
+    expect(ready.previewHandoff.markdown).toContain(
+      `[OPEN YOUR LOCAL PR PREVIEW](<${target}>)`,
+    );
+    expect(ready.previewHandoff.markdown).not.toContain('file:');
     const p = {
       cwd: repo.root,
       session_id: 'rehearsal',
