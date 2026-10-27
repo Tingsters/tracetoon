@@ -731,6 +731,40 @@ describe('ordinary git, task identity and handoff recognition', () => {
     );
   });
 
+  test('a branch pushed past the approved commit is never published as reviewed', () => {
+    const repo = makeRepo();
+    const remote = tempDir('tracetoon-remote-');
+    git(remote, ['init', '-q', '--bare']);
+    git(repo.root, ['remote', 'add', 'origin', remote]);
+    git(repo.root, ['push', '-q', 'origin', 'main']);
+    git(repo.root, ['switch', '-q', '-c', 'feat/a']);
+    const begun = ok(repo.root, 'task', 'begin', '--session', 'ahead');
+    repo.commit('greet.ts', 'export const greet = () => "hello";\n', 'Add greeting');
+    const approved = git(repo.root, ['rev-parse', 'HEAD']).stdout.trim();
+    check(repo.root, begun.run);
+    const run = prepared(repo, begun.run);
+    const ready = ok(repo.root, 'ready', '--run', run.id);
+    // Pushing is allowed now: an unreviewed commit reaches the remote branch.
+    repo.commit('extra.ts', 'export const extra = 1;\n', 'Unreviewed follow-up');
+    git(repo.root, ['push', '-q', '-u', 'origin', 'feat/a']);
+    git(repo.root, ['reset', '-q', '--hard', approved]);
+    const log = join(dirname(config), 'gh-ahead.log');
+    const published = cli(repo.root, ['publish', '--run', run.id, '--code', ready.code], {
+      FAKE_GH_LOG: log,
+      FAKE_GH_STATE: join(dirname(config), 'gh-ahead.json'),
+    });
+    expect(published.code).not.toBe(0);
+    expect(published.json.error).toContain('git push failed');
+    const calls = existsSync(log)
+      ? readFileSync(log, 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : [];
+    expect(calls.some((c) => c.args[0] === 'pr' && c.args[1] === 'create')).toBe(false);
+  });
+
   test('receipts ignore agent session bookkeeping but not the toolchain', () => {
     const repo = makeRepo();
     const { run } = beginTask(repo.root, { session: 'receipts' });
