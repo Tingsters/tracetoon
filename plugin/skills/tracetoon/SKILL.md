@@ -27,7 +27,8 @@ re-run with the environment variable `TRACETOON_ALLOW_DOWNLOAD=1`. If no, follow
 Once installed, Tracetoon is the default for pull requests: a hook in your agent
 stops direct `gh pr create` (and `gh pr edit` of a title or body) and points you
 here. If that just happened, follow the workflow below instead of retrying the
-`gh` command.
+`gh` command. Plain `git push` is not intercepted; pushing branches, tags or
+release commits is the user's own workflow.
 
 Tracetoon can be turned off. `tracetoon status` says whether it is on here and
 which setting decided. If it is off, tell the user why (for example "this repo
@@ -285,6 +286,15 @@ that bypass on your own initiative.
      keep them if the user confirms (it may have happened outside the logs).
 8. **Publish.** Only after the user approves:
    `tracetoon publish --run <id> --code <approval code>`.
+   - Read the request in context:
+     - "Publish this PR", or "ship it" in direct reply to the publish handoff, means publish.
+     - "Push this branch (so CI runs)" means push the branch; it is not a PR.
+     - An ambiguous "push to main" or "commit and push" while a reviewed draft is
+       waiting means ask once: publish the PR, publish and merge it, or push
+       directly without a PR.
+     - An explicit "publish and merge" already authorizes both; don't ask again.
+     - Follow explicit direct-push instructions; never silently turn them into a PR.
+     - `TRACETOON=0` is the user's opt-out; never choose it yourself.
    - Approval includes pushing the approved branch, uploading its comic and
      creating/updating the reviewed PR. Do not ask again just to push. Never
      force-push or merge under this approval. `--no-push` requires the approved

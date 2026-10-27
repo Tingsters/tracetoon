@@ -25,6 +25,27 @@ export function localFileLink(label: string, fileUrl: string): string {
   return `[${safeLabel}](<${path}>)`;
 }
 
+export const READY_CAPTION = 'OPEN YOUR LOCAL PR PREVIEW';
+
+/**
+ * Whether an assistant reply delivered this preview. Accepts the live browser
+ * link, the labeled or bare local file URL, and the `Local file:` path that
+ * every handoff prints (the serverless one has no clickable link on purpose).
+ */
+export function handoffShown(
+  message: unknown,
+  preview: { fileUrl: string; filePath: string; browserUrl?: string },
+): boolean {
+  if (typeof message !== 'string') return false;
+  const slashes = (s: string) => s.replace(/\\/g, '/');
+  return (
+    (!!preview.browserUrl && message.includes(preview.browserUrl)) ||
+    message.includes(localFileLink(READY_CAPTION, preview.fileUrl)) ||
+    message.includes(preview.fileUrl) ||
+    slashes(message).includes(slashes(preview.filePath))
+  );
+}
+
 /** Style only interactive output; JSON and redirected logs retain the plain URL. */
 export function terminalHandoff(
   handoff: PreviewHandoff,
@@ -77,7 +98,7 @@ export function previewHandoff(input: {
     ? input.problem
       ? 'Your PR preview needs refreshing'
       : 'You have a PR awaiting review'
-    : 'OPEN YOUR LOCAL PR PREVIEW';
+    : READY_CAPTION;
   const next = input.problem
     ? `${input.problem}\nResume with: ${input.command} preview --run ${input.run}. Refresh the digest, description, review and preview before publishing.`
     : 'Open the preview, skim the description and comic, then reply "Publish this PR".';

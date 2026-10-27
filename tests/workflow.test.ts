@@ -28,7 +28,7 @@ import {
   tasks,
   workFingerprint,
 } from '../src/workflow/state.ts';
-import { executeCheck, receipts } from '../src/workflow/checks.ts';
+import { checkReport, executeCheck, receipts } from '../src/workflow/checks.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
 import { discoveryIndex } from '../src/trace/discovery.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
@@ -188,7 +188,7 @@ describe('finished task completion contract', () => {
     ).toBeUndefined();
   });
 
-  test('a missed task registration is caught before pushing; quoted examples are ordinary work', () => {
+  test('pushes pass through; a missed task registration is caught at the PR; quoted examples are ordinary work', () => {
     const repo = makeRepo();
     const p = {
       cwd: repo.root,
@@ -197,11 +197,24 @@ describe('finished task completion contract', () => {
     };
     lifecycle('codex', 'PreToolUse', p, env());
     repo.commit('fix.ts', 'fixed', 'Fix without registering a task');
+    for (const command of [
+      'git push origin feature',
+      'git push -u origin HEAD',
+      'git push origin v1.2.0',
+      'git push --tags',
+      'git push origin main',
+    ])
+      expect(
+        lifecycle('codex', 'PreToolUse', { ...p, tool_input: { command } }, env()),
+      ).toBeUndefined();
+    // A push never creates a task.
+    expect(tasks(repository(repo.root).gitDir)).toHaveLength(0);
+    // Writing the PR outside Tracetoon is redirected and starts the task.
     expect(
       lifecycle(
         'codex',
         'PreToolUse',
-        { ...p, tool_input: { command: 'git push origin feature' } },
+        { ...p, tool_input: { command: 'gh pr create --fill' } },
         env(),
       ),
     ).toContain('deny');
@@ -563,5 +576,224 @@ describe('author review to publication rehearsal', () => {
     expect(readTask(run)?.state).toBe('published');
     expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined(); // don't recreate a just-published task
     expect(ok(repo.root, 'status').pendingDrafts).toEqual([]);
+  });
+});
+
+describe('ordinary git, task identity and handoff recognition', () => {
+  function prepared(repo: ReturnType<typeof makeRepo>, runId: string) {
+    const run = findRun(repository(repo.root).gitDir, runId);
+    ok(repo.root, 'task', 'complete', '--run', run.id, '--checks', 'tests');
+    ok(repo.root, 'digest', '--run', run.id, '--offline');
+    ok(repo.root, 'context', '--run', run.id, '--offline');
+    const request = readLocal<{ fingerprint: string }>(
+      join(run.dir, 'guidance-request.json'),
+    )!;
+    writeLocal(join(run.dir, 'guidance.json'), {
+      v: 1,
+      requestFingerprint: request.fingerprint,
+      researcher: { mode: 'inline' },
+      sources: [],
+      requirements: [],
+      gaps: ['Isolated workflow fixture; no production compliance claim.'],
+    });
+    if (!existsSync(join(run.dir, 'body.md'))) {
+      writeFileSync(join(run.dir, 'body.md'), 'Adds a greeting.\n');
+      writeFileSync(join(run.dir, 'title.txt'), 'Add greeting');
+    }
+    const first = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    writeLocal(join(run.dir, 'review.json'), {
+      v: 1,
+      inputFingerprint: first.reviewFingerprint,
+      drafter: { mode: 'inline' },
+      reviewer: { mode: 'inline' },
+      assessments: [],
+    });
+    ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    return run;
+  }
+  const check = (root: string, run: string) =>
+    ok(root, 'check', '--run', run, '--name', 'tests', '--', process.execPath, '-e', '1');
+  const prCreate = ['gh', 'pr', 'create', '--fill'].join(' ');
+
+  test('PR writes stay intercepted, including inside a compound push command', () => {
+    const repo = makeRepo();
+    git(repo.root, ['switch', '-q', '-c', 'feature']);
+    const p = { cwd: repo.root, session_id: 'intercept' };
+    const run = (tool_input: object) =>
+      lifecycle('codex', 'PreToolUse', { ...p, tool_input }, env());
+    expect(run({ command: 'git push -u origin feature' })).toBeUndefined();
+    expect(run({ command: `git push -u origin feature && ${prCreate}` })).toContain(
+      'deny',
+    );
+    expect(
+      run({ command: ['gh', 'pr', 'edit', '3', '--body', '"new"'].join(' ') }),
+    ).toContain('deny');
+    expect(
+      run({ command: 'gh api -X PATCH repos/acme/demo/pulls/3 -f body=new' }),
+    ).toContain('deny');
+    // Text that only mentions a PR command is not a PR write.
+    expect(run({ command: `echo "${prCreate}"` })).toBeUndefined();
+    expect(
+      run({ command: `cat >> notes.md <<'EOF'\nRun ${prCreate} later\nEOF` }),
+    ).toBeUndefined();
+    // Connector pushes are ordinary git; connector PR writes are not.
+    expect(
+      lifecycle(
+        'codex',
+        'PreToolUse',
+        { ...p, tool_name: 'mcp__github__push_files', tool_input: {} },
+        env(),
+      ),
+    ).toBeUndefined();
+    expect(
+      lifecycle(
+        'codex',
+        'PreToolUse',
+        { ...p, tool_name: 'mcp__github__create_pull_request', tool_input: {} },
+        env(),
+      ),
+    ).toContain('deny');
+    const deny = JSON.parse(run({ command: prCreate })!);
+    expect(deny.hookSpecificOutput.permissionDecisionReason).toContain(
+      'Pushing branches is fine',
+    );
+  });
+
+  test('defer/block/complete keep the task branch; explicit adoption refreshes target state', async () => {
+    const repo = makeRepo();
+    const remote = tempDir('tracetoon-remote-');
+    git(remote, ['init', '-q', '--bare']);
+    git(repo.root, ['remote', 'add', 'origin', remote]);
+    git(repo.root, ['push', '-q', 'origin', 'main']);
+    git(repo.root, ['switch', '-q', '-c', 'feat/a']);
+    const begun = ok(repo.root, 'task', 'begin', '--session', 'adopt');
+    repo.commit('greet.ts', 'export const greet = () => "hello";\n', 'Add greeting');
+    check(repo.root, begun.run);
+    const run = prepared(repo, begun.run);
+    // Serverless ready: no clickable file anchor (Codex renders only http links),
+    // yet the exact returned markdown is recognized as delivered.
+    const ready = ok(repo.root, 'ready', '--run', run.id);
+    expect(ready.previewHandoff.markdown).not.toContain('file://');
+    const p = { cwd: repo.root, session_id: 'adopt', last_assistant_message: 'Done.' };
+    expect(lifecycle('codex', 'Stop', p, env())).toContain('has not been shown');
+    expect(
+      lifecycle(
+        'codex',
+        'Stop',
+        { ...p, last_assistant_message: ready.previewHandoff.markdown },
+        env(),
+      ),
+    ).toBeUndefined();
+    expect(readTask(run)?.presentedCode).toBe(ready.code);
+
+    // Same commit, different branch: bookkeeping commands never move the task.
+    git(repo.root, ['switch', '-q', '-c', 'feat/b']);
+    ok(repo.root, 'task', 'defer', '--run', run.id, '--reason', 'Waiting on the author.');
+    expect(readTask(run)?.branch).toBe('feat/a');
+    ok(repo.root, 'task', 'block', '--run', run.id, '--reason', 'Image route down.');
+    expect(readTask(run)?.branch).toBe('feat/a');
+    ok(repo.root, 'task', 'complete', '--run', run.id, '--checks', 'tests');
+    expect(readTask(run)?.branch).toBe('feat/a');
+    expect(existsSync(join(run.dir, 'approval.json'))).toBe(true);
+
+    // Explicit adoption moves it and clears what was bound to feat/a.
+    ok(repo.root, 'task', 'begin', '--run', run.id);
+    const adopted = readTask(run)!;
+    expect(adopted.branch).toBe('feat/b');
+    expect(adopted.readyCode).toBeUndefined();
+    expect(adopted.presentedCode).toBeUndefined();
+    for (const file of ['approval.json', 'preview.html', 'final-body.md'])
+      expect(existsSync(join(run.dir, file))).toBe(false);
+    for (const file of ['body.md', 'title.txt', 'checks.json'])
+      expect(existsSync(join(run.dir, file))).toBe(true);
+    // Receipts are content-bound, so the same tree reuses them.
+    expect(check(repo.root, run.id).reused).toBe(true);
+    // Previously `digest --run` rejected the old approval's branch.
+    prepared(repo, run.id);
+    const browser = await serveBrowserPreview(run.dir);
+    previewClosers.push(browser.close);
+    const served = ok(repo.root, 'ready', '--run', run.id, '--serve');
+    expect(served.previewHandoff.markdown).toContain(`(${browser.url})`);
+    expect(
+      lifecycle(
+        'codex',
+        'Stop',
+        { ...p, last_assistant_message: served.previewHandoff.markdown },
+        env(),
+      ),
+    ).toBeUndefined();
+    // Adopting across different commits is still refused.
+    git(repo.root, ['switch', '-q', 'main']);
+    git(repo.root, ['switch', '-q', '-c', 'feat/c']);
+    repo.commit('other.ts', 'x', 'Unrelated');
+    expect(cli(repo.root, ['task', 'begin', '--run', run.id]).json.error).toContain(
+      'Switch to the task branch',
+    );
+  });
+
+  test('a branch pushed past the approved commit is never published as reviewed', () => {
+    const repo = makeRepo();
+    const remote = tempDir('tracetoon-remote-');
+    git(remote, ['init', '-q', '--bare']);
+    git(repo.root, ['remote', 'add', 'origin', remote]);
+    git(repo.root, ['push', '-q', 'origin', 'main']);
+    git(repo.root, ['switch', '-q', '-c', 'feat/a']);
+    const begun = ok(repo.root, 'task', 'begin', '--session', 'ahead');
+    repo.commit('greet.ts', 'export const greet = () => "hello";\n', 'Add greeting');
+    const approved = git(repo.root, ['rev-parse', 'HEAD']).stdout.trim();
+    check(repo.root, begun.run);
+    const run = prepared(repo, begun.run);
+    const ready = ok(repo.root, 'ready', '--run', run.id);
+    // Pushing is allowed now: an unreviewed commit reaches the remote branch.
+    repo.commit('extra.ts', 'export const extra = 1;\n', 'Unreviewed follow-up');
+    git(repo.root, ['push', '-q', '-u', 'origin', 'feat/a']);
+    git(repo.root, ['reset', '-q', '--hard', approved]);
+    const log = join(dirname(config), 'gh-ahead.log');
+    const published = cli(repo.root, ['publish', '--run', run.id, '--code', ready.code], {
+      FAKE_GH_LOG: log,
+      FAKE_GH_STATE: join(dirname(config), 'gh-ahead.json'),
+    });
+    expect(published.code).not.toBe(0);
+    expect(published.json.error).toContain('git push failed');
+    const calls = existsSync(log)
+      ? readFileSync(log, 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : [];
+    expect(calls.some((c) => c.args[0] === 'pr' && c.args[1] === 'create')).toBe(false);
+  });
+
+  test('receipts ignore agent session bookkeeping but not the toolchain', () => {
+    const repo = makeRepo();
+    const { run } = beginTask(repo.root, { session: 'receipts' });
+    const saved = { ...process.env };
+    try {
+      Object.assign(process.env, { CLAUDE_EFFORT: 'medium', AI_AGENT: 'claude-code_1' });
+      const receipt = executeCheck(repo.root, run, {
+        name: 'tests',
+        command: [process.execPath, '-e', '1'],
+      });
+      expect(receipt.outcome).toBe('passed');
+      const current = () =>
+        checkReport(repo.root, run).find((c) => c.name === 'tests')!.current;
+      expect(current()).toBe(true);
+      for (const [k, v] of [
+        ['CLAUDE_EFFORT', 'high'],
+        ['CLAUDE_CODE_SESSION_ATTENDED', '0'],
+        ['AI_AGENT', 'claude-code_2'],
+        ['CODEX_THREAD_ID', 'another-thread'],
+        ['CODEX_TOOL_CALL_ID', 'call-2'],
+      ] as const) {
+        process.env[k] = v;
+        expect(current()).toBe(true);
+      }
+      process.env.NODE_ENV = 'production';
+      expect(current()).toBe(false);
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
   });
 });
