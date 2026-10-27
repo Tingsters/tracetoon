@@ -79,7 +79,7 @@ describe('base branch detection from one ref listing', () => {
     expect(first.mergeBaseTime).toBe(
       Number(g(repo.root, 'show', '-s', '--format=%ct', base)) * 1000,
     );
-    expect(first.baseCommits[0]).toEqual({ sha: base, subject: 'base' });
+    expect(first.baseCommits?.[0]).toEqual({ sha: base, subject: 'base' });
     // origin/main moves ahead to include the feature's first commit.
     const ahead = g(repo.root, 'rev-parse', 'HEAD');
     g(repo.root, 'update-ref', 'refs/remotes/origin/main', ahead);
