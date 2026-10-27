@@ -101,23 +101,30 @@ export const COMIC_REVIEW_CHECKS = [
   'fidelity',
   'payoff',
   'readability',
+  'relevance',
 ] as const;
 export type ComicReviewCheck = (typeof COMIC_REVIEW_CHECKS)[number];
+export interface ComicReviewAssessment {
+  state: 'satisfied' | 'needs-revision' | 'uncertain' | 'inapplicable';
+  reason: string;
+  /** One-based references to the observed panels. */
+  panels: number[];
+}
 export interface ComicReview {
   /** Host-reported image-first reading, not a machine certification of humor. */
   imageSha256: string;
   observedPanels: string[];
   inferredStory: string;
   perceivedJoke: string;
-  checks: Record<
-    ComicReviewCheck,
-    {
-      state: 'satisfied' | 'needs-revision' | 'uncertain' | 'inapplicable';
-      reason: string;
-      /** One-based references to the observed panels. */
-      panels: number[];
-    }
-  >;
+  /**
+   * The software change the reviewer reads from the image alone, before seeing
+   * the PR. Missing only in reports written before relevance was reviewed.
+   */
+  inferredChange?: string;
+  /** `relevance` is missing only in those older reports. */
+  checks: Record<Exclude<ComicReviewCheck, 'relevance'>, ComicReviewAssessment> & {
+    relevance?: ComicReviewAssessment;
+  };
   correction?: {
     target: 'premise' | 'script' | 'art' | 'lettering';
     instruction: string;

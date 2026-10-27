@@ -56,7 +56,7 @@ import {
 } from '../comic/composition.ts';
 import { loadConfig, setUserConfig } from '../config.ts';
 import { prTruth } from '../git/pr.ts';
-import { findRun, readJson, writeJson, type Run } from '../run.ts';
+import { findRun, readJson, readText, writeJson, type Run } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
 const EXT_MIME: Record<string, PanelImage['mime']> = {
@@ -79,10 +79,14 @@ function checkOptsFor(run: Run, root: string): CheckOpts {
   const ctx = readJson<{
     comic?: { recentStyles?: string[]; recentComics?: ComicSummary[] };
   }>(run, 'context.json');
+  const evidence = ['digest.json', 'changes.patch']
+    .map((f) => readText(run, f))
+    .filter((t): t is string => !!t);
   return {
     pinnedStyle: config.style && config.style !== 'auto' ? config.style : undefined,
     recentStyles: ctx?.comic?.recentStyles ?? [],
     recentComics: ctx?.comic?.recentComics ?? [],
+    ...(evidence.length ? { evidenceText: evidence.join('\n') } : {}),
   };
 }
 
