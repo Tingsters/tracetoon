@@ -7,6 +7,7 @@ import {
   EXPRESSIONS,
   PALETTES,
   CAST_KINDS,
+  DIALOGUE_KINDS,
   STYLE_FAMILIES,
   type ComicScript,
   type ComicSummary,
@@ -20,6 +21,9 @@ export const MAX_PAGE_WORDS = 50;
 export const MAX_HEADLINE_WORDS = 6;
 export const MAX_CHARACTERS = 6;
 export const MAX_STYLE_CHARS = 120;
+/** A label names one thing; anything longer is a caption. */
+export const MAX_LABEL_WORDS = 4;
+export const MAX_ANCHOR_TERMS = 4;
 
 export interface ScriptProblem {
   where: string;
@@ -34,10 +38,19 @@ export interface CheckOpts {
   /** A style the user pinned in config (always allowed, never a repeat). */
   pinnedStyle?: string;
   recentComics?: ComicSummary[];
+  /** The run's digest and diff, to notice anchor terms the PR never mentions. */
+  evidenceText?: string;
 }
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** Case, spacing and quote marks don't matter when matching a term to lettering. */
+const loose = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[`'"“”‘’]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 /** Every piece of text the model is asked to letter, in reading order. */
 export function pageText(s: ComicScript): string[] {
@@ -167,21 +180,35 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
     if ((p.dialogue ?? []).length > 4) bad(`${at}.dialogue`, 'at most 4 lines per panel');
     for (const [j, d] of (p.dialogue ?? []).entries()) {
       const w = `${at}.dialogue[${j}]`;
-      const narration = d.speaker === 'caption' || d.kind === 'sfx' || d.kind === 'sign';
+      const narration =
+        d.speaker === 'caption' ||
+        d.kind === 'sfx' ||
+        d.kind === 'sign' ||
+        d.kind === 'label';
       if (!narration && !names.has(String(d.speaker).toLowerCase()))
         bad(
           `${w}.speaker`,
           `"${d.speaker}" isn't in this comic's characters (${listed})`,
         );
-      if (d.kind && !['speech', 'thought', 'caption', 'sfx', 'sign'].includes(d.kind))
-        bad(`${w}.kind`, 'must be speech, thought, caption, sfx or sign');
+      if (d.kind && !DIALOGUE_KINDS.includes(d.kind))
+        bad(`${w}.kind`, `must be ${DIALOGUE_KINDS.join(', ')}`);
+      if (d.points !== undefined && typeof d.points !== 'string')
+        bad(`${w}.points`, 'must describe the drawn element the label points at');
+      if (d.kind === 'label' && !d.points?.trim())
+        bad(`${w}.points`, 'a label needs the drawn element it points at');
       if (!d.text?.trim()) bad(`${w}.text`, 'is empty');
+      else if (d.kind === 'label' && words(d.text) > MAX_LABEL_WORDS)
+        bad(
+          `${w}.text`,
+          `a label has ${words(d.text)} words; keep it to ${MAX_LABEL_WORDS} (use a caption for more)`,
+        );
       else if (words(d.text) > MAX_ITEM_WORDS)
         bad(`${w}.text`, `has ${words(d.text)} words; keep it to ${MAX_ITEM_WORDS}`);
       if (/https?:\/\/|@\w/.test(d.text ?? ''))
         bad(`${w}.text`, 'must not contain links or @mentions');
     }
   });
+  out.push(...anchorProblems(s as ComicScript, opts.evidenceText));
   if (!out.some((p) => p.severity !== 'warning')) {
     const current = comicSummary(s as ComicScript);
     const recent = (opts.recentComics ?? []).slice(0, 5);
@@ -225,6 +252,91 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
   return out;
 }
 
+/**
+ * The anchor ties the comic to the PR: a reviewer who reads only the comic
+ * should be able to name the change. Required for composed (current) scripts;
+ * legacy scripts without `composition` keep working.
+ */
+export function anchorProblems(s: ComicScript, evidenceText?: string): ScriptProblem[] {
+  const out: ScriptProblem[] = [];
+  const bad = (where: string, problem: string) => out.push({ where, problem });
+  const warn = (where: string, problem: string) =>
+    out.push({ where, problem, severity: 'warning' });
+  const a = s.anchor as Partial<ComicScript['anchor'] & object> | undefined;
+  if (a === undefined) {
+    if (s.composition)
+      bad(
+        'anchor',
+        'is required: the change in one sentence, 1–4 real terms from the PR, and what each drawn element stands for',
+      );
+    return out;
+  }
+  if (typeof a !== 'object' || a === null)
+    return [{ where: 'anchor', problem: 'must be an object' }];
+  if (typeof a.change !== 'string' || !a.change.trim())
+    bad('anchor.change', 'state the concrete change in one sentence');
+  const terms = Array.isArray(a.terms)
+    ? a.terms.filter((t): t is string => typeof t === 'string' && !!t.trim())
+    : [];
+  if (!Array.isArray(a.terms) || terms.length !== a.terms.length || terms.length < 1)
+    bad(
+      'anchor.terms',
+      'list 1–4 real names from the PR (command, flag, file, error, concept)',
+    );
+  else if (terms.length > MAX_ANCHOR_TERMS)
+    bad(
+      'anchor.terms',
+      `at most ${MAX_ANCHOR_TERMS} terms; keep the ones the comic shows`,
+    );
+  const mapping = Array.isArray(a.mapping) ? a.mapping : undefined;
+  if (!mapping || mapping.length < 1)
+    bad('anchor.mapping', 'say which drawn element stands for which technical thing');
+  else
+    mapping.forEach((m, i) => {
+      if (!m || typeof m.visual !== 'string' || !m.visual.trim())
+        bad(`anchor.mapping[${i}].visual`, 'name the drawn element');
+      if (!m || typeof m.technical !== 'string' || !m.technical.trim())
+        bad(`anchor.mapping[${i}].technical`, 'name what it stands for in the PR');
+    });
+  if (!terms.length || !Array.isArray(s.panels)) return out;
+
+  const visible = pageText(s).map(loose);
+  if (!terms.some((t) => visible.some((v) => v.includes(loose(t)))))
+    bad(
+      'anchor.terms',
+      `none of ${terms.map((t) => `"${t}"`).join(', ')} is lettered in the comic; add a label or sign so a reviewer can tie the picture to the PR`,
+    );
+  const labels = s.panels.flatMap((p) =>
+    (p.dialogue ?? []).filter((d) => d.kind === 'label' || d.kind === 'sign'),
+  );
+  (mapping ?? []).forEach((m, i) => {
+    if (!m?.visual || !m.technical) return;
+    const v = loose(m.visual);
+    const t = loose(m.technical);
+    const labelled = labels.some(
+      (d) =>
+        (d.points && (loose(d.points).includes(v) || v.includes(loose(d.points)))) ||
+        loose(d.text).includes(t) ||
+        t.includes(loose(d.text)),
+    );
+    if (!labelled)
+      warn(
+        `anchor.mapping[${i}]`,
+        `"${m.visual}" stands for "${m.technical}" but has no label; readers may miss the connection`,
+      );
+  });
+  if (evidenceText) {
+    const evidence = loose(evidenceText);
+    for (const t of terms)
+      if (!evidence.includes(loose(t)))
+        warn(
+          'anchor.terms',
+          `"${t}" doesn't appear in this PR's digest or diff; use the names the change actually uses`,
+        );
+  }
+  return out;
+}
+
 /** A plain-text transcript of the comic for the PR body (accessibility). */
 export function transcript(script: ComicScript): string {
   const shown = script.composition ? visibleHeadline(script) : script.headline;
@@ -234,13 +346,15 @@ export function transcript(script: ComicScript): string {
     script.panels
       .map((p, i) => {
         const lines = p.dialogue.map((d) =>
-          d.speaker === 'caption' || d.kind === 'caption'
-            ? `*${d.text}*`
-            : d.kind === 'sfx'
-              ? `**${d.text}**`
-              : d.kind === 'sign'
-                ? `[${d.text}]`
-                : `**${d.speaker}:** ${d.text}`,
+          d.kind === 'label'
+            ? `[label${d.points ? ` → ${d.points}` : ''}: ${d.text}]`
+            : d.speaker === 'caption' || d.kind === 'caption'
+              ? `*${d.text}*`
+              : d.kind === 'sfx'
+                ? `**${d.text}**`
+                : d.kind === 'sign'
+                  ? `[${d.text}]`
+                  : `**${d.speaker}:** ${d.text}`,
         );
         return `${i + 1}. ${p.scene}${lines.length ? '\n   ' + lines.join('\n   ') : ''}`;
       })
