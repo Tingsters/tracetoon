@@ -39,7 +39,9 @@ bun run test
 - Development checks require Bun 1.3.14 or newer (the CI pin). `bun run test`
   runs the complete source suite with up to four fresh Bun processes. Each file
   gets a new process so native state cannot leak between files; tests within each
-  file remain sequential. `bun run typecheck && bun run test`
+  file remain sequential. Files start slowest first, using each file's last
+  passing time (kept in `node_modules/.cache`), so a long end-to-end file never
+  starts last. `bun run typecheck && bun run test`
   macOS runs one file at a time because the pinned Bun version's subprocess-heavy
   suites fail intermittently under concurrent macOS load. Full coverage is kept.
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
@@ -50,6 +52,14 @@ bun run test
   contract; renamed, skipped, failed, or empty selections cannot pass silently.
   All source tests still run on each supported CI platform. Publication itself
   reuses current validation; it never launches these suites after approval.
+  CI runs both packaged suites on every PR, on every platform. Run them locally
+  when a change touches packaging: `scripts/bundle.ts`, `scripts/build*.ts`,
+  `scripts/test-packaged.ts`, `scripts/test-files.ts`,
+  `scripts/packaged-contracts.ts`, the launchers in
+  `plugin/skills/tracetoon/bin/`, the installers or the release workflow.
+  Otherwise record them as CI-covered instead of waiting about two minutes:
+  `tracetoon check --run <id> --name test-bundled --skip "CI runs the packaged
+  contracts on every PR"` (likewise `test-compiled`).
 - Never commit real session logs. Fixtures are synthetic or scrubbed.
 
 Contributor research and review handoffs live in `src/contribution/`; their host
