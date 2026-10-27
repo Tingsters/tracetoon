@@ -1,10 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultBase, gitIdentity, prTruth } from '../src/git/pr.ts';
 import { repository } from '../src/workflow/state.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
+
+// These build real repos and run many git processes; Windows CI runners are slow.
+setDefaultTimeout(60_000);
 
 const g = (cwd: string, ...args: string[]) => {
   const r = git(cwd, args);
