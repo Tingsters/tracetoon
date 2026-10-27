@@ -6,7 +6,7 @@ import { git } from '../util/exec.ts';
 import { readSubmittedFile, repoPath } from '../util/repoFiles.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
 import { findRun, newRun, type Run } from '../run.ts';
-import { defaultBase } from '../git/pr.ts';
+import { defaultBase, gitIdentity } from '../git/pr.ts';
 
 export type TaskState =
   'working' | 'preparing' | 'ready' | 'blocked' | 'deferred' | 'published';
@@ -40,12 +40,10 @@ export function repository(cwd: string): {
   gitDir: string;
   branch: string;
 } {
-  const top = git(cwd, ['rev-parse', '--show-toplevel']);
-  if (!top.ok) throw new Error('Not inside a git repository.');
-  const root = resolve(top.stdout.trim());
-  const gitDir = git(root, ['rev-parse', '--absolute-git-dir']).stdout.trim();
-  const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
-  return { root, gitDir, branch };
+  // One process; an unborn branch still reports "HEAD" as before.
+  const id = gitIdentity(cwd);
+  if (!id) throw new Error('Not inside a git repository.');
+  return { root: id.toplevel, gitDir: id.gitDir, branch: id.branch };
 }
 
 /** Includes committed progress and all public working changes, but no private trails. */

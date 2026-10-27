@@ -224,8 +224,13 @@ export function checkReport(root: string, run: Run) {
     })(),
   }));
 }
-export function receiptEvidence(root: string, run: Run): EvidenceRun[] {
-  return checkReport(root, run)
+export function receiptEvidence(
+  root: string,
+  run: Run,
+  // Reuse a report the caller already computed (fingerprinting walks every file).
+  report: ReturnType<typeof checkReport> = checkReport(root, run),
+): EvidenceRun[] {
+  return report
     .filter((c) => c.current && ['passed', 'failed'].includes(c.outcome))
     .map((c, i) => ({
       id: `V${i + 1}`,
