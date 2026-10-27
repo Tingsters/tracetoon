@@ -114,7 +114,9 @@ start of your first PR.
 
 The installer adds a small hook to each agent. When an agent tries to open a PR
 with `gh pr create` (or rewrite one with `gh pr edit --title/--body`), the hook
-points it to Tracetoon, so you always get a preview first. It only touches its
+points it to Tracetoon, so you always get a preview first. Ordinary `git push`
+is left alone: pushing a branch for CI, a tag or a release commit is your
+workflow, not a PR. The hook only touches its
 own entries in each agent's config, backs up each file before the first change,
 and lists every file it changed. Skip it with `TRACETOON_NO_HOOK=1`. Codex asks
 you to trust a new hook once (`/hooks`), and the Antigravity IDE picks it up

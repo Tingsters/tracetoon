@@ -1,5 +1,5 @@
 /** Worktree-local task state. A rendered artifact and a delivered handoff are distinct. */
-import { existsSync, readdirSync, lstatSync } from 'node:fs';
+import { existsSync, readdirSync, lstatSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { git } from '../util/exec.ts';
@@ -130,9 +130,29 @@ export function tasks(gitDir: string): { run: Run; task: Task }[] {
     .sort((a, b) => b.task.updatedAt.localeCompare(a.task.updatedAt));
 }
 
+/**
+ * Files that bind a prepared PR to its head branch. Explicit adoption removes
+ * them; authored drafts (body, title, comic, art), content-bound check receipts
+ * and the record of an already published PR stay.
+ */
+const TARGET_BOUND = [
+  'approval.json',
+  'submission.json',
+  'review-state.json',
+  'preview.html',
+  'final-body.md',
+];
+
 export function beginTask(
   cwd: string,
-  options: { run?: string; base?: string; session?: string; transcript?: string } = {},
+  options: {
+    run?: string;
+    base?: string;
+    session?: string;
+    transcript?: string;
+    /** Only an explicit `task begin --run` may move a task to the current branch. */
+    adopt?: boolean;
+  } = {},
 ) {
   const repo = repository(cwd);
   const existing = options.run
@@ -146,7 +166,7 @@ export function beginTask(
   if (existing?.task) {
     if (existing.task.root !== repo.root)
       throw new Error('Switch to the task worktree before resuming it.');
-    if (existing.task.branch !== repo.branch) {
+    if (existing.task.branch !== repo.branch && options.adopt) {
       const oldHead = git(repo.root, ['rev-parse', existing.task.branch]).stdout.trim();
       const currentHead = git(repo.root, ['rev-parse', 'HEAD']).stdout.trim();
       if (!options.run || !oldHead || oldHead !== currentHead)
@@ -155,7 +175,18 @@ export function beginTask(
         );
       existing.task.branch = repo.branch;
       existing.task.state = 'working';
-      existing.task.readyCode = undefined;
+      for (const key of [
+        'readyCode',
+        'readyReviewSha',
+        'readyChecksSha',
+        'readyPreviewSha',
+        'readyAt',
+        'presentedCode',
+        'presentedAt',
+      ] as const)
+        delete existing.task[key];
+      for (const file of TARGET_BOUND)
+        rmSync(join(existing.run.dir, file), { force: true });
     }
     if (options.session) existing.task.session = options.session;
     if (options.transcript) existing.task.transcript = options.transcript;

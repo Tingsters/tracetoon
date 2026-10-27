@@ -51,18 +51,26 @@ function inputFingerprint(
     }),
   ]);
 }
-export function checkEnvironment(): string {
+/**
+ * Variables a coding agent sets to describe its own session, not the code,
+ * toolchain or test environment. They change mid-task: Codex's per-call id, and
+ * Claude Code's effort level, attended flag, ids and version string.
+ */
+const HOST_SESSION_VARS =
+  /^(CODEX_TOOL_CALL_ID|CODEX_THREAD_ID|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_CODE_SESSION_ID|CLAUDE_CODE_SESSION_ATTENDED|CLAUDE_CODE_CHILD_SESSION|CLAUDE_CODE_MESSAGING_\w+|AI_AGENT)$/;
+
+export function checkEnvironment(env: NodeJS.ProcessEnv = process.env): string {
   // Hash, don't log, the environment. Changed PATH/toolchain/options invalidate reuse.
   return hash([
     process.platform,
     process.arch,
     process.version,
     (globalThis as { Bun?: { version: string } }).Bun?.version ?? null,
-    Object.entries(process.env)
-      // Codex changes this correlation id for every shell invocation. It does
-      // not change the code, toolchain or user-selected test environment.
+    Object.entries(env)
       .filter(
-        ([k]) => !/^(TRACETOON|FAKE_|_|CODEX_TOOL_CALL_ID$|PWD$|OLDPWD$|SHLVL$)/.test(k),
+        ([k]) =>
+          !/^(TRACETOON|FAKE_|_|PWD$|OLDPWD$|SHLVL$)/.test(k) &&
+          !HOST_SESSION_VARS.test(k),
       )
       .sort(([a], [b]) => a.localeCompare(b)),
   ]);

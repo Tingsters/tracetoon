@@ -25,6 +25,8 @@ export function taskCmd(
   const info = beginTask(cwd, {
     ...opts,
     session: opts.session ?? process.env.CODEX_THREAD_ID ?? process.env.CLAUDE_SESSION_ID,
+    // complete/defer/block keep the task's branch; only begin adopts another one.
+    adopt: action === 'begin',
   });
   const { run, task } = info;
   if (action === 'begin' && ['deferred', 'blocked'].includes(task.state)) {

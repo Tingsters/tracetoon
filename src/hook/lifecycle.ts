@@ -1,7 +1,7 @@
 /** Native host lifecycle adapters. Hooks inspect local state; they never run models or checks. */
 import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { localFileLink } from '../review/handoff.ts';
+import { handoffShown } from '../review/handoff.ts';
 import { activeBrowserPreview } from '../review/browser.ts';
 import { closeSync, openSync, readSync, statSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -31,7 +31,7 @@ import { publicationTargets } from './publicationTarget.ts';
 type Payload = Record<string, any>;
 export type LifecycleEvent = 'SessionStart' | 'PreToolUse' | 'PostToolUse' | 'Stop';
 const instructions =
-  'Tracetoon is enabled. Before changing a repository, register the cohesive task with tracetoon task begin (actual session id and transcript path). Finish applicable local checks using tracetoon check. When the requested change is finished, use task complete and the tracetoon skill automatically, even without a PR request; finish with ready and its exact branded local handoff before pushing. Record defer/block with a reason for unfinished work. Planning and questions are not completed changes. Approval publishes the reviewed PR, never merges it. Use the same contract for shell and GitHub connector writes.';
+  'Tracetoon is enabled. Before changing a repository, register the cohesive task with tracetoon task begin (actual session id and transcript path). Finish applicable local checks using tracetoon check. When the requested change is finished, use task complete and the tracetoon skill automatically, even without a PR request; finish with ready and its exact branded local handoff before publishing the PR. Record defer/block with a reason for unfinished work. Planning and questions are not completed changes. Approval publishes the reviewed PR, never merges it. Use the same contract for shell and GitHub connector writes.';
 
 export function sessionId(p: Payload): string | undefined {
   return [p.session_id, p.sessionId, p.conversationId, p.conversation_id].find(
@@ -212,11 +212,13 @@ export function lifecycle(
       event === 'PreToolUse'
         ? publicationTargets(p, [...allRoots, ...host.repos.map((r) => r.root)])
         : undefined;
-    if (targets) {
+    // Tracetoon improves PRs; pushing code is the developer's own workflow.
+    // A command that also writes a PR is still classified as `pr`.
+    if (targets?.kind === 'pr') {
       if (!targets.roots.length)
         return denyPublication(
           agent,
-          'Resolve the actual publication repository/worktree and use Tracetoon before writing the PR or pushing its code. No local target could be checked.',
+          'Resolve the actual repository/worktree for this PR and write it with Tracetoon. No local target could be checked.',
         );
       for (const root of targets.roots.filter((r) => switchState(r, env).enabled)) {
         const repo = repository(root);
@@ -237,7 +239,7 @@ export function lifecycle(
               agent,
               `This snapshot is already published. Use tracetoon publish --run ${published.run.id} to retrieve or reconcile its approved PR; a direct write can change code or PR text outside the handoff.`,
             );
-          // Classify before a push, including the first observed combined edit/commit/push.
+          // An agent writing a PR outside Tracetoon starts a task so the PR gets prepared.
           const started = beginTask(root, { session: id, transcript });
           started.task.baseline =
             host.repos.find((r) => r.root === root)?.baseline ??
@@ -245,10 +247,8 @@ export function lifecycle(
           saveTask(started.run, started.task);
           active = started;
         }
-        if (active && (active.task.state !== 'deferred' || targets.kind === 'pr')) {
-          const reason = `Task ${active.run.id} must use tracetoon publish after the author approves its ready preview. Direct pushes and PR writes bypass that approval contract.`;
-          return denyPublication(agent, reason);
-        }
+        const reason = `Task ${active.run.id}: write this PR with tracetoon publish after the author approves its ready preview, so it gets the reviewed description and comic. Pushing branches is fine; only PR creation and title/body edits go through Tracetoon.`;
+        return denyPublication(agent, reason);
       }
     }
     return;
@@ -330,10 +330,11 @@ export function lifecycle(
           p.lastAssistantMessage ??
           (last?.kind === 'assistant' ? last.text : '');
         if (
-          typeof message === 'string' &&
-          ((browserUrl && message.includes(browserUrl)) ||
-            message.includes(localFileLink('OPEN YOUR LOCAL PR PREVIEW', url)) ||
-            message.includes(url))
+          handoffShown(message, {
+            fileUrl: url,
+            filePath: join(run.dir, 'preview.html'),
+            browserUrl,
+          })
         ) {
           task.presentedCode = task.readyCode;
           task.presentedAt = new Date().toISOString();

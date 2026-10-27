@@ -8,21 +8,25 @@
 import { switchState } from './switches.ts';
 import { pendingReminder } from '../review/reminder.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
+import { splitCommands } from '../util/shell.ts';
 
 export type HookAgent = 'claude' | 'codex' | 'antigravity';
 
 export const BYPASS_RE =
   /(^|[\s;&|(])TRACETOON=0\b|\$env:TRACETOON\s*=\s*['"]?0\b|\bset\s+"?TRACETOON=0\b/i;
 
-const SEGMENT_SPLIT = /&&|\|\||;|\||\r?\n/;
 // gh, gh.exe, a path to it, or a quoted path with spaces ("C:/Program Files/GitHub CLI/gh.exe").
 const GH_PR_RE =
   /^(?:&\s*)?(?:"[^"]*[\\/]gh(?:\.exe)?"|'[^']*[\\/]gh(?:\.exe)?'|["']?(?:[^\s"']*[\\/])?gh(?:\.exe)?["']?)\s+pr\s+(create|new|edit)\b(.*)$/i;
 const EDITS_TEXT_RE = /(^|\s)(--title|-t|--body|-b|--body-file|-F)(\s|=|$)/;
 
-/** Whether a shell command creates a PR or rewrites its title/body with gh. */
+/**
+ * Whether a shell command creates a PR or rewrites its title/body with gh.
+ * Quoted strings and heredoc bodies are text (a file being written, a test
+ * fixture), not commands, so they never trigger the hook.
+ */
 export function writesPr(command: string): boolean {
-  for (const raw of command.split(SEGMENT_SPLIT)) {
+  for (const raw of splitCommands(command)) {
     const seg = raw
       .trim()
       .replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, '') // VAR=value prefixes

@@ -50,6 +50,13 @@ describe('which commands are PR writes', () => {
     ['gh pr merge 5 --merge', false],
     ['echo "gh pr create"', false],
     ['git commit -m "use gh pr create later"', false],
+    ['gh pr create --body "a; b"', true],
+    ['gh pr create --title "Fix a && b"', true],
+    // Heredoc bodies and quoted multi-line text are file content, not commands.
+    ["cat >> notes.md <<'EOF'\ngh pr create --fill\nEOF", false],
+    ["cat > t.ts <<EOF\nrun('git push && gh pr create --fill')\nEOF\nbun test", false],
+    ['git commit -m "first line\ngh pr create --fill"', false],
+    ["cat > a.txt <<'EOF'\nnothing\nEOF\ngh pr create --fill", true],
   ])('%s -> %p', (cmd, expected) => {
     expect(writesPr(cmd)).toBe(expected);
   });
