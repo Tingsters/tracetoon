@@ -500,38 +500,20 @@ describe('independent contribution reviews', () => {
       observedPanels: ['A single static contradiction.'],
       inferredStory: 'An interpretation.',
       perceivedJoke: 'A modest visual reversal.',
-      inferredChange: 'A resource leak is fixed.',
       checks: Object.fromEntries(
-        ['clarity', 'continuity', 'fidelity', 'payoff', 'readability', 'relevance'].map(
-          (name) => [
-            name,
-            {
-              state: 'uncertain',
-              reason: 'A concrete concern remains visible.',
-              panels: [1],
-            },
-          ],
-        ),
+        ['clarity', 'continuity', 'fidelity', 'payoff', 'readability'].map((name) => [
+          name,
+          {
+            state: 'uncertain',
+            reason: 'A concrete concern remains visible.',
+            panels: [1],
+          },
+        ]),
       ),
     };
     f.saveReview();
     expect(f.loadReview(input).status).toBe('current');
     expect(reviewLine(f.loadReview(input))).toContain('payoff: uncertain');
-    // An older report without relevance is readable but no longer complete.
-    const { relevance, ...older } = value.comicReview.checks;
-    value.comicReview = { ...value.comicReview, checks: older };
-    delete value.comicReview.inferredChange;
-    f.saveReview();
-    const legacy = f.loadReview(input);
-    expect(legacy.status).toBe('incomplete');
-    expect(legacy.issues.join(' ')).toContain('Comic relevance is not assessed');
-    value.comicReview = {
-      ...value.comicReview,
-      inferredChange: 'A resource leak is fixed.',
-      checks: { ...older, relevance },
-    };
-    f.saveReview();
-    expect(f.loadReview(input).status).toBe('current');
     value.comicReview.imageSha256 = 'b'.repeat(64);
     f.saveReview();
     expect(f.loadReview(input).status).toBe('stale');

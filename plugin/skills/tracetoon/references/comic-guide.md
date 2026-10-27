@@ -1,47 +1,13 @@
 # Making the comic
 
-Every PR gets one comic image, shown right under the description. Its first
-reader is the reviewer. The goal: after reading the comic they know **what
-changed**, remember it, and smile. Someone who has never seen the repo should
-still get the joke, because labels name the real parts. Fun, true to the digest
-(no invented features, no fake results), and about *this* change.
+Every PR gets one comic image. The goal: a developer who has never seen this repo
+laughs, gets what happened, and wants to share it. Fun first, but true to the
+digest: no invented features, no fake results.
 
-A comic can be well drawn and funny yet explain nothing. A waiter serving a
-photo of soup is a good gag, but no reader connects it to "the preview label
-looked like a link but didn't open". Name the real thing and the same gag
-works: label the photo `OPEN YOUR LOCAL PR PREVIEW`.
+## 1. Find the joke
 
-## 1. Anchor the change, then find the joke
-
-Start with the change itself: one sentence a reviewer would agree with, and the
-1–4 real names the PR uses for it (a command, flag, file, error, setting or
-concept: `ready --serve`, "skipped tests", `comic.json`). Write them in the
-script's `anchor` with a `mapping` from each drawn element to the technical
-thing it stands for. Then find the supported event, decision, or changed
-behavior from the digest that makes it funny. Keep the evidence reference in
-local comic-design.json.
-
-**The PR test.** Cover the title and description. Could a developer name the
-change from the comic alone? Apply it to each concept before judging humor or
-novelty. If the answer is no, add labels, move the metaphor closer to the
-system, or pick another concept.
-
-**Metaphor distance.** Choose the nearest metaphor that still gives a joke, and
-justify going further:
-1. The system's own parts as characters or objects: the hook, the preview
-   server, a CI job, a cache entry, two requests racing, with their real names.
-2. A developer-world scene: a terminal, a review thread, a CI page, a stand-up.
-3. An everyday analogy (a restaurant, a bakery, a classroom). Allowed when it
-   is the strongest joke, but only with labels on the elements that carry the
-   mapping, the way xkcd's "Dependency" labels a block tower as all modern
-   digital infrastructure.
-
-**Labels.** Use `"kind": "label"` callouts (up to 4 words, with `points`
-naming the drawn element) for the 1–3 elements that carry the mapping. Use the
-PR's real names, not paraphrases. Keep the punchline in the picture or dialogue;
-a label names things, it doesn't explain the joke. Don't label everything.
-`tracetoon comic check` requires at least one anchor term to be lettered in the
-art and warns when a mapped element has no label or a term isn't in the PR.
+Start with a supported event, decision, or changed behavior from the digest, not
+just the feature name. Keep the evidence reference in local comic-design.json.
 Fictional exaggeration inside the metaphor is welcome; it must not invent real
 test outcomes, measured delays, deployments, or decisions by real people.
 
@@ -84,8 +50,7 @@ Then shape it:
 - **Specific beats generic.** "The panels came back in the wrong order" is funny;
   "tests pass" is not.
 - **Make it relatable**: every developer knows flaky tests, a fix that needs a fix,
-  or a "quick change" that wasn't. No in-jokes that need the *session history*;
-  labels supply the PR context, so the comic can be about this exact change.
+  or a "quick change" that wasn't. No in-jokes that need the PR to make sense.
 - **Punch at the problem, never at people.** The bug, the build, or the agent's
   own blunder are fair game. The user, other contributors and real
   companies are not.
@@ -172,14 +137,6 @@ Notice recent creature-led casts, but do not ban them or rotate species by quota
     "frames": [{ "x": 0, "y": 0, "w": 1, "h": 1, "border": "none" }]
   },
   "designReason": "One visual contradiction carries the joke; a cast and heading would distract.",
-  "anchor": {
-    "change": "The file reader now closes its handle after each read instead of leaking it.",
-    "terms": ["file handle"],
-    "mapping": [
-      { "visual": "the tiny open tap", "technical": "the unclosed file handle" },
-      { "visual": "the sinking machine", "technical": "the server" }
-    ]
-  },
   "style": "precise technical ink, a single red accent, ample negative space",
   "styleFamily": "technical",
   "palette": "bw-accent",
@@ -189,11 +146,7 @@ Notice recent creature-led casts, but do not ban them or rotate species by quota
     {
       "scene": "A huge pristine machine nearly sinks in water from one tiny forgotten tap; one clear callout points to the tap",
       "characters": [],
-      "dialogue": [
-        { "speaker": "caption", "kind": "label", "points": "the tiny open tap", "text": "file handle" },
-        { "speaker": "caption", "kind": "label", "points": "the sinking machine", "text": "server" },
-        { "speaker": "caption", "text": "Closed after every read now." }
-      ]
+      "dialogue": [{ "speaker": "caption", "text": "One tiny handle." }]
     }
   ]
 }
@@ -202,17 +155,9 @@ Notice recent creature-led casts, but do not ban them or rotate species by quota
 Rules (checked by `tracetoon comic check`; warnings don't block):
 - 1–6 panels and at most 6 characters. At most 4 characters and 4 text items
   per panel, 12 words per item, 50 words per page, headline at most 6 words.
-- A panel's `characters` lists objects, not names:
-  `{ "name": "Ada", "position": "left", "expression": "worried", "pose": "..." }`
-  (`position` is `left`, `center` or `right`; `expression` and `pose` are optional).
 - `speaker` is a character's `name` or `"caption"`. `kind`: `speech` (default),
-  `thought`, `caption` (narration), `sfx` (a sound effect), `sign` (words on a
-  screen or sign in the scene) or `label` (a callout tag, up to 4 words, whose
-  `points` names the drawn element it points at).
-- `anchor` (required with `composition`; local, never posted): `change` in one
-  sentence, 1–4 `terms` the PR really uses, and a `mapping` of
-  `{ "visual", "technical" }` pairs. At least one term must appear in the
-  lettering.
+  `thought`, `caption` (narration), `sfx` (a sound effect) or `sign` (words on a
+  screen, sign or label in the scene).
 - `aspect`: `4:3` (default), `1:1`, `16:9` or `3:4`; formats have sensible
   defaults. A vertical composition defaults to `3:4`.
 - `composition.title.mode`: `none`, `integrated` or `heading`. An optional
@@ -225,9 +170,7 @@ Rules (checked by `tracetoon comic check`; warnings don't block):
   in frame coordinates. Intentional contained insets use `inset: true` (the
   `hero-inset` preset declares these itself); other overlaps are rejected.
 - Legacy scripts without `composition` keep their old rendering defaults.
-- No links, no @mentions, no secrets, no real people's names, no company logos,
-  and no characters that look like existing cartoon, film or game characters
-  (retro styles such as rubber hose make this easy to do by accident).
+- No links, no @mentions, no secrets, no real people's names, no company logos.
 
 ## 6. Make the art, then proofread
 
@@ -237,8 +180,7 @@ image, lettering included**, so the words look like part of the comic. Then:
 1. `tracetoon comic render` adds a small "made with Tracetoon" footer bar and
    prints a **proofread** list.
 2. **Look at `out/comic.png`** and check every word on the list is lettered
-   exactly, with nothing extra or garbled, and that each label sits on the
-   element it names. Check the actual panel count, reading
+   exactly, with nothing extra or garbled. Check the actual panel count, reading
    order, title treatment, framing and payoff at PR-column and phone widths.
    A good prompt is not proof that the generated image followed it.
 3. Diagnose before retrying. A weak premise or missing/contradictory action needs
@@ -259,9 +201,8 @@ image, lettering included**, so the words look like part of the comic. Then:
 
 The independent review starts with the image alone, before the synopsis,
 transcript, technical explanation, or design reasoning. The reviewer records
-literal panel observations separately from inference, the perceived joke and
-the software change the image suggests, then compares the script, the PR's
-actual change and factual evidence. See contribution-workflow.md.
+literal panel observations separately from inference and the perceived joke,
+then compares the script and factual evidence. See contribution-workflow.md.
 Structural checks and a matching transcript do not certify comic quality.
 
 With your own image tool instead: `tracetoon comic prompts` prints the

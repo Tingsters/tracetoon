@@ -192,10 +192,6 @@ export function loadReview(
       base.issues.push(
         'Comic content assessment is missing. Read comic-observation-input.json with the image before reading its script or the full review packet.',
       );
-    if (input.comic && comicReview && !comicReview.checks.relevance)
-      base.issues.push(
-        'Comic relevance is not assessed. From the image alone, record which software change it suggests (inferredChange), then compare it with the PR in a relevance check.',
-      );
     if (
       input.comic &&
       comicReview &&
@@ -271,7 +267,6 @@ export function loadReview(
       status:
         incomplete ||
         (input.comic && !comicReview) ||
-        (input.comic && !comicReview?.checks.relevance) ||
         (input.comic && comicReview?.observedPanels.length !== input.comic.panelCount)
           ? 'incomplete'
           : 'current',

@@ -162,17 +162,12 @@ that bypass on your own initiative.
      scratch unless the user asks for a fresh draft.
 5. **Have the drafter write the comic, then draw it** (skip if `config.comic` is false, the user
    doesn't want one, or `aiPolicy.media` is `prohibited`). Follow
-   [references/comic-guide.md](references/comic-guide.md). The comic sits in
-   the PR, so its first reader is the reviewer: after reading it they should
-   know *what changed* and smile. Labels with the PR's real names let someone
-   outside the repo get it too:
+   [references/comic-guide.md](references/comic-guide.md). Aim for something
+   funny that someone outside the repo would want to share:
    - compare three distinct short story/composition/cast concepts in local
      `comic-design.json`, following [comic-direction.md](references/comic-direction.md).
-     First apply the PR test (could a developer name the change from the comic
-     alone?), then choose the strongest supported joke: record its technical
-     anchor, reader expectation, comic turn, visible clues and likely misreading.
-     Prefer metaphors close to the system; a distant everyday analogy needs
-     labels on the elements that carry the mapping.
+     First choose the strongest supported joke: record its evidence anchor,
+     reader expectation, comic turn, visible clues and likely misreading.
      Reconcile synopsis, scenes, dialogue and alt text before drawing. Then use
      `context.comic.recentComics` for art direction; draw one finished image.
      Panel count follows necessary story beats, not diff length. Pick a format
@@ -186,9 +181,7 @@ that bypass on your own initiative.
      `comic.json`, with each `kind` (`human`, `creature`, `object`); never reuse
      characters from earlier comics. Use fictional people for human situations,
      creatures or objects when they strengthen the gag, or no cast at all;
-   - write `comic.json` (`"v": 2`) with its `anchor` (the change, 1–4 real
-     terms, and what each drawn element stands for) and `label` callouts, then
-     `tracetoon comic check`; at least one term must be lettered in the art;
+   - write `comic.json` (`"v": 2`), then `tracetoon comic check`;
    - make the art: `tracetoon comic art` draws the whole page with its lettering
      through the Codex or Antigravity CLI, or the OpenAI or Gemini API, after the
      user agrees once (exit code 4 means: ask them, then add `--consent`). Or
@@ -211,13 +204,12 @@ that bypass on your own initiative.
    PR and writes `review-input.json`. Launch a fresh reviewer, distinct from the
    researcher and drafter. When the render includes a comic, give it ONLY
    `comic-observation-input.json` and the actual image for its first pass. With no
-   prior context, it records literal panel observations, inferred story,
-   perceived joke and the software change the image suggests. Wait for that account before sending `review-input.json`, the
+   prior context, it records literal panel observations, inferred story and
+   perceived joke. Wait for that account before sending `review-input.json`, the
    script, original sources, submitted code, digest and author evidence. Never
    supply the drafter's private selection reasoning. Record the reported
    image-first account in `review.json.comicReview`, followed by separate clarity,
-   continuity, fidelity, payoff, readability and relevance judgments and panel
-   evidence. Relevance compares the change read from the image with the PR.
+   continuity, fidelity, payoff and readability judgments and panel evidence.
    If fresh/vision-capable delegation is unavailable, disclose the limitation
    rather than claiming an independent image-first reading. The reviewer
    independently checks source interpretation and

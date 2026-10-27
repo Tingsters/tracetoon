@@ -155,8 +155,7 @@ export function artFingerprint(
   script: ComicScript,
   lettering: 'model' | 'overlay',
 ): string {
-  // Local reasoning doesn't change the drawing; labels live in the dialogue.
-  const { designReason: _private, anchor: _anchor, ...art } = script;
+  const { designReason: _private, ...art } = script;
   return createHash('sha256').update(JSON.stringify({ art, lettering })).digest('hex');
 }
 

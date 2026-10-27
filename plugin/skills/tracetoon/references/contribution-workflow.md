@@ -110,9 +110,8 @@ drafter; preserve author text during revisions.
 
 For a comic, start a fresh reviewer with only `comic-observation-input.json` and
 the referenced actual image. Before sending the full packet, obtain a literal
-panel-by-panel account, separately inferred story, perceived joke (or an
-explicit statement that none is identifiable), and the software change the
-image alone suggests (`inferredChange`, or that none is identifiable). Do not prime this pass with the
+panel-by-panel account, separately inferred story, and perceived joke (or an
+explicit statement that none is identifiable). Do not prime this pass with the
 title, synopsis, script, transcript, PR explanation or drafter's reasoning. Then
 send the full packet and script to the same reviewer for factual comparison.
 Reported host roles and image-first observations are not independently attested
@@ -126,14 +125,12 @@ Include `comicReview` in review.json for new comic packets:
   "observedPanels": ["What is literally visible in panel 1"],
   "inferredStory": "Interpretation, kept separate from observation",
   "perceivedJoke": "The actual comic turn, or why none is identifiable",
-  "inferredChange": "The software change the image alone suggests, before reading the PR",
   "checks": {
     "clarity": { "state": "satisfied", "reason": "Concrete reading evidence", "panels": [1] },
     "continuity": { "state": "inapplicable", "reason": "One static scene", "panels": [1] },
     "fidelity": { "state": "satisfied", "reason": "Compare supplied facts after image-first pass", "panels": [1] },
     "payoff": { "state": "uncertain", "reason": "Explain whether there is a joke beyond the lesson", "panels": [1] },
-    "readability": { "state": "satisfied", "reason": "Actual lettering and reading path inspected", "panels": [1] },
-    "relevance": { "state": "satisfied", "reason": "The inferred change matches the PR; labels name the real parts", "panels": [1] }
+    "readability": { "state": "satisfied", "reason": "Actual lettering and reading path inspected", "panels": [1] }
   },
   "correction": { "target": "premise", "instruction": "A concrete suggested revision" }
 }
@@ -142,13 +139,9 @@ Include `comicReview` in review.json for new comic packets:
 States are `satisfied`, `needs-revision`, `uncertain`, or `inapplicable` (the last
 only for continuity, with a reason such as a static scene). Panel references are
 one-based observed panels. Correction is optional; target is `premise`, `script`,
-`art`, or `lettering`. Judge clarity, continuity, factual fidelity, payoff,
-readability and relevance separately. A readable illustration or matching
-transcript does not establish a joke, and a good joke that never points at the
-change is not relevant. Relevance compares `inferredChange` with the PR; when a
-reader could not name the change, correct the `script` (labels, nearer
-metaphor) or `premise`, not the art. Reports written before relevance review
-stay readable but count as incomplete. Preserve useful inference and fictional exaggeration without
+`art`, or `lettering`. Judge clarity, continuity, factual fidelity, payoff and
+readability separately. A readable illustration or matching transcript does not
+establish a joke. Preserve useful inference and fictional exaggeration without
 inventing actual results. Route defects to the appropriate correction, not an
 automatic style reroll. Findings remain advisory and appear in the preview;
 missing comic assessment makes a new packet incomplete. Legacy reports remain

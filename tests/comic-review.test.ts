@@ -15,7 +15,6 @@ const report = (): ComicReview => ({
   observedPanels: ['A bright object stands out against its surroundings.'],
   inferredStory: 'Conspicuousness is useful for a link.',
   perceivedJoke: 'Bad camouflage becomes good navigation.',
-  inferredChange: 'A PR preview link is made easier to spot.',
   checks: Object.fromEntries(
     COMIC_REVIEW_CHECKS.map((name) => [
       name,
@@ -34,18 +33,14 @@ describe('reported comic content review', () => {
     expect(comicReviewLines(value).join('\n')).toContain('Inferred story:');
     expect(comicReviewLines(value).join('\n')).toContain('Perceived joke:');
   });
-  test.each([
-    'clarity',
-    'continuity',
-    'fidelity',
-    'payoff',
-    'readability',
-    'relevance',
-  ] as const)('requires a separate %s assessment', (key) => {
-    const value: any = report();
-    delete value.checks[key];
-    expect(() => parseComicReview(value)).toThrow();
-  });
+  test.each(['clarity', 'continuity', 'fidelity', 'payoff', 'readability'] as const)(
+    'requires a separate %s assessment',
+    (key) => {
+      const value: any = report();
+      delete value.checks[key];
+      expect(() => parseComicReview(value)).toThrow();
+    },
+  );
   test('cannot cite panels that were not observed or certify an unobserved payoff', () => {
     const value = report();
     value.checks.payoff.panels = [2];
@@ -69,36 +64,6 @@ describe('reported comic content review', () => {
     };
     expect(parseComicReview(value).checks.payoff.state).toBe('needs-revision');
     expect(comicReviewLines(value).join('\n')).toContain('Correct premise');
-  });
-  test('records the change read from the image and judges relevance separately', () => {
-    const value = report();
-    expect(comicReviewLines(parseComicReview(value)).join('\n')).toContain(
-      'Inferred change: A PR preview link is made easier to spot.',
-    );
-    delete (value as any).inferredChange;
-    expect(() => parseComicReview(value)).toThrow('inferredChange');
-    value.inferredChange = 'No software change is identifiable.';
-    value.checks.relevance = {
-      state: 'inapplicable',
-      reason: 'Static scene.',
-      panels: [1],
-    };
-    expect(() => parseComicReview(value)).toThrow('Only comic continuity');
-    value.checks.relevance = {
-      state: 'needs-revision',
-      reason: 'A soup gag; nothing names the preview link.',
-      panels: [1],
-    };
-    value.correction = { target: 'script', instruction: 'Label the photo as the link.' };
-    expect(parseComicReview(value).checks.relevance?.state).toBe('needs-revision');
-  });
-  test('older reports without relevance stay readable', () => {
-    const value: any = report();
-    delete value.inferredChange;
-    delete value.checks.relevance;
-    const parsed = parseComicReview(value);
-    expect(parsed.checks.relevance).toBeUndefined();
-    expect(comicReviewLines(parsed).join('\n')).not.toContain('relevance');
   });
   test('first-pass packet excludes the script, synopsis, title and PR explanation', () => {
     const input = {

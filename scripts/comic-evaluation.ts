@@ -98,7 +98,6 @@ export async function evaluateComics(
               synthetic: true,
               id: item.id,
               variant,
-              change: item.change,
               facts: item.facts,
               watchFor: item.watchFor,
               control: item.control,
@@ -134,10 +133,7 @@ export async function evaluateComics(
       let proofHtml = '';
       if (existsSync(scriptFile)) {
         const script: ComicScript = JSON.parse(readFileSync(scriptFile, 'utf8'));
-        // Baselines are the original, unanchored scripts kept as controls.
-        const problems = errors(checkScript(script)).filter(
-          (p) => variant === 'candidate' || !p.where.startsWith('anchor'),
-        );
+        const problems = errors(checkScript(script));
         if (problems.length)
           throw new Error(`${item.id} ${variant}: ${JSON.stringify(problems)}`);
         const panels: PanelImage[] = script.panels.map(() => ({
@@ -152,7 +148,7 @@ export async function evaluateComics(
       }
       rows.push({
         key,
-        html: `<article><h2>${esc(item.id)} · ${variant}</h2>${imageHtml}<details><summary>Facts and reader probes — read after image-first review</summary><p><strong>Actual change:</strong> ${esc(item.change)}</p><p>${esc(item.story)}</p><ul>${[...item.facts, ...item.watchFor].map((p) => `<li>${esc(p)}</li>`).join('')}</ul></details>${proofHtml}</article>`,
+        html: `<article><h2>${esc(item.id)} · ${variant}</h2>${imageHtml}<details><summary>Facts and reader probes — read after image-first review</summary><p>${esc(item.story)}</p><ul>${[...item.facts, ...item.watchFor].map((p) => `<li>${esc(p)}</li>`).join('')}</ul></details>${proofHtml}</article>`,
       });
     }
   }
@@ -164,7 +160,7 @@ export async function evaluateComics(
     .join('\n');
   writeFileSync(
     file,
-    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tracetoon comic evaluation</title><style>body{--preview:760px;background:#edf0f2;color:#172029;font:16px/1.5 system-ui;margin:24px}body.phone{--preview:360px}header{max-width:1000px;margin:auto}button{padding:10px;margin:8px;cursor:pointer}.gallery{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:28px}article{background:white;padding:20px;border-radius:14px;width:min(var(--preview),calc(100vw - 88px))}img{display:block;width:100%;height:auto}summary{cursor:pointer}</style></head><body><header><h1>Comic content evaluation</h1><p>${command === 'blind' ? 'Read only the pictures first. Record visible events, inference, the perceived joke and which software change each comic is about, separately.' : 'Compare image-first observations, including the change each reader named, with the actual change, facts and scripts. Controls include deliberate flaws. Structural checks are not humor scores.'}</p><button onclick="document.body.classList.remove('phone')">PR column · 760px</button><button onclick="document.body.classList.add('phone')">Phone · 360px</button></header><main class="gallery">${html}</main></body></html>`,
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tracetoon comic evaluation</title><style>body{--preview:760px;background:#edf0f2;color:#172029;font:16px/1.5 system-ui;margin:24px}body.phone{--preview:360px}header{max-width:1000px;margin:auto}button{padding:10px;margin:8px;cursor:pointer}.gallery{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:28px}article{background:white;padding:20px;border-radius:14px;width:min(var(--preview),calc(100vw - 88px))}img{display:block;width:100%;height:auto}summary{cursor:pointer}</style></head><body><header><h1>Comic content evaluation</h1><p>${command === 'blind' ? 'Read only the pictures first. Record visible events, inference and the perceived joke separately.' : 'Compare image-first observations with facts and scripts. Controls include deliberate flaws. Structural checks are not humor scores.'}</p><button onclick="document.body.classList.remove('phone')">PR column · 760px</button><button onclick="document.body.classList.add('phone')">Phone · 360px</button></header><main class="gallery">${html}</main></body></html>`,
   );
   writeFileSync(join(base, 'inventory.json'), JSON.stringify(inventory, null, 2) + '\n');
   return file;

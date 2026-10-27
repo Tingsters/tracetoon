@@ -1,10 +1,5 @@
 /** Synthetic PR stories for visual evaluation, never represented as real session evidence. */
-import type {
-  ComicAnchor,
-  ComicScript,
-  Composition,
-  Panel,
-} from '../../src/comic/types.ts';
+import type { ComicScript, Composition, Panel } from '../../src/comic/types.ts';
 
 const panel = (scene: string, text: string, speaker = 'caption'): Panel => ({
   scene,
@@ -290,78 +285,3 @@ export const COMIC_STORIES = [
     ],
   ),
 ];
-
-/**
- * What ties each synthetic story to its change: the anchor plus one label.
- * The stories above stay as written so evaluation keeps them as unanchored
- * baselines; tests and candidates use `anchoredStory`.
- */
-const ANCHORS: Record<
-  string,
-  { anchor: ComicAnchor; label: { panel: number; points: string; text: string } }
-> = {
-  single: {
-    anchor: {
-      change: 'Closes a resource handle that was left open and leaked.',
-      terms: ['open handle'],
-      mapping: [{ visual: 'the tiny open tap', technical: 'the leaked resource handle' }],
-    },
-    label: { panel: 0, points: 'the tiny open tap', text: 'open handle' },
-  },
-  comparison: {
-    anchor: {
-      change: 'Replaces a confusing multi-step save workflow with one Save action.',
-      terms: ['Save'],
-      mapping: [{ visual: 'the large save button', technical: 'the single Save action' }],
-    },
-    label: { panel: 1, points: 'the large save button', text: 'Save' },
-  },
-  vertical: {
-    anchor: {
-      change:
-        'Retries wait with backoff between attempts instead of hammering the service.',
-      terms: ['backoff'],
-      mapping: [{ visual: 'the sand timer', technical: 'retry backoff delay' }],
-    },
-    label: { panel: 2, points: 'the sand timer', text: 'backoff' },
-  },
-  asymmetric: {
-    anchor: {
-      change: 'A lock stops concurrent requests from claiming the same last seat.',
-      terms: ['seat lock'],
-      mapping: [{ visual: 'the tiny turnstile', technical: 'the seat lock' }],
-    },
-    label: { panel: 3, points: 'the tiny turnstile', text: 'seat lock' },
-  },
-  'hero-inset': {
-    anchor: {
-      change: 'A migration renames configuration keys and keeps their values.',
-      terms: ['config keys'],
-      mapping: [{ visual: 'the drawer labels', technical: 'configuration keys' }],
-    },
-    label: { panel: 1, points: 'the new drawer label', text: 'config keys' },
-  },
-  diagonal: {
-    anchor: {
-      change: 'Shutdown now stops orphaned background jobs.',
-      terms: ['orphaned job'],
-      mapping: [{ visual: 'the ghost', technical: 'an orphaned background job' }],
-    },
-    label: { panel: 0, points: 'the ghost', text: 'orphaned job' },
-  },
-};
-
-/** A story's script with its anchor and label: what a current drafter writes. */
-export function anchoredStory(id: string): ComicScript {
-  const story = COMIC_STORIES.find((c) => c.id === id)!;
-  const { anchor, label } = ANCHORS[id]!;
-  const s = structuredClone(story.script);
-  s.anchor = structuredClone(anchor);
-  s.panels[label.panel]!.dialogue.push({
-    speaker: 'caption',
-    kind: 'label',
-    points: label.points,
-    text: label.text,
-  });
-  return s;
-}

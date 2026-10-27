@@ -17,13 +17,14 @@ import { recentComics, recentStyles } from '../src/github/history.ts';
 import { encodeMeta } from '../src/github/body.ts';
 import { prTruth } from '../src/git/pr.ts';
 import type { ComicScript } from '../src/comic/types.ts';
-import { anchoredStory, COMIC_STORIES } from './fixtures/comic-stories.ts';
+import { COMIC_STORIES } from './fixtures/comic-stories.ts';
 import { pageScript } from './pageScript.ts';
 import { makeRepo, tempDir } from './helpers.ts';
 
 setDefaultTimeout(90_000);
 const CLI = process.env.TRACETOON_TEST_CLI ?? resolve(import.meta.dir, '../src/cli.ts');
-const example = (id: string): ComicScript => anchoredStory(id);
+const example = (id: string): ComicScript =>
+  structuredClone(COMIC_STORIES.find((c) => c.id === id)!.script);
 
 describe('story-led compositions', () => {
   test('a hidden art title is absent everywhere readers see lettering, while metadata stays named', () => {
@@ -31,7 +32,7 @@ describe('story-led compositions', () => {
     s.headline = 'This metadata headline has more than six words';
     expect(errors(checkScript(s))).toEqual([]);
     expect(visibleHeadline(s)).toBe('');
-    expect(pageText(s)).toEqual(['One tiny handle.', 'open handle']);
+    expect(pageText(s)).toEqual(['One tiny handle.']);
     expect(pagePrompt(s)).not.toContain(s.headline);
     expect(pagePrompt(s)).not.toContain('lettered big and bold');
     expect(pagePrompt(s)).toContain('No visible title');
@@ -96,10 +97,9 @@ describe('story-led compositions', () => {
 
   test('overlay preserves six different geometries and rasterizes without square-grid fallback', async () => {
     for (const item of COMIC_STORIES) {
-      const script = anchoredStory(item.id);
-      expect(errors(checkScript(script))).toEqual([]);
-      const svg = composePage(script, []);
-      expect(svg.match(/<clipPath/g)).toHaveLength(script.panels.length);
+      expect(errors(checkScript(item.script))).toEqual([]);
+      const svg = composePage(item.script, []);
+      expect(svg.match(/<clipPath/g)).toHaveLength(item.script.panels.length);
       expect(svg).not.toContain('transform="scale(');
       expect(svg).toContain('made with Tracetoon');
       const size = imageSize(await svgToPng(svg, 800))!;
@@ -308,89 +308,5 @@ describe('composition CLI and cache', () => {
       cli('comic', 'art', '--lettering', 'overlay', '--provider', 'codex').code,
     ).toBe(0);
     expect(readFileSync(join(run, 'art', 'panel-1.png'))).toEqual(freshPage);
-  });
-});
-
-describe('technical anchor', () => {
-  const where = (s: ComicScript, opts = {}) =>
-    checkScript(s, opts).map((p) => `${p.severity ?? 'error'} ${p.where}`);
-
-  test('composed scripts must say what change they show; legacy scripts still pass', () => {
-    const s = example('single');
-    delete s.anchor;
-    expect(where(s)).toContain('error anchor');
-    expect(errors(checkScript(pageScript()))).toEqual([]);
-  });
-
-  test('a real term must be lettered so the picture ties back to the PR', () => {
-    const s = example('single');
-    expect(errors(checkScript(s))).toEqual([]);
-    s.panels[0]!.dialogue = s.panels[0]!.dialogue.filter((d) => d.kind !== 'label');
-    const problems = errors(checkScript(s));
-    expect(problems.map((p) => p.where)).toEqual(['anchor.terms']);
-    expect(problems[0]!.problem).toContain('"open handle"');
-    // Case, spacing and quotes don't matter.
-    s.panels[0]!.dialogue.push({
-      speaker: 'caption',
-      kind: 'sign',
-      text: '`Open  Handle`',
-    });
-    expect(errors(checkScript(s))).toEqual([]);
-  });
-
-  test('anchor fields are validated and unlabeled mappings warn', () => {
-    const s = example('single');
-    s.anchor = { change: ' ', terms: [], mapping: [] };
-    expect(where(s)).toEqual(
-      expect.arrayContaining([
-        'error anchor.change',
-        'error anchor.terms',
-        'error anchor.mapping',
-      ]),
-    );
-    s.anchor = {
-      change: 'Closes a leaked handle.',
-      terms: ['a', 'b', 'c', 'd', 'e'],
-      mapping: [{ visual: 'the tap', technical: 'x' }],
-    };
-    expect(where(s)).toContain('error anchor.terms');
-    const unlabeled = example('single');
-    unlabeled.anchor!.mapping.push({ visual: 'the wrench', technical: 'the fix' });
-    expect(where(unlabeled)).toContain('warning anchor.mapping[1]');
-    expect(where(unlabeled)).not.toContain('warning anchor.mapping[0]');
-  });
-
-  test('terms the PR never mentions warn when evidence is available', () => {
-    const s = example('single');
-    expect(
-      where(s, { evidenceText: 'fix: close the open handle in reader.ts' }),
-    ).not.toContain('warning anchor.terms');
-    expect(where(s, { evidenceText: 'fix: close the reader' })).toContain(
-      'warning anchor.terms',
-    );
-  });
-
-  test('labels are short, point at something, and reach the prompt, transcript and overlay', () => {
-    const s = example('single');
-    const label = s.panels[0]!.dialogue.find((d) => d.kind === 'label')!;
-    expect(pagePrompt(s)).toContain(
-      'callout tag with a thin leader line pointing at the tiny open tap',
-    );
-    expect(pagePrompt(s)).toContain('"open handle"');
-    expect(pagePrompt(s)).not.toContain('no extra labels');
-    expect(transcript(s)).toContain('[label → the tiny open tap: open handle]');
-    expect(composePage(s, [])).toContain('open handle');
-    label.text = 'a label that is far too long';
-    expect(where(s)).toContain('error panels[0].dialogue[1].text');
-    label.text = 'open handle';
-    delete label.points;
-    expect(where(s)).toContain('error panels[0].dialogue[1].points');
-  });
-
-  test('the anchor is local reasoning: editing it keeps cached art', () => {
-    const s = example('single');
-    const before = artFingerprint(s, 'model');
-    s.anchor!.change = 'A reworded private note.';
-    expect(artFingerprint(s, 'model')).toBe(before);
   });
 });

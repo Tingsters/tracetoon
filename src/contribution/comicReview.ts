@@ -24,15 +24,7 @@ export function parseComicReview(value: unknown): ComicReview {
     'Separate the inferred story and perceived joke; explicitly report when no joke is identifiable.',
   );
   requireThat(record(value.checks), 'comicReview needs separate content checks.');
-  // Reports from before relevance review stay readable; review.ts flags them.
-  const legacy =
-    value.inferredChange === undefined && value.checks.relevance === undefined;
-  requireThat(
-    legacy || nonempty(value.inferredChange),
-    'Before reading the PR, state which software change the image alone suggests (inferredChange), or that none is identifiable.',
-  );
   for (const name of COMIC_REVIEW_CHECKS) {
-    if (legacy && name === 'relevance') continue;
     const check = value.checks[name];
     requireThat(
       record(check) &&
@@ -81,11 +73,9 @@ export function comicReviewLines(review: ComicReview): string[] {
     ...review.observedPanels.map((p, i) => `  Panel ${i + 1} observed: ${p}`),
     `  Inferred story: ${review.inferredStory}`,
     `  Perceived joke: ${review.perceivedJoke}`,
-    ...(review.inferredChange ? [`  Inferred change: ${review.inferredChange}`] : []),
-    ...COMIC_REVIEW_CHECKS.flatMap((name) => {
-      const check = review.checks[name];
-      return check ? [`  ${name}: ${check.state} — ${check.reason}`] : [];
-    }),
+    ...COMIC_REVIEW_CHECKS.map(
+      (name) => `  ${name}: ${review.checks[name].state} — ${review.checks[name].reason}`,
+    ),
     ...(review.correction
       ? [`  Correct ${review.correction.target}: ${review.correction.instruction}`]
       : []),
