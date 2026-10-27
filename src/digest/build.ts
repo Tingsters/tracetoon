@@ -630,6 +630,8 @@ export interface BuildOptions {
   /** Session ids the user chose to include or exclude, overriding the bands. */
   include?: string[];
   exclude?: string[];
+  /** Provenance already read for this truth; building twice need not ask git again. */
+  interop?: Interop;
 }
 
 export function buildDigest(
@@ -766,7 +768,7 @@ export function buildDigest(
       suggestedTrailers: [...new Set(suggestedTrailers)],
       existingTrailers,
     },
-    interop: detectInterop(truth),
+    interop: opts.interop ?? detectInterop(truth),
     privacy: {
       redactions: 0,
       droppedForeignRecords: chosen.reduce((n, m) => n + m.droppedForeign, 0),

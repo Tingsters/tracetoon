@@ -76,26 +76,67 @@ function parseRemote(url: string): { owner: string; name: string } | undefined {
   return m ? { owner: m[1]!, name: m[2]! } : undefined;
 }
 
+/**
+ * Top level, git dir and branch in one git process (each costs ~0.1s on
+ * Windows, and every command asks). An unborn branch reports "HEAD" with a
+ * failing exit, exactly like `rev-parse --abbrev-ref HEAD` alone; `ok` keeps
+ * that distinction for callers that require a commit.
+ */
+export function gitIdentity(
+  cwd: string,
+): { toplevel: string; gitDir: string; branch: string; ok: boolean } | undefined {
+  const r = git(cwd, [
+    'rev-parse',
+    '--show-toplevel',
+    '--absolute-git-dir',
+    '--abbrev-ref',
+    'HEAD',
+  ]);
+  const [toplevel, gitDir, branch] = r.stdout.split(/\r?\n/).map((l) => l.trim());
+  if (!toplevel || !gitDir) return undefined;
+  return {
+    toplevel: resolve(toplevel),
+    gitDir: resolve(gitDir),
+    branch: branch ?? '',
+    ok: r.ok,
+  };
+}
+
+const BASE_CANDIDATES = ['main', 'master', 'trunk', 'develop'];
+
+/** One `for-each-ref` for origin/HEAD and every base candidate, local and remote. */
+function baseRefs(cwd: string, extra: string[] = []) {
+  const names = [
+    'refs/remotes/origin/HEAD',
+    ...[...new Set([...BASE_CANDIDATES, ...extra])].flatMap((b) => [
+      `refs/heads/${b}`,
+      `refs/remotes/origin/${b}`,
+    ]),
+  ];
+  const r = git(cwd, ['for-each-ref', '--format=%(refname)%09%(symref)', ...names]);
+  const present = new Map<string, string>();
+  for (const line of r.stdout.split(/\r?\n/)) {
+    const [ref, symref] = line.split('\t');
+    if (ref) present.set(ref, symref ?? '');
+  }
+  return present;
+}
+
+function chooseBase(refs: Map<string, string>): string {
+  const sym = refs.get('refs/remotes/origin/HEAD');
+  if (sym?.startsWith('refs/remotes/origin/'))
+    return sym.slice('refs/remotes/origin/'.length);
+  return BASE_CANDIDATES.find((b) => refs.has(`refs/heads/${b}`)) ?? 'main';
+}
+
 /** The branch PRs normally target: origin/HEAD, else main, else master. */
 export function defaultBase(cwd: string): string {
-  const sym = git(cwd, [
-    'symbolic-ref',
-    '--quiet',
-    '--short',
-    'refs/remotes/origin/HEAD',
-  ]);
-  if (sym.ok && sym.stdout.trim()) return sym.stdout.trim().replace(/^origin\//, '');
-  for (const b of ['main', 'master', 'trunk', 'develop']) {
-    if (git(cwd, ['rev-parse', '--verify', '--quiet', b]).ok) return b;
-  }
-  return 'main';
+  return chooseBase(baseRefs(cwd));
 }
 
 /** The ref to diff against: the remote-tracking base when it exists, else the local one. */
-function baseRef(cwd: string, base: string): string {
-  if (git(cwd, ['rev-parse', '--verify', '--quiet', `origin/${base}`]).ok)
-    return `origin/${base}`;
-  return base;
+function baseRef(refs: Map<string, string>, base: string): string {
+  return refs.has(`refs/remotes/origin/${base}`) ? `origin/${base}` : base;
 }
 
 export function existingPr(cwd: string, head: string): ExistingPr | undefined {
@@ -240,26 +281,37 @@ export interface TruthOptions {
 }
 
 export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
-  const toplevel = resolve(must(cwd, ['rev-parse', '--show-toplevel']));
-  const gitDir = resolve(toplevel, must(toplevel, ['rev-parse', '--git-dir']));
+  const id = gitIdentity(cwd);
+  if (!id) must(cwd, ['rev-parse', '--show-toplevel']); // throws the git error
+  const { toplevel, gitDir } = id!;
   const headRef = opts.head ?? 'HEAD';
-  const head = opts.head ?? must(toplevel, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!opts.head && !id!.ok) must(toplevel, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const head = opts.head ?? id!.branch;
   const pr = opts.noGh ? undefined : existingPr(toplevel, head);
-  const base = opts.base ?? pr?.baseRefName ?? defaultBase(toplevel);
-  const ref = baseRef(toplevel, base);
+  const known = opts.base ?? pr?.baseRefName;
+  const refs = baseRefs(toplevel, known ? [known] : []);
+  const base = known ?? chooseBase(refs);
+  const ref = baseRef(refs, base);
   const mergeBase = git(toplevel, ['merge-base', ref, headRef]).stdout.trim() || ref;
-  const mbt = Number(
-    git(toplevel, ['show', '-s', '--format=%ct', mergeBase]).stdout.trim(),
-  );
-  const mergeBaseTime = Number.isFinite(mbt) && mbt > 0 ? mbt * 1000 : undefined;
   const commits = commitsBetween(toplevel, mergeBase, headRef);
-  const baseCommits = git(toplevel, ['log', '-n', '200', '--format=%H%x1f%s', mergeBase])
+  // The log starts at the merge base itself, so its first entry also gives the
+  // merge base's commit time (one git process instead of two).
+  const baseLog = git(toplevel, [
+    'log',
+    '-n',
+    '200',
+    '--format=%H%x1f%ct%x1f%s',
+    mergeBase,
+  ])
     .stdout.split(/\r?\n/)
     .filter(Boolean)
     .map((l) => {
-      const [sha, subject] = l.split('\x1f');
-      return { sha: sha!, subject: subject ?? '' };
+      const [sha, ct, ...subject] = l.split('\x1f');
+      return { sha: sha!, ct: Number(ct), subject: subject.join('\x1f') };
     });
+  const mbt = baseLog[0]?.ct ?? NaN;
+  const mergeBaseTime = Number.isFinite(mbt) && mbt > 0 ? mbt * 1000 : undefined;
+  const baseCommits = baseLog.map(({ sha, subject }) => ({ sha, subject }));
   const dirty = opts.head
     ? false
     : git(toplevel, ['status', '--porcelain', '--untracked-files=no']).stdout.trim()

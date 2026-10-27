@@ -13,6 +13,7 @@ import { emit, UserError, type OutOpts } from './output.ts';
 import { submissionSnapshot } from '../review/snapshot.ts';
 import { pendingNotice } from './pending.ts';
 import { checkReport, receiptEvidence } from '../workflow/checks.ts';
+import { detectInterop } from '../git/interop.ts';
 import { readTask } from '../workflow/state.ts';
 import { receipts } from '../workflow/checks.ts';
 import { fileHash } from '../workflow/readiness.ts';
@@ -76,17 +77,22 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     include: opts.include ?? selected?.include,
     exclude: opts.exclude ?? selected?.exclude,
   };
+  // Both digests describe the same truth; read its provenance once.
+  const interop = detectInterop(truth);
   const digest = buildDigest(truth, matches, {
     ...build,
+    interop,
     budgetTokens: opts.budget ?? config.budgetTokens,
   });
   const full = buildDigest(truth, matches, {
     ...build,
+    interop,
     budgetTokens: Number.MAX_SAFE_INTEGER,
   });
   const pending = pendingNotice(truth.toplevel, truth.gitDir);
   if (readTask(run)) {
-    const validation = checkReport(truth.toplevel, run).map((c) => ({
+    const report = checkReport(truth.toplevel, run);
+    const validation = report.map((c) => ({
       name: c.name,
       command: c.command.join(' '),
       outcome: c.outcome,
@@ -94,7 +100,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
       reason: c.reason,
       durationMs: c.durationMs,
     }));
-    const verification = receiptEvidence(truth.toplevel, run);
+    const verification = receiptEvidence(truth.toplevel, run, report);
     digest.verification = full.verification = verification;
     digest.checksSha = full.checksSha = receipts(run).length
       ? fileHash(run, 'checks.json')
