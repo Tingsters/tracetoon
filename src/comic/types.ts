@@ -120,13 +120,47 @@ export interface PanelCharacter {
   pose?: string;
 }
 
+export const DIALOGUE_KINDS = [
+  'speech',
+  'thought',
+  'caption',
+  'sfx',
+  'sign',
+  'label',
+] as const;
+export type DialogueKind = (typeof DIALOGUE_KINDS)[number];
+
 export interface Dialogue {
-  /** A character's name, or "caption" for narration (also used for signs and screens). */
+  /** A character's name, or "caption" for narration (also used for signs, screens and labels). */
   speaker: string;
   /** Exact words. With model lettering they are drawn into the art verbatim. */
   text: string;
-  /** `sign`: words on something in the scene (a screen, a sign, a label). */
-  kind?: 'speech' | 'thought' | 'caption' | 'sfx' | 'sign';
+  /**
+   * `sign`: words on something in the scene (a screen, a sign).
+   * `label`: a short callout tag that names what a drawn element stands for.
+   */
+  kind?: DialogueKind;
+  /** For a `label`: the drawn element it points at. */
+  points?: string;
+}
+
+/** One drawn element and the real thing in the PR it stands for. */
+export interface AnchorMapping {
+  visual: string;
+  technical: string;
+}
+
+/**
+ * What ties the comic to the PR. Local art direction: never posted.
+ * At least one term must be readable in the art.
+ */
+export interface ComicAnchor {
+  /** One sentence: the concrete change this PR makes. */
+  change: string;
+  /** 1–4 real names from the PR: a command, flag, file, error or concept. */
+  terms: string[];
+  /** Which drawn elements stand for which technical things. */
+  mapping: AnchorMapping[];
 }
 
 export interface Panel {
@@ -168,6 +202,8 @@ export interface ComicScript {
   styleFamily?: StyleFamily;
   /** Local art-direction rationale; never included in public PR metadata. */
   designReason?: string;
+  /** The change, real terms and visual mapping. Required with `composition`. */
+  anchor?: ComicAnchor;
   /** Page shape. Default: the format's. */
   aspect?: Aspect;
   /** Any art style: an idea from styles.ts by id, or the agent's own description. */

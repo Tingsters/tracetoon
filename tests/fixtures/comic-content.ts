@@ -1,7 +1,11 @@
 /** Synthetic reader probes, not automatic humor scores or real traces. */
 import { COMIC_STORIES } from './comic-stories.ts';
-const probes: Record<string, { facts: string[]; watchFor: string[]; control: string }> = {
+const probes: Record<
+  string,
+  { change: string; facts: string[]; watchFor: string[]; control: string }
+> = {
   single: {
+    change: 'A leaked resource handle is now closed.',
     facts: ['A small resource-handle change addresses a leak.'],
     watchFor: [
       'A static scale gag can work without showing a repair.',
@@ -10,6 +14,7 @@ const probes: Record<string, { facts: string[]; watchFor: string[]; control: str
     control: 'static-control',
   },
   comparison: {
+    change: 'A multi-step save workflow becomes one Save action.',
     facts: ['A confusing save workflow becomes one clear action.'],
     watchFor: [
       'Keep the user goal recognizable.',
@@ -18,6 +23,7 @@ const probes: Record<string, { facts: string[]; watchFor: string[]; control: str
     control: 'unscored',
   },
   vertical: {
+    change: 'Retries back off between attempts.',
     facts: [
       'Retries wait between attempts.',
       'Eventual success and measured delay are unknown.',
@@ -30,6 +36,7 @@ const probes: Record<string, { facts: string[]; watchFor: string[]; control: str
     control: 'negative-control',
   },
   asymmetric: {
+    change: 'Concurrent requests can no longer claim the same last seat.',
     facts: ['Concurrent requests must not claim the same last available seat.'],
     watchFor: [
       'Unexplained empty available seats contradict last-seat scarcity.',
@@ -39,6 +46,7 @@ const probes: Record<string, { facts: string[]; watchFor: string[]; control: str
     control: 'negative-control',
   },
   'hero-inset': {
+    change: 'A migration renames configuration keys and keeps values.',
     facts: ['Configuration keys change while values are preserved.'],
     watchFor: [
       'Recognizable unchanged contents support preservation.',
@@ -48,6 +56,7 @@ const probes: Record<string, { facts: string[]; watchFor: string[]; control: str
     control: 'negative-control',
   },
   diagonal: {
+    change: 'Shutdown stops orphaned background jobs.',
     facts: ['Shutdown now stops orphaned background jobs.'],
     watchFor: [
       'A creature can earn its place through the zombie-job metaphor.',
@@ -60,6 +69,7 @@ export const COMIC_CONTENT_CASES = [
   ...COMIC_STORIES.map((item) => ({ ...item, ...probes[item.id]! })),
   {
     id: 'cache-invalidation',
+    change: 'Validation receipts are reused when only the host request ID changes.',
     story: 'Validation can be reused despite changing host request identifiers.',
     facts: [
       'A new host request ID does not change tested content.',
@@ -74,6 +84,7 @@ export const COMIC_CONTENT_CASES = [
   },
   {
     id: 'documentation-only',
+    change: 'A typo in the documentation is fixed.',
     story: 'A documentation typo is corrected without changing program behavior.',
     facts: [
       'The change corrects a documentation typo only.',

@@ -112,7 +112,11 @@ function bubble(
   look: Look = { caption: '#FFF3B0', sfx: '#F25F5C' },
 ): string {
   const kind =
-    d.speaker === 'caption' || d.kind === 'sign' ? 'caption' : (d.kind ?? 'speech');
+    d.kind === 'label'
+      ? 'label'
+      : d.speaker === 'caption' || d.kind === 'sign'
+        ? 'caption'
+        : (d.kind ?? 'speech');
   const lh = size * 1.18;
   const textX = box.x + box.w / 2;
   const textY = box.y + (box.h - lines.length * lh) / 2 + size * 0.88;
@@ -122,6 +126,10 @@ function bubble(
         `<text x="${textX}" y="${textY + i * lh}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="${size}" fill="${INK}">${esc(l)}</text>`,
     )
     .join('');
+  if (kind === 'label') {
+    // A tidy callout tag: white, square-ish, thinner line than a caption box.
+    return `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="8" fill="#FFF" stroke="${INK}" stroke-width="3"/><circle cx="${box.x + 14}" cy="${box.y + box.h / 2}" r="5" fill="${INK}"/>${text}`;
+  }
   if (kind === 'caption') {
     return `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${look.caption}" stroke="${INK}" stroke-width="4"/>${text}`;
   }
@@ -191,7 +199,10 @@ export function panelBubbles(
     .map((d, i) => {
       if (d.kind === 'sfx') return sfx(d, i, look?.sfx, width, height, !!canvas);
       const isCaption =
-        d.speaker === 'caption' || d.kind === 'caption' || d.kind === 'sign';
+        d.speaker === 'caption' ||
+        d.kind === 'caption' ||
+        d.kind === 'sign' ||
+        d.kind === 'label';
       const manual = placed?.[i];
       const maxW = manual?.w
         ? manual.w * width - 44

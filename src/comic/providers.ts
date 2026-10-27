@@ -83,7 +83,7 @@ export type Readiness = 'ready' | 'not ready' | 'unknown';
 
 /** Things image models must avoid, on every comic. */
 export const NEGATIVE =
-  'fictional characters only (human characters are welcome); no identifiable real-person or celebrity likenesses, no logos or brand marks, no watermarks, no signatures';
+  'fictional characters only (human characters are welcome); original character designs that do not resemble existing cartoon, film or game characters; no identifiable real-person or celebrity likenesses, no logos or brand marks, no watermarks, no signatures';
 
 function characterLine(script: ComicScript, name: string): string {
   const c = script.characters?.find((x) => x.name.toLowerCase() === name.toLowerCase());
@@ -147,6 +147,8 @@ function textLine(d: Dialogue): string {
       return `big sound-effect lettering: ${q}`;
     case 'sign':
       return `written on a sign, screen or label in the scene: ${q}`;
+    case 'label':
+      return `a small typewriter-style callout tag with a thin leader line pointing at ${d.points?.trim() || 'the element it names'}, reading exactly ${q}`;
     default:
       return d.speaker === 'caption'
         ? `caption box: ${q}`
@@ -202,7 +204,11 @@ export function pagePrompt(script: ComicScript): string {
             .filter((part) => !/headline|title/i.test(part))
             .join(',') || 'clear comic lettering suited to this art'
         : styleLettering(script.style)
-    }. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone. No other words anywhere: no extra labels, no signatures, no watermarks, no made-up text.`,
+    }. Letter every quoted text exactly as written, spelled correctly, large enough to read on a phone.${
+      script.panels.some((p) => p.dialogue?.some((d) => d.kind === 'label'))
+        ? ' Callout tags are small and tidy, in a plain typewriter face that contrasts with the speech lettering, each with a thin line to the thing it names.'
+        : ''
+    } No words other than the quoted text above: no invented labels, no signatures, no watermarks, no made-up text.`,
     `Strictly: ${NEGATIVE}.`,
   ]
     .filter(Boolean)
