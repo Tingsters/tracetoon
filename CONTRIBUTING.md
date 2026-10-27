@@ -39,9 +39,10 @@ bun run test
 - Development checks require Bun 1.3.14 or newer (the CI pin). `bun run test`
   runs the complete source suite with up to four fresh Bun processes. Each file
   gets a new process so native state cannot leak between files; tests within each
-  file remain sequential. Files start slowest first, using each file's last
-  passing time (kept in `node_modules/.cache`), so a long end-to-end file never
-  starts last. `bun run typecheck && bun run test`
+  file remain sequential. Once a full run has recorded each file's passing time
+  (in `node_modules/.cache`), files start slowest first, so a long end-to-end
+  file no longer starts last; without that history (a fresh checkout, CI) they
+  start largest first. `bun run typecheck && bun run test`
   macOS runs one file at a time because the pinned Bun version's subprocess-heavy
   suites fail intermittently under concurrent macOS load. Full coverage is kept.
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
@@ -52,14 +53,16 @@ bun run test
   contract; renamed, skipped, failed, or empty selections cannot pass silently.
   All source tests still run on each supported CI platform. Publication itself
   reuses current validation; it never launches these suites after approval.
-  CI runs both packaged suites on every PR, on every platform. Run them locally
-  when a change touches packaging: `scripts/bundle.ts`, `scripts/build*.ts`,
-  `scripts/test-packaged.ts`, `scripts/test-files.ts`,
-  `scripts/packaged-contracts.ts`, the launchers in
-  `plugin/skills/tracetoon/bin/`, the installers or the release workflow.
-  Otherwise record them as CI-covered instead of waiting about two minutes:
-  `tracetoon check --run <id> --name test-bundled --skip "CI runs the packaged
-  contracts on every PR"` (likewise `test-compiled`).
+  CI runs both packaged suites on every PR, on every platform, and is their
+  gate before merge: any change to shipped code (`src/`, assets, the bundle,
+  dependencies) can affect them. Locally they are optional and take about two
+  minutes. Run them when you want that signal before CI, especially for
+  packaging changes such as `scripts/bundle.ts`, `scripts/build*.ts`,
+  `scripts/test-packaged.ts`, `scripts/test-files.ts`, the launchers in
+  `plugin/skills/tracetoon/bin/`, `install.sh`, `install.ps1` or the release
+  workflow. Otherwise record them as left to CI rather than as passed:
+  `tracetoon check --run <id> --name test-bundled --skip "Left to CI, which runs
+  the packaged contracts on every PR"` (likewise `test-compiled`).
 - Never commit real session logs. Fixtures are synthetic or scrubbed.
 
 Contributor research and review handoffs live in `src/contribution/`; their host
