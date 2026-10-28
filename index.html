@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracetoon: pull requests written from what actually happened</title>
+<meta name="description" content="Tracetoon writes pull request descriptions from the AI agent session logs already on your machine, with a preview you approve.">
+<style>
+  :root { --bg:#fffdf8; --fg:#1d1b16; --muted:#5c574b; --accent:#b4440b; --code:#f3eee2; --line:#e3dccb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17150f; --fg:#f1ecde; --muted:#aaa392; --accent:#f08a4b; --code:#25221a; --line:#37332a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:18px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:2.5rem 1.25rem 3rem; }
+  h1 { font-size:2.4rem; line-height:1.15; margin:0 0 .4rem; }
+  h2 { font-size:1.35rem; margin:2.2rem 0 .6rem; }
+  .lede { color:var(--muted); font-size:1.15rem; margin:0 0 1.5rem; }
+  img.hero { width:100%; height:auto; border:1px solid var(--line); border-radius:8px; }
+  a { color:var(--accent); }
+  ul { padding-left:1.2rem; }
+  li { margin:.45rem 0; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:.8rem 1rem; overflow-x:auto; font-size:.85rem; line-height:1.45; }
+  .btn { display:inline-block; margin:.4rem .6rem .4rem 0; padding:.55rem 1rem; border:1px solid var(--accent); border-radius:6px; text-decoration:none; font-weight:600; }
+  .btn.primary { background:var(--accent); color:var(--bg); }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tracetoon</h1>
+  <p class="lede">AI-written pull requests are mostly slop: vague, padded, and confident about tests nobody saw pass. Tracetoon writes the PR from what actually happened in your agent sessions.</p>
+
+  <img class="hero" src="tracetoon-hero.png" alt="Before: a developer recoils from a pull request reading 'Improves robustness and code quality. All tests pass (probably)'. After: the same developer grins and points at a short pull request reading 'What you asked. What ran. What changed.' with a comic pinned to it.">
+
+  <p>
+    <a class="btn primary" href="https://github.com/Tingsters/tracetoon">View on GitHub</a>
+    <a class="btn" href="#install">Install</a>
+  </p>
+
+  <h2>Better PRs</h2>
+  <p>The sessions behind your branch are already on your machine: Claude Code, Codex and Antigravity keep their logs. Tracetoon finds the ones that produced this branch and turns them into a redacted digest your agent writes from. You see the exact text, and approve it, before anything is posted.</p>
+  <ul>
+    <li><strong>Written from evidence.</strong> What you asked for, the plan you approved, the decisions you made, and every test, build and lint run with its result.</li>
+    <li><strong>Honest about what's known.</strong> Something that wasn't captured is "not captured", not "not done".</li>
+    <li><strong>Short and reviewable.</strong> The problem and the result first, then the reason for the approach, what was checked, and where to start reviewing.</li>
+    <li><strong>Checked before you post.</strong> An advisory claim check marks sentences the evidence contradicts or doesn't establish.</li>
+    <li><strong>Your words stay yours.</strong> Text you write in the PR, or edit on GitHub later, is kept on the next update.</li>
+  </ul>
+
+  <h2>Comics</h2>
+  <p>Each PR can get a one-off comic: a joke about how the work really went, with characters and an art style made up for that PR. Comics are optional.</p>
+
+  <h2 id="install">Install</h2>
+  <p>One command installs Tracetoon for every agent on your machine.</p>
+<pre>
+# macOS, Linux, Git Bash
+curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
+
+# Windows PowerShell
+irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
+</pre>
+  <p>Restart your agent, then in any repo with your work on a branch, ask: <em>"Open a PR for this branch with Tracetoon."</em></p>
+
+  <footer>
+    Open source under the Apache-2.0 license. <a href="https://github.com/Tingsters/tracetoon">github.com/Tingsters/tracetoon</a>
+  </footer>
+</main>
+</body>
+</html>
