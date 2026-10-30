@@ -25,7 +25,7 @@ import {
   writeFileSync,
   unlinkSync,
 } from 'node:fs';
-import { join, resolve, relative } from 'node:path';
+import { isAbsolute, join, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
 import { transcript } from '../comic/script.ts';
@@ -33,6 +33,7 @@ import type { ComicScript } from '../comic/types.ts';
 import { loadConfig } from '../config.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { checkClaims, claimSummary, type ClaimFinding } from '../digest/claims.ts';
+import { checkChangeMap } from '../digest/changeMap.ts';
 import { contextNotes, evidenceNotes } from '../digest/notes.ts';
 import { assetUrl, publishAssets, type AssetFile } from '../github/assets.ts';
 import {
@@ -323,6 +324,23 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   approval.code = codeFor(approval, body);
   writeFileSync(join(run.dir, 'final-body.md'), body, 'utf8');
   writeFileSync(join(run.dir, 'changes.patch'), packet.patch, 'utf8');
+  // Advisory: the drafter's local change map, checked against the diff.
+  let changeMapRaw: unknown;
+  try {
+    changeMapRaw = readJson<unknown>(run, 'change-map.json');
+  } catch {
+    changeMapRaw = null; // Unreadable JSON is reported as an invalid map.
+  }
+  const changeMapFindings = checkChangeMap({
+    raw: changeMapRaw,
+    files: digest.files,
+    changedPaths: packet.request.changedPaths,
+    exists: (path) =>
+      !isAbsolute(path) &&
+      !path.split(/[\\/]/).includes('..') &&
+      existsSync(join(truth.toplevel, path)),
+  });
+  writeJson(run, 'change-map-checks.json', changeMapFindings);
   const reviewPacket = reviewInput({
     title,
     body,
@@ -332,6 +350,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     headSha: packet.request.headSha,
     authorText: readText(run, 'author.md'),
     comicSha256: comicSha,
+    changeMap: changeMapRaw !== undefined,
     ...(comic && script
       ? {
           comic: {
@@ -405,6 +424,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       digest,
       previewComic,
       contributionReview,
+      changeMapFindings,
       share: comic
         ? {
             image: comicData,
@@ -453,6 +473,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         ? join(run.dir, 'comic-observation-input.json')
         : null,
       reviewFingerprint: reviewPacket.fingerprint,
+      changeMap: changeMapFindings,
       ...(titleNote ? { titleNote } : {}),
       claims: {
         ...claimSummary(claims),
@@ -478,6 +499,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         titleNote ? `Note: ${titleNote}` : '',
         titleLine(titleFindings),
         claimLine(claims),
+        changeMapFindings.length
+          ? `Change map (advisory):\n${changeMapFindings.map((f) => `  - ${f.text}`).join('\n')}`
+          : '',
         reviewLine(contributionReview),
         notes.length
           ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`

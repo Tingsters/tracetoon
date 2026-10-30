@@ -146,6 +146,23 @@ function reviewed() {
         evidence: ['body:3'],
       },
     ],
+    bodyReview: {
+      inferredChange: 'Adds a greeting export.',
+      inferredStart: 'The greeting constant.',
+      transfer: {
+        state: 'satisfied',
+        reason: 'The cold read matches the one-line diff.',
+      },
+      claims: [
+        {
+          at: 'body:2',
+          claim: 'Adds greeting.',
+          verdict: 'supported',
+          evidence: ['diff:1'],
+        },
+      ],
+      omissions: [],
+    },
   };
   const saveReview = () =>
     writeFileSync(join(f.root, 'review.json'), JSON.stringify(review));
@@ -541,6 +558,73 @@ describe('independent contribution reviews', () => {
     expect(f.loadReview(input).status).toBe('incomplete');
   });
 
+  test('a missing description accuracy review leaves the packet incomplete', () => {
+    const f = reviewed();
+    delete f.review.bodyReview;
+    f.saveReview();
+    const result = f.loadReview();
+    expect(result.status).toBe('incomplete');
+    expect(result.issues.join(' ')).toContain('Description accuracy review is missing');
+  });
+
+  test('claim verdicts and omissions are shown; their evidence must exist', () => {
+    const f = reviewed();
+    const body = f.review.bodyReview!;
+    body.claims.push({
+      at: 'body:4',
+      claim: 'No results captured.',
+      verdict: 'unsupported',
+      evidence: [],
+      correction: 'Say which check ran, or leave it out.',
+    });
+    body.claims.push({
+      at: 'body:2',
+      claim: 'Adds greeting to every locale.',
+      verdict: 'contradicted',
+      evidence: ['diff:1'],
+    });
+    body.omissions.push({ behavior: 'The export is renamed.', evidence: ['diff:1'] });
+    body.transfer = {
+      state: 'needs-revision',
+      reason: 'The text never says it is exported.',
+    };
+    f.saveReview();
+    const result = f.loadReview();
+    expect(result.status).toBe('current');
+    const line = reviewLine(result);
+    expect(line).toContain(
+      '1 of 3 claim(s) supported; 1 omission(s); cold read needs-revision',
+    );
+    // Most serious first.
+    expect(line.indexOf('contradicted (body:2)')).toBeLessThan(
+      line.indexOf('unsupported (body:4)'),
+    );
+    expect(line).toContain('omitted: The export is renamed.');
+    expect(line).toContain('The text never says it is exported.');
+    for (const bad of [
+      () => (body.claims[0]!.at = 'body:99'),
+      () => (body.claims[0]!.evidence = ['diff:99']),
+      () => (body.claims[0]!.evidence = []),
+      () => (body.omissions[0]!.evidence = ['body:1']),
+      () => (body.inferredChange = ''),
+      () => (body.claims = []),
+    ]) {
+      const saved = structuredClone(body);
+      bad();
+      f.saveReview();
+      expect(f.loadReview().status).toBe('invalid');
+      Object.assign(body, structuredClone(saved));
+    }
+  });
+
+  test('a change map is shared with the reviewer when the drafter wrote one', () => {
+    const f = reviewed();
+    expect(f.input.artifacts).not.toContain('change-map.json');
+    const withMap = reviewInput({ ...f.inputArgs, changeMap: true });
+    expect(withMap.artifacts).toContain('change-map.json');
+    expect(withMap.fingerprint).toBe(f.input.fingerprint);
+  });
+
   test('unknown applicability cannot silently pass', () => {
     const f = reviewed();
     f.rule.applicability = 'unknown';
@@ -843,6 +927,20 @@ describe('CLI contribution handoffs', () => {
           correction: 'Add the required Testing section without inventing a result.',
         },
       ],
+      bodyReview: {
+        inferredChange: 'Adds a greeting.',
+        inferredStart: 'The greeting module.',
+        transfer: { state: 'satisfied', reason: 'Matches the diff.' },
+        claims: [
+          {
+            at: 'body:1',
+            claim: 'Adds greeting.',
+            verdict: 'supported',
+            evidence: ['diff:1'],
+          },
+        ],
+        omissions: [],
+      },
     };
     writeFileSync(join(runDir, 'review.json'), JSON.stringify(report));
     const reviewed = cli('render');

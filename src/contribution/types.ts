@@ -93,6 +93,43 @@ export interface ContributionReview {
   reviewer: AgentRole;
   assessments: Assessment[];
   comicReview?: ComicReview;
+  bodyReview?: BodyReview;
+}
+
+/** How a claim in the body compares with the diff and captured evidence. */
+export const CLAIM_VERDICTS = [
+  'supported',
+  'overstated',
+  'unsupported',
+  'contradicted',
+] as const;
+export type ClaimVerdict = (typeof CLAIM_VERDICTS)[number];
+export interface BodyClaim {
+  /** Where the claim is in the reviewed body, as `body:<line[-line]>`. */
+  at: string;
+  claim: string;
+  verdict: ClaimVerdict;
+  /** `diff:`, `digest:`, `author:` or `body:` references, as in assessments. */
+  evidence: string[];
+  correction?: string;
+}
+export interface BodyOmission {
+  /** Behavior the diff changes that the body leaves out or misdescribes. */
+  behavior: string;
+  evidence: string[];
+  correction?: string;
+}
+/**
+ * The reviewer's accuracy read of the body. A cold read comes first (body only,
+ * no diff) to test whether the text alone conveys the change; then each claim
+ * is checked against the diff, looking for counter-evidence.
+ */
+export interface BodyReview {
+  inferredChange: string;
+  inferredStart: string;
+  transfer: { state: 'satisfied' | 'needs-revision'; reason: string };
+  claims: BodyClaim[];
+  omissions: BodyOmission[];
 }
 
 export const COMIC_REVIEW_CHECKS = [
@@ -157,4 +194,5 @@ export interface ReviewResult {
   requirements: Requirement[];
   sources: GuidanceSource[];
   comicReview?: ComicReview;
+  bodyReview?: BodyReview;
 }

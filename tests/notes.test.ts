@@ -130,6 +130,30 @@ describe('optional context notes', () => {
     expect(topics(n)).toEqual(['rationale', 'attribution']);
     expect(n[1]!.text).not.toMatch(/hand-written/i);
   });
+
+  test('a large change without a review path gets one suggested; a path in any common form counts', () => {
+    const files = [
+      {
+        path: 'src/a.ts',
+        role: 'behavior' as const,
+        added: 400,
+        removed: 0,
+        sessions: [],
+        unmatchedLines: 0,
+      },
+    ];
+    const d = digest({ runs: [run()], files, decided: true });
+    const n = contextNotes(d, 'Fixes the export so the header stays.');
+    expect(topics(n)).toEqual(['review']);
+    expect(n[0]!.text).toContain('review path');
+    for (const body of [
+      'Fixes the export.\n\n**Review path:** the writer, then its test.',
+      'Fixes the export. Start with the writer in `src/a.ts`, then its test.',
+      'Fixes the export. Read the header writer first; the rest is mechanical.',
+      'Fixes the export. Where to look: the writer.',
+    ])
+      expect(topics(contextNotes(d, body))).toEqual([]);
+  });
 });
 
 describe('evidence notes outline', () => {

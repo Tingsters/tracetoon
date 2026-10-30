@@ -17,7 +17,7 @@ const UI_FILE =
 const CAUSAL =
   /\b(because|so that|in order to|to avoid|to keep|since|which means|otherwise|so the|so it)\b/i;
 const REVIEW_POINTER =
-  /\b(start (with|at|in|by)|where to (start|look)|review(ing|ers?)? (should|could)? ?(start|focus|look))/i;
+  /\b(start(s|ing)? (with|at|in|by)|where to (start|look)|review path|reading order|read [^.\n]{1,80} first|review(ing|ers?)? (should|could)? ?(start|focus|look))/i;
 const VISUAL =
   /\b(screenshot|by eye|visually|in the browser|manually checked|looked at)\b/i;
 
@@ -68,7 +68,7 @@ export function contextNotes(
   if (behaviorAdded > 300 && !REVIEW_POINTER.test(body))
     notes.push({
       topic: 'review',
-      text: 'This is a large change; a line on where to start reviewing helps.',
+      text: 'This is a large change; a short review path helps: the main idea or riskiest part first, then the key test, then what is mechanical.',
     });
   // Claims the check couldn't establish are already marked beside the text.
   void claims;
