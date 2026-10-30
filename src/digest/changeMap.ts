@@ -61,7 +61,7 @@ export function checkChangeMap(input: {
   files: { path: string; role?: string; added: number }[];
   /** Every path in the submitted diff. */
   changedPaths: string[];
-  /** Whether an example ref's path exists at the base or head revision. */
+  /** Whether an example ref's path (outside the diff) exists in the checkout. */
   exists: (path: string) => boolean;
 }): ChangeMapFinding[] {
   const behavior = input.files.filter((f) => (f.role ?? 'behavior') === 'behavior');
