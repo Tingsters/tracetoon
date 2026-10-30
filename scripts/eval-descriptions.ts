@@ -2,6 +2,7 @@
 //
 //   bun scripts/eval-descriptions.ts prepare   # build an evidence packet per case
 //   bun scripts/eval-descriptions.ts score     # score descriptions, write the report
+//   bun scripts/eval-descriptions.ts rubric    # print the blind judge's instructions
 //
 // Local only, like eval-summaries: everything lives under
 // .git/tracetoon/eval-desc/ and nothing it produces is committed (one held-out
@@ -184,9 +185,12 @@ export function textSignals(md: string) {
       ) ?? []
     ).length,
     reviewPointer:
-      /\b(start (with|at|in|by)|where to look|review(ers)? (should|could) (start|look))/i.test(
+      /\b(start(s|ing)? (with|at|in|by)|where to (start|look)|review path|reading order|read [^.\n]{1,80} first|review(ers)? (should|could) (start|look))/i.test(
         body,
       ),
+    feedbackWanted: /\bfeedback wanted\b|\b(looking for|would like) (feedback|input) on\b/i.test(
+      body,
+    ),
     reviewerQuestion: /\?\s*$/m.test(
       body
         .split('\n')
@@ -195,6 +199,26 @@ export function textSignals(md: string) {
     ),
   };
 }
+
+/**
+ * The blind judge's instructions, versioned with the script. Print them with
+ * `bun scripts/eval-descriptions.ts rubric`. v2 splits v1's `navigation`
+ * (saturated at 2 in 7 of 8 cases) into `orientation` and `entry`; v1
+ * judgments with `navigation` still score.
+ */
+export const JUDGE_RUBRIC_VERSION = 2;
+export const JUDGE_RUBRIC = `Read judging/<case>/A.md and B.md, the packet (digest.json, diff.patch, commits.txt) and facts/<case>.json. Do not open outputs/ or published.md. Write judgments/<case>.json in the Judgment format.
+
+Rubric: 0 missing/misleading, 1 partial, 2 sufficient and accurate, null = not applicable.
+- problem: trigger, old and new behavior clear; the old behavior matches the base code.
+- rationale: reasons explicit and correctly attributed.
+- validation: evidence-bound, honest limits.
+- consequences: concrete.
+- orientation: changes grouped by idea in a sensible reading order (main idea or riskiest part first); no file-by-file narration.
+- entry: a reader knows where to start and what feedback, if any, is wanted.
+- economy: easy to find what matters; inventories and padding count against.
+
+"preferred" = which one a maintainer reviewing this change would rather receive: accuracy first, then usefulness and effort. Do not prefer a text for being longer; every preference is reported next to its word count.`;
 
 /**
  * What a blind judge writes per case. Labels are shuffled per case and mapped
@@ -212,7 +236,7 @@ export interface Judgment {
       coveredContext: number; // fact-sheet context items conveyed
       honestUncertainty: number; // fact-sheet uncertainties stated or not overclaimed
       trapsHit: string[]; // fact-sheet traps the text falls into
-      rubric: Record<string, 0 | 1 | 2 | null>; // problem, rationale, validation, consequences, navigation, economy
+      rubric: Record<string, 0 | 1 | 2 | null>; // JUDGE_RUBRIC keys (v1 used navigation)
       notes: string;
     }
   >;
@@ -320,10 +344,15 @@ function score(): void {
       }
       const flags = Object.entries(sig)
         .filter(
-          ([k, v]) => v === true && k !== 'reviewPointer' && k !== 'reviewerQuestion',
+          ([k, v]) =>
+            v === true &&
+            k !== 'reviewPointer' &&
+            k !== 'reviewerQuestion' &&
+            k !== 'feedbackWanted',
         )
         .map(([k]) => k);
       if (sig.reviewPointer) flags.push('+reviewPointer');
+      if (sig.feedbackWanted) flags.push('+feedbackWanted');
       if (sig.reviewerQuestion) flags.push('+reviewerQuestion');
       lines.push(
         `| ${variant} | ${sig.words} | ${s ? s.factualErrors.length : '–'} | ${s ? s.unsupportedClaims.length : '–'} | ${s ? `${s.coveredClaims}/${facts.claims.length}` : '–'} | ${s ? `${s.coveredContext}/${facts.context.length}` : '–'} | ${s ? `${s.honestUncertainty}/${facts.uncertainties.length}` : '–'} | ${s ? s.trapsHit.length : '–'} | ${Number.isNaN(rubric) ? '–' : rubric.toFixed(2)} | ${check.contradicted} / ${check['not established']} | ${flags.join(', ')} |`,
@@ -366,5 +395,6 @@ if (import.meta.main) {
   const cmd = process.argv[2];
   if (cmd === 'prepare') prepare();
   else if (cmd === 'score') score();
-  else console.log('usage: bun scripts/eval-descriptions.ts prepare|score');
+  else if (cmd === 'rubric') console.log(`Rubric v${JUDGE_RUBRIC_VERSION}\n\n${JUDGE_RUBRIC}`);
+  else console.log('usage: bun scripts/eval-descriptions.ts prepare|score|rubric');
 }

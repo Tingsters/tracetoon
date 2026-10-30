@@ -7,7 +7,9 @@ import type { ContextNote } from '../digest/notes.ts';
 import type { TitleFinding } from '../digest/titleCheck.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
 import type { ReviewResult } from '../contribution/types.ts';
+import { bodyReviewLines } from '../contribution/bodyReview.ts';
 import { comicReviewLines } from '../contribution/comicReview.ts';
+import type { ChangeMapFinding } from '../digest/changeMap.ts';
 
 const esc = (s: string) =>
   s
@@ -103,6 +105,8 @@ export function renderPreviewHtml(input: {
   /** Why the title shown isn't the one proposed (a person's title kept). */
   titleNote?: string;
   contributionReview?: ReviewResult;
+  /** Advisory checks on the drafter's local change map. */
+  changeMapFindings?: ChangeMapFinding[];
 }): string {
   const {
     title,
@@ -119,6 +123,7 @@ export function renderPreviewHtml(input: {
     titleNote,
     contributionReview,
     previewComic,
+    changeMapFindings = [],
   } = input;
   // Hidden metadata comments are kept in the HTML as comments; GitHub hides them too.
   const marked_ = annotateClaims(body, claims);
@@ -176,6 +181,12 @@ ${
 ${policyHtml(policy, comicHeldBack)}
 <div class="card">${html}</div>
 ${marked_.notes}
+${contributionReview?.bodyReview ? `<section class="checks">${bodyReviewLines(contributionReview.bodyReview).map(esc).join('<br>')}</section>` : ''}
+${
+  changeMapFindings.length
+    ? `<section class="checks"><p><b>Change map</b> (advisory):</p><ul>${changeMapFindings.map((f) => `<li>${esc(f.text)}</li>`).join('')}</ul></section>`
+    : ''
+}
 ${contributionReview?.comicReview ? `<section class="checks">${comicReviewLines(contributionReview.comicReview).map(esc).join('<br>')}</section>` : ''}
 ${contributionReview ? contributionReviewHtml(contributionReview) : ''}
 ${digest.validation?.length ? `<section class="checks"><p><b>Local validation before author review</b></p><ul>${digest.validation.map((c) => `<li><b>${esc(c.name)}</b>: ${esc(c.outcome)}${c.current ? '' : ' (stale)'} — ${esc(c.command || 'not run')}; ${c.durationMs}ms${c.reason ? `<br>${esc(c.reason)}` : ''}</li>`).join('')}</ul></section>` : ''}

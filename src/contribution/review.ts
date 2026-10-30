@@ -1,5 +1,6 @@
 /** A review describes one exact render. It is advisory, never a publish gate. */
 import type { TraceDigest } from '../digest/build.ts';
+import { bodyReviewLines, parseBodyReview } from './bodyReview.ts';
 import { comicReviewLines, parseComicReview } from './comicReview.ts';
 import { readText, type Run } from '../run.ts';
 import {
@@ -27,6 +28,8 @@ export function reviewInput(input: {
   authorText?: string;
   comicSha256?: string;
   comic?: ReviewInput['comic'];
+  /** The drafter's local change map, shared as a coverage aid when present. */
+  changeMap?: boolean;
 }): ReviewInput {
   const { generatedAt: _time, ...digest } = input.digest;
   const stable = {
@@ -56,6 +59,7 @@ export function reviewInput(input: {
       'final-body.md',
       'preview.html',
       'approval.json',
+      ...(input.changeMap ? ['change-map.json'] : []),
       ...(input.comic
         ? ['comic-observation-input.json', input.comic.imagePath, input.comic.scriptPath]
         : []),
@@ -206,6 +210,16 @@ export function loadReview(
       );
     const seen = new Set<string>();
     const author = readText(run, 'author.md') ?? '';
+    const bodyReview =
+      value.bodyReview === undefined
+        ? undefined
+        : parseBodyReview(value.bodyReview, (ref) =>
+            evidenceExists(ref, input, guidance, digest, patch, author),
+          );
+    if (!bodyReview)
+      base.issues.push(
+        'Description accuracy review is missing. Read only the title and body first and record inferredChange; then check each claim against the diff, looking for counter-evidence, and list omitted behavior (bodyReview).',
+      );
     for (const finding of review.assessments) {
       requireThat(
         isRecord(finding) &&
@@ -270,6 +284,7 @@ export function loadReview(
       mode,
       status:
         incomplete ||
+        !bodyReview ||
         (input.comic && !comicReview) ||
         (input.comic && !comicReview?.checks.relevance) ||
         (input.comic && comicReview?.observedPanels.length !== input.comic.panelCount)
@@ -277,6 +292,7 @@ export function loadReview(
           : 'current',
       assessments,
       ...(comicReview ? { comicReview } : {}),
+      ...(bodyReview ? { bodyReview } : {}),
     };
   } catch (e) {
     return { ...base, status: 'invalid', issues: [...base.issues, (e as Error).message] };
@@ -297,6 +313,7 @@ export function reviewLine(review: ReviewResult): string {
       (a) =>
         `  - ${a.state} (${a.requirement}): ${a.reason}${a.correction ? ` Suggested correction: ${a.correction}` : ''}`,
     ),
+    ...(review.bodyReview ? bodyReviewLines(review.bodyReview) : []),
     ...(review.comicReview ? comicReviewLines(review.comicReview) : []),
   ].join('\n');
 }

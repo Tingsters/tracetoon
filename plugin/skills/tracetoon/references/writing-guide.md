@@ -97,6 +97,37 @@ In the three-role workflow, the drafter also receives validated `guidance.json`.
 Follow each applicable source-backed requirement with its scope and exceptions.
 Preserve human-only sections and missing-evidence gaps. The independent reviewer
 checks the full rendered PR afterward; route corrections through the drafter.
+
+## Before writing: read the old code, then map the change
+
+Inaccurate descriptions cost more than thin ones. In a study of 23K agent PRs,
+the most common mismatch was a description claiming changes the code didn't
+make, and highly inconsistent PRs were merged far less often (Gong et al.,
+MSR 2026). Reviewers' main difficulty is understanding the change and its
+reason (Bacchelli & Bird, ICSE 2013). Three steps before any prose:
+
+1. **Read the old code.** `changes.patch` shows only a few lines around each
+   change. Read the base version of the main changed functions
+   (`git show <mergeBase>:<path>`) and their direct callers. State the old
+   behavior from what you read; a guessed "before" is a common source of
+   wrong claims.
+2. **Map the change by idea.** Write `change-map.json` (format in
+   [contribution-workflow.md](contribution-workflow.md)):
+   - Group every change by the idea it serves, not by file. Related parts
+     reviewed together are understood better (Baum et al., ICSME 2017), and
+     composite changes are hard to review untangled (Tao et al., FSE 2012).
+   - Put the main idea or the riskiest part first, then its test, then what is
+     mechanical. Reviewers give later files less attention (Fregnan et al.,
+     FSE 2022).
+   - Every behavior file belongs to a group. The body is written from the map,
+     so an idea missing from the map is usually missing from the body.
+3. **Trace any example.** If the body will include a concrete example, run it
+   by hand through the old and the new code first. Record the lines you
+   relied on in the map's `example.refs`. An example that doesn't match the
+   code is worse than none. Edge cases found while tracing belong in the body's
+   limits or consequences.
+
+The map is a local working file. Never paste it into the body as a list.
 See [contribution-workflow.md](contribution-workflow.md) for the role prompts and
 handoff contracts. A recommendation is not a mandatory submission gate, and a
 project's explicit testing exception must not become a blanket local-test rule.
@@ -109,9 +140,9 @@ apply, and combine short answers into one paragraph.
 
 | Kind | What usually matters most |
 |---|---|
-| Small bug fix | Trigger, old vs new behavior, cause, a narrow regression check |
-| Feature or API | The contract, an example, the boundary (what it deliberately doesn't do), compatibility |
-| Refactor | What stays the same (the invariant), why restructure, mechanical vs behavioral parts |
+| Small bug fix | Trigger, old vs new behavior (one concrete input, if it helps), cause, a narrow regression check |
+| Feature or API | The contract, one concrete example call and result, the boundary (what it deliberately doesn't do), compatibility |
+| Refactor | What stays the same (the invariant, shown on one input if it isn't obvious), why restructure, mechanical vs behavioral parts |
 | Performance | Workload, mechanism, baseline vs result, environment, regressions |
 | UI | Before/after, states to check, how to see it |
 | Migration or infra | Deployment order, failure behavior, rollback limits |
@@ -127,8 +158,11 @@ a template.
 ```markdown
 <One paragraph: the problem and the result. Where it came from when the trace
 shows it (what the user reported or asked for, a failure seen while testing,
-found while dogfooding another PR), what was wrong or missing, and what is
-different now. A concrete before/after example when it helps.>
+found while dogfooding another PR). Then the old behavior, read from the base
+code, and what is different now. Write for a maintainer who knows the
+codebase: only the narrow context this change touches, never a primer. A
+concrete before/after example (one small input, traced through the code) when
+it removes doubt.>
 
 <Approach, when it isn't obvious: why this way. Mention an alternative only if
 it was really considered and explains the choice. Say who decided only when the
@@ -139,9 +173,22 @@ Say what wasn't verified when it matters.>
 
 <Consequences, only if concrete: changed defaults, compatibility, new costs.>
 
-<Where to start reviewing, for anything bigger than a small fix: the main file
-or test, by role. Add a specific question only if there is a real open decision.>
+<Review path, for anything bigger than a small fix: one to three short lines
+in the change map's order. The main idea or riskiest part first, then the key
+test, then "the rest is mechanical" when it is. Name files by role, at most one
+per step.>
+
+<Feedback wanted: only when the trace shows a real open decision (an approach
+not discussed, a trade-off left to the reviewer). Name it in one line. Never
+invent one.>
 ```
+
+A review path is not a file list: it says what to read first and why, and puts
+the rest in one group. Developers rate a dependency-aware reading order above
+alphabetical file order. Long file-by-file "review order" sections, though,
+go with lower merge rates (Pirouzkhah et al., MSR 2026). Saying which feedback
+you want is rare, but it is one of the strongest signals of engaged review in
+the same study.
 
 Use headings only when the description is long enough to need them.
 
@@ -200,8 +247,8 @@ Use headings only when the description is long enough to need them.
 
 ## Keep it economical
 
-- **No file-by-file change lists.** Point to where to start, by role (the main
-  logic, the key test). The diff already lists files.
+- **No file-by-file change lists.** Give a short review path by role (the main
+  logic, the key test, the mechanical rest). The diff already lists files.
 - **No test-count inventories** ("96 tests, all passing"). Say what was checked
   that matters for this change.
 - **Each fact once.** Don't repeat the request, decisions or results in several
