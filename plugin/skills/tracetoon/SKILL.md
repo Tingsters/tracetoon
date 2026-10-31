@@ -78,7 +78,8 @@ that bypass on your own initiative.
      to this repo, so publishing will fail. They can switch accounts
      (`gh auth switch`) or use a fork.
    - Resolve comic setup **after research in step 3**, before drafting. If a comic is wanted
-     (`config.comic` is true and the repo doesn't ban AI images) and
+     (`config.comic` is `allowed` and the repo doesn't forbid images in PRs, or
+     `always`) and
      `comics.kind` isn't `ready`, raise it once, in one short message, using
      `comics.text` and `imageProviders`:
      - `approve`: say which route was found, what it sends where, and what it
@@ -90,7 +91,7 @@ that bypass on your own initiative.
      - `setup`: no route; pass on how to add one (they'll need to restart the
        agent after setting a key).
      - Either way, offer "skip comics for this PR" and, if they never want
-       them, `tracetoon config set comic false`. Don't ask again in this
+       them, `tracetoon config set comic off`. Don't ask again in this
        session once they've declined.
    - When you suggest a command for the user to run themselves, use
      `command.run` from `tracetoon status --json` (the launcher's full path if
@@ -135,8 +136,9 @@ that bypass on your own initiative.
      user the repo asks for author-written PR text and offer `evidence-notes.md`
      (written at render) as an outline to write from. A draft is still fine if
      they want one to edit.
-   - `aiPolicy.media` is `prohibited`: skip the comic (step 5); render leaves it
-     out anyway.
+   - `aiPolicy.media` is `prohibited` (the repo forbids images in PRs): with
+     `config.comic` `allowed`, skip the comic (step 5); render leaves it out
+     anyway. With `always`, make it as usual.
    - `aiPolicy.noPullRequests` (agent instructions say never to open a PR):
      tell the user; only they can decide to post anyway (`--ack-policy`).
    - `aiPolicy.prInstructions`: follow these repo instructions about PR text.
@@ -167,8 +169,9 @@ that bypass on your own initiative.
      `change-map.json` grouping every change by idea in reading order (see the
      writing guide). It is never posted; `render` checks that it covers every
      behavior file and shares it with the reviewer.
-5. **Have the drafter write the comic, then draw it** (skip if `config.comic` is false, the user
-   doesn't want one, or `aiPolicy.media` is `prohibited`). Follow
+5. **Have the drafter write the comic, then draw it** (skip if `config.comic` is
+   `off`, the user doesn't want one, or `config.comic` is `allowed` and
+   `aiPolicy.media` is `prohibited`). Follow
    [references/comic-guide.md](references/comic-guide.md). The comic sits in
    the PR, so its first reader is the reviewer: after reading it they should
    know *what changed* and smile. Labels with the PR's real names let someone
@@ -341,7 +344,7 @@ provides a pending-review reminder, show it once and continue the requested work
 - `tracetoon images`: image routes for comics, whether each can draw, and the
   next step; `--approve <route>` (after the user agrees) and `--test`.
 - `tracetoon config set <key> <value>`: `style` (pin a house style, or `auto`),
-  `yolo`, `comic`, `promptQuoting`, `hosting`.
+  `yolo`, `comic` (`off`, `allowed`, `always`), `promptQuoting`, `hosting`.
 
 ## Rules
 

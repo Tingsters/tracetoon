@@ -98,8 +98,10 @@ export function renderPreviewHtml(input: {
   policy?: AiPolicy;
   /** An outline of the evidence, for authors who write the text themselves. */
   outline?: string;
-  /** The comic exists but the repo doesn't allow AI-generated images. */
+  /** The comic exists but the repo's rules forbid images in PRs. */
   comicHeldBack?: boolean;
+  /** The repo forbids images in PRs, and the `always` comic setting overrides it. */
+  comicOverride?: boolean;
   /** Advisory checks on the title. */
   titleFindings?: TitleFinding[];
   /** Why the title shown isn't the one proposed (a person's title kept). */
@@ -119,6 +121,7 @@ export function renderPreviewHtml(input: {
     policy,
     outline,
     comicHeldBack,
+    comicOverride,
     titleFindings = [],
     titleNote,
     contributionReview,
@@ -178,7 +181,7 @@ ${
     ? `<section class="checks"><p><b>Title check</b> (advisory):</p><ul>${titleFindings.map((f) => `<li>${esc(f.state)} (${esc(f.check)}): ${esc(f.reason)}</li>`).join('')}</ul></section>`
     : ''
 }
-${policyHtml(policy, comicHeldBack)}
+${policyHtml(policy, comicHeldBack, comicOverride)}
 <div class="card">${html}</div>
 ${marked_.notes}
 ${contributionReview?.bodyReview ? `<section class="checks">${bodyReviewLines(contributionReview.bodyReview).map(esc).join('<br>')}</section>` : ''}
@@ -328,7 +331,11 @@ export function annotateClaims(
 }
 
 /** A compact notice of what the repo's AI policy means for this PR, with the lines it comes from. */
-function policyHtml(policy: AiPolicy | undefined, comicHeldBack?: boolean): string {
+function policyHtml(
+  policy: AiPolicy | undefined,
+  comicHeldBack?: boolean,
+  comicOverride?: boolean,
+): string {
   if (
     !policy ||
     (policy.verdict === 'none' &&
@@ -345,8 +352,14 @@ function policyHtml(policy: AiPolicy | undefined, comicHeldBack?: boolean): stri
     points.push(
       'This repository asks authors to write PR text themselves. The outline below the draft has the facts to write from.',
     );
-  if (comicHeldBack || policy.media === 'prohibited')
-    points.push("AI-generated images aren't allowed here, so the comic is left out.");
+  if (comicOverride)
+    points.push(
+      "This repository's rules forbid images in PRs; the comic is included because the comic setting is always.",
+    );
+  else if (comicHeldBack)
+    points.push(
+      "This repository's rules forbid images in PRs, so the comic is left out.",
+    );
   if (policy.noPullRequests)
     points.push(
       "The repo's agent instructions say never to open a PR. Only you can decide to post anyway.",

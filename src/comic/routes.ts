@@ -3,7 +3,7 @@
  * the one thing to do next. Shared by `tracetoon images`, `doctor`, the
  * installers' summary and `comic art` when it has no route.
  */
-import { loadConfig } from '../config.ts';
+import { loadConfig, type ComicMode } from '../config.ts';
 import { PROVIDERS, providerInfo, type ProviderId, type Readiness } from './providers.ts';
 
 export interface RouteStatus {
@@ -51,8 +51,15 @@ export type NextStep =
   | { kind: 'fix'; route: ProviderId; text: string }
   | { kind: 'setup'; text: string };
 
-/** The single most useful next step for comics. */
-export function nextStep(routes: RouteStatus[]): NextStep {
+/** The single most useful next step for comics; with comics off, how to turn them on. */
+export function nextStep(routes: RouteStatus[], mode?: ComicMode): NextStep {
+  const step = routeStep(routes);
+  return mode === 'off'
+    ? { ...step, text: 'Comics are off; turn on with tracetoon config set comic allowed' }
+    : step;
+}
+
+function routeStep(routes: RouteStatus[]): NextStep {
   const ready = routes.find((r) => r.approved && usable(r));
   if (ready)
     return {

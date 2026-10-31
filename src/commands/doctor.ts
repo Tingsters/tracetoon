@@ -7,7 +7,7 @@ import { switchState } from '../hook/switches.ts';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git, run } from '../util/exec.ts';
 import { TOOL_VERSION, BUILD_INFO } from '../version.ts';
-import { userConfigPath } from '../config.ts';
+import { loadConfig, userConfigPath } from '../config.ts';
 import { readLocal } from '../util/localJson.ts';
 import { emit, type OutOpts } from './output.ts';
 import { nextStep, routeStatuses } from '../comic/routes.ts';
@@ -196,7 +196,10 @@ export function doctor(
     imageProviders: routeStatuses(top.ok ? top.stdout.trim() : undefined),
     push: top.ok && ghAuth ? (pushAccess(cwd) ?? null) : null,
   };
-  const comics = nextStep(report.imageProviders);
+  const comics = nextStep(
+    report.imageProviders,
+    loadConfig(report.repo ?? undefined).comic,
+  );
   emit(opts, { ...report, comics }, () => {
     const yes = (b: boolean) => (b ? 'yes' : 'no');
     const lines = [
