@@ -155,9 +155,20 @@ export function artFingerprint(
   script: ComicScript,
   lettering: 'model' | 'overlay',
 ): string {
-  // Local reasoning doesn't change the drawing; labels live in the dialogue.
-  const { designReason: _private, anchor: _anchor, ...art } = script;
-  return createHash('sha256').update(JSON.stringify({ art, lettering })).digest('hex');
+  // Only what the drawing is made from counts. Local reasoning, the anchor and
+  // the text written about the finished art (alt text, synopsis, each panel's
+  // `drawn` note) can be corrected without redrawing.
+  const {
+    designReason: _private,
+    anchor: _anchor,
+    altText: _alt,
+    synopsis: _synopsis,
+    ...art
+  } = script;
+  const panels = art.panels.map(({ drawn: _drawn, ...panel }) => panel);
+  return createHash('sha256')
+    .update(JSON.stringify({ art: { ...art, panels }, lettering }))
+    .digest('hex');
 }
 
 const STYLE_GROUPS: [StyleFamily, string[]][] = [

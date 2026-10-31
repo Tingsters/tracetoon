@@ -173,6 +173,12 @@ export interface Panel {
   dialogue: Dialogue[];
   /** Optional extra direction for image models. */
   artPrompt?: string;
+  /**
+   * What the finished art actually shows, when it differs from `scene`. Used
+   * for the transcript only; never sent to the image model, so correcting it
+   * doesn't make the art stale.
+   */
+  drawn?: string;
 }
 
 export type Aspect = '4:3' | '1:1' | '16:9' | '3:4';

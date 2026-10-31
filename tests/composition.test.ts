@@ -137,6 +137,21 @@ describe('story-led compositions', () => {
     expect(artFingerprint(s, 'overlay')).not.toBe(artFingerprint(s, 'model'));
   });
 
+  test('text written about the finished art can be corrected without a redraw', () => {
+    const s = example('comparison');
+    const original = artFingerprint(s, 'model');
+    s.altText = 'A corrected description of what was actually drawn.';
+    s.synopsis = 'A corrected one-line story.';
+    s.panels[0]!.drawn = 'She is seated, holding the stamp up.';
+    expect(artFingerprint(s, 'model')).toBe(original);
+    // The transcript follows what was drawn.
+    expect(transcript(s)).toContain('1. She is seated, holding the stamp up.');
+    expect(errors(checkScript(s))).toEqual([]);
+    // What the image model draws from still counts.
+    s.panels[0]!.scene = `${s.panels[0]!.scene} At night.`;
+    expect(artFingerprint(s, 'model')).not.toBe(original);
+  });
+
   test('repeat checks are semantic, advisory and respect style pins and unknown history', () => {
     const s = example('diagonal');
     const recent = Array.from({ length: 3 }, () => comicSummary(s));

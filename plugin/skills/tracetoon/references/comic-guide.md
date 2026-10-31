@@ -249,7 +249,14 @@ image, lettering included**, so the words look like part of the comic. Then:
    For an art defect, run `tracetoon comic art --force` to redraw (up to 2
    times). If it's still wrong, run `tracetoon comic art --lettering overlay
    --force`: the art is drawn without text and Tracetoon adds the bubbles.
-4. Not loving the look? `tracetoon comic reroll` keeps the story and redraws it
+4. If the art is right but drawn a little differently from a panel's `scene`
+   (someone seated instead of standing, a pose that differs), don't edit
+   `scene`: that changes what the image model draws from, so the art becomes
+   stale. Set that panel's `drawn` to a sentence describing what the finished
+   panel shows (the transcript uses it) and correct `altText`. Neither is sent
+   to the image model, so no redraw is needed; run `tracetoon comic render`
+   again.
+5. Not loving the look? `tracetoon comic reroll` keeps the story and redraws it
    in a style idea the repo hasn't used lately (`--style "<any style>"` to choose
    one, `--format`, `--palette` to change those too).
    Format changes replace incompatible geometry. If the requested format needs
