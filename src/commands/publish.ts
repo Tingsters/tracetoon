@@ -56,6 +56,7 @@ import { checkTitle, titleLine } from '../digest/titleCheck.ts';
 import { gh, git } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { readComicStatus, renderedComic } from './comic.ts';
+import { leakBlocks, leakNotice } from '../review/leak.ts';
 import { digestHash } from './digest.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import {
@@ -130,6 +131,8 @@ export interface Approval {
   comicSha?: string;
   comicFile?: string;
   findings: { kind: string; count: number }[];
+  /** Where the leak scan found something ("title" or "final-body.md:<line>"); never the value. */
+  findingAt?: string[];
   allowFindings: boolean;
   mode: 'create' | 'edit';
   prNumber?: number;
@@ -312,6 +315,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const findings = scanComment(
     `${title}\n${body.replace(/<!-- tracetoon:meta [\s\S]*? -->/, '')}`,
   );
+  const findingAt = findings.length ? leakLocations(title, body) : [];
   const comicSha = comic ? sha(comic.data) : undefined;
   const approval: Approval = {
     ...(readTask(run)
@@ -329,6 +333,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     comicSha,
     comicFile: comic?.path,
     findings,
+    ...(findingAt.length ? { findingAt } : {}),
     allowFindings: !!opts.allowFindings,
     mode: ctx.existingPr ? 'edit' : 'create',
     prNumber: ctx.existingPr?.number,
@@ -438,6 +443,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         ? join(run.dir, 'comic-observation-input.json')
         : null,
       reviewFingerprint: reviewPacket.fingerprint,
+      ...(leakBlocks(approval) ? { leakNotice: leakNotice(approval) } : {}),
       changeMap: changeMapFindings,
       ...(titleNote ? { titleNote } : {}),
       claims: {
@@ -449,18 +455,18 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     },
     () =>
       [
+        // A PR the leak scan stops is the first thing the user must hear.
+        leakBlocks(approval) ? leakNotice(approval) : '',
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
         approval.mode === 'create'
           ? `PR base: ${approval.base}${approval.base !== digest.pr.base ? ` (the story covers changes since ${digest.pr.base.slice(0, 12)})` : ''}`
           : '',
         stale ? `Warning: ${stale}` : '',
-        findings.length
-          ? `Leak scan found: ${findings.map((f) => `${f.kind} x${f.count}`).join(', ')}. ${
-              approval.allowFindings
-                ? 'Allowed by --allow-findings.'
-                : 'Fix body.md and render again.'
-            }`
-          : 'Leak scan: clean.',
+        findings.length && !approval.allowFindings
+          ? ''
+          : findings.length
+            ? `Leak scan found: ${findings.map((f) => `${f.kind} x${f.count}`).join(', ')}. Allowed by --allow-findings.`
+            : 'Leak scan: clean.',
         titleNote ? `Note: ${titleNote}` : '',
         titleLine(titleFindings),
         claimLine(claims),
@@ -479,7 +485,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? 'Comic: included.'
           : `Comic: none — ${comicStatus.detail ?? comicStatus.state}.`,
         findings.length && !approval.allowFindings
-          ? 'Not ready to publish: fix what the leak scan found, then render again.'
+          ? 'Not ready to publish: fix what the leak scan found (above), then render again.'
           : `Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)
@@ -676,9 +682,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     );
   }
   if (approval.findings.length && !approval.allowFindings) {
-    throw new UserError(
-      'The leak scan found something in the description. Have the drafter remove it and render again; nothing was posted.',
-    );
+    throw new UserError(leakNotice(approval));
   }
   const config = loadConfig(truth.toplevel);
 
@@ -880,6 +884,17 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     },
     () => message,
   );
+}
+
+/** Lines of the rendered PR text where the leak scan finds something. */
+function leakLocations(title: string, body: string): string[] {
+  const at: string[] = [];
+  if (scanComment(title).length) at.push('title');
+  body.split(/\r?\n/).forEach((line, i) => {
+    if (!line.startsWith('<!-- tracetoon:meta') && scanComment(line).length)
+      at.push(`final-body.md:${i + 1}`);
+  });
+  return at;
 }
 
 /**
