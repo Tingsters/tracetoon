@@ -1,6 +1,6 @@
 /** The drafter's local change map: advisory coverage and grouping checks. */
 import { describe, expect, test } from 'bun:test';
-import { checkChangeMap } from '../src/digest/changeMap.ts';
+import { checkChangeMap, refPath } from '../src/digest/changeMap.ts';
 
 const file = (path: string, role = 'behavior', added = 10) => ({ path, role, added });
 const group = (paths: string[], kind = 'behavior', idea = 'Quote-aware splitting') => ({
@@ -76,5 +76,40 @@ describe('change map checks', () => {
       exists: () => false,
     });
     expect(large.map((f) => f.kind)).toEqual(['missing']);
+  });
+});
+
+describe('change map refs', () => {
+  test.each([
+    ['src/split.ts:4-9', 'src/split.ts'],
+    ['src/split.ts:4,12-20', 'src/split.ts'],
+    ['src/split.ts', 'src/split.ts'],
+    ['origin/main:src/split.ts:121', 'src/split.ts'],
+    ['feat/comic-setting:src/split.ts:36-41', 'src/split.ts'],
+    ['main:src/split.ts:3', 'src/split.ts'],
+    ['3f303e3:src/split.ts', 'src/split.ts'],
+    ['src/split.ts:300-310 (old behavior)', 'src/split.ts'],
+  ])('%s names %s', (ref, path) => {
+    expect(refPath(ref)).toBe(path);
+  });
+
+  test('refs in any of those forms count as found, and docs groups are accepted', () => {
+    const map = {
+      groups: [
+        group(['src/split.ts', 'src/run.ts']),
+        group(['README.md'], 'docs', 'Docs'),
+      ],
+      example: {
+        refs: ['origin/main:src/split.ts:4,12-20', 'src/run.ts:300-310 (head)'],
+      },
+    };
+    expect(
+      checkChangeMap({
+        raw: map,
+        files,
+        changedPaths: [...changedPaths, 'README.md'],
+        exists: () => false,
+      }),
+    ).toEqual([]);
   });
 });

@@ -9,7 +9,7 @@ export interface ChangeGroup {
   idea: string;
   /** One sentence: what behaves differently, or what stays the same. */
   behavior: string;
-  kind: 'behavior' | 'test' | 'mechanical';
+  kind: 'behavior' | 'test' | 'docs' | 'mechanical';
   paths: string[];
 }
 export interface ChangeMap {
@@ -22,7 +22,7 @@ export interface ChangeMapFinding {
   text: string;
 }
 
-const KINDS = ['behavior', 'test', 'mechanical'];
+const KINDS = ['behavior', 'test', 'docs', 'mechanical'];
 /** Past this many separate behavior ideas, a PR is usually several changes. */
 export const SPLIT_GROUPS = 3;
 
@@ -43,7 +43,7 @@ function parse(raw: unknown): ChangeMap | string {
       !g.paths.length ||
       !g.paths.every(text)
     )
-      return `change-map.json group ${i + 1} needs an idea, a behavior sentence, a kind (behavior, test or mechanical) and its paths.`;
+      return `change-map.json group ${i + 1} needs an idea, a behavior sentence, a kind (behavior, test, docs or mechanical) and its paths.`;
   }
   if (
     raw.example !== undefined &&
@@ -94,7 +94,7 @@ export function checkChangeMap(input: {
       text: `The change map leaves out ${uncovered.length} behavior file(s): ${uncovered.slice(0, 6).join(', ')}${uncovered.length > 6 ? ', …' : ''}. Check that the description covers them.`,
     });
   for (const ref of map.example?.refs ?? []) {
-    const path = ref.replace(/:\d+(-\d+)?$/, '');
+    const path = refPath(ref);
     if (!changed.has(path) && !input.exists(path))
       findings.push({
         kind: 'unknown-path',
@@ -108,4 +108,23 @@ export function checkChangeMap(input: {
       text: `The change map has ${ideas} separate behavior ideas. If they don't depend on each other, consider splitting this PR; smaller, single-purpose changes are reviewed more effectively.`,
     });
   return findings;
+}
+
+/**
+ * The file a ref points at. Drafters write refs several ways; all name a file:
+ * `src/a.ts:12-30`, `src/a.ts:12,40-44`, `origin/main:src/a.ts:12` (a revision
+ * first), or with a note after it (`src/a.ts:12 (old behavior)`).
+ */
+export function refPath(ref: string): string {
+  let r = ref.trim().split(/\s/)[0]!;
+  r = r.replace(/:[\d,\-]+$/, ''); // line numbers
+  // A leading revision: `main:`, `HEAD:`, `origin/x:`, `feat/x:` or a commit sha.
+  const rev = /^([^:]+):(.+)$/.exec(r);
+  if (
+    rev &&
+    /^(?:HEAD|main|master|[0-9a-f]{7,40}|[\w.-]+\/[\w./-]+)$/.test(rev[1]!) &&
+    !/\.\w+$/.test(rev[1]!)
+  )
+    r = rev[2]!;
+  return r;
 }
