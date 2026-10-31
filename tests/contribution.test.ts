@@ -1,6 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
   contributionPolicy,
@@ -830,7 +830,7 @@ describe('CLI contribution handoffs', () => {
     expect(cli('comic', 'prompts').json.error).toContain('rules forbid images in PRs');
   });
 
-  test('research → draft → review → correction → preview; retained text and approval stay intact', () => {
+  test('research → draft → review → correction → publish; retained text stays intact', () => {
     const repo = makeRepo();
     repo.commit(
       'CONTRIBUTING.md',
@@ -963,21 +963,36 @@ describe('CLI contribution handoffs', () => {
     writeFileSync(join(runDir, 'review.json'), JSON.stringify(report));
     const final = cli('render');
     expect(final.json.contributionReview.status).toBe('current');
-    const shown = cli('preview');
-    expect(shown.json.body).toContain('Human-written context.');
-    expect(shown.json.body).toContain('HUMAN: pending');
-    expect(shown.json.contributionReview.assessments[0].state).toBe('satisfied');
-    expect(readFileSync(join(runDir, 'preview.html'), 'utf8')).toContain(
-      'Contributor guidance review',
+    expect(final.json.contributionReview.assessments[0].state).toBe('satisfied');
+    expect(final.json.mode).toBe('edit');
+    // Human text in the existing PR is retained in the frozen body.
+    const frozen = readFileSync(join(runDir, 'final-body.md'), 'utf8');
+    expect(frozen).toContain('Human-written context.');
+    expect(frozen).toContain('HUMAN: pending');
+    expect(existsSync(join(runDir, 'preview.html'))).toBe(false);
+    // The reviewed render reports the review to the agent, not to the PR.
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    }).stdout;
+    expect(text).toContain(
+      'Contribution review (advisory): current (independent host agents); guidance current; 0 finding(s).',
     );
-    expect(readFileSync(join(runDir, 'preview.html'), 'utf8')).toContain(
-      '&lt;script&gt;alert(1)&lt;/script&gt;',
+    expect(text).toContain('Next: tracetoon publish --run');
+    // Rendering again with nothing changed keeps the same render identity.
+    expect(cli('render').json.code).toBe(final.json.code);
+    const published = cli('publish');
+    expect(published.code).toBe(0);
+    expect(published.json.mode).toBe('edit');
+    expect(published.json.message).toContain(
+      'Tracetoon updated PR #7: https://github.com/acme/demo/pull/7',
     );
-    expect(cli('publish', '--code', 'wrong').code).toBe(1);
-    expect(cli('publish', '--code', final.json.code).code).toBe(0);
-    expect(readFileSync(join(scratch, 'gh.log'), 'utf8')).not.toContain(
-      'Contributor guidance review',
-    );
+    const log = readFileSync(join(scratch, 'gh.log'), 'utf8');
+    expect(log).toContain('HUMAN: pending');
+    expect(log).not.toContain('Contributor guidance review');
+    expect(log).not.toContain('alert(1)');
+    expect(log).not.toContain('reviewed by the author');
     // Body-only and guidance-only revisions invalidate review, even if source hashes are valid.
     writeFileSync(
       join(repo.root, 'CONTRIBUTING.md'),

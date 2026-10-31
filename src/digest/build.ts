@@ -718,7 +718,7 @@ export function buildDigest(
     if (!(s.cwdInRepo || s.commandsTouchRepo) || s.timeOverlap <= 0) continue;
     const ref = hashId(salt, m.session.sessionId);
     notes.push(
-      `Left out: ${m.session.agent} session "${scrub.text(m.session.title ?? 'untitled')}" (${ref}) worked in this repo while the commits were made, but no edits or commits of this PR were matched to it (score ${m.score}). If it belongs, ask the user and add it with --include ${ref}.`,
+      `Left out: ${m.session.agent} session "${scrub.text(m.session.title ?? 'untitled')}" (${ref}) worked in this repo while the commits were made, but no edits or commits of this PR were matched to it (score ${m.score}). It is left out; if it clearly belongs, add it with --include ${ref}.`,
     );
   }
 

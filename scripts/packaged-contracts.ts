@@ -8,16 +8,10 @@ export interface PackagedContract {
 export const PUBLICATION_CONTRACT: PackagedContract = {
   id: 'publication-recovery',
   file: 'tests/workflow.test.ts',
-  pattern: 'author review to publication rehearsal',
+  pattern: 'requested PR to publication rehearsal',
   minimum: 1,
 };
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
-  {
-    id: 'local-http-preview',
-    file: 'tests/review.test.ts',
-    pattern: 'served CLI preview emits a supported HTTP handoff',
-    minimum: 1,
-  },
   {
     id: 'trace-selection-and-redaction',
     file: 'tests/flow.test.ts',
@@ -25,9 +19,9 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
     minimum: 1,
   },
   {
-    id: 'exact-author-approval',
+    id: 'exact-render-publication',
     file: 'tests/flow.test.ts',
-    pattern: 'publish needs the approval code for the exact rendered text',
+    pattern: 'publish creates the PR from the exact render without a code',
     minimum: 1,
   },
   {
@@ -47,7 +41,7 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
     id: 'research-review-handoff',
     file: 'tests/contribution.test.ts',
     pattern:
-      'research → draft → review → correction → preview; retained text and approval stay intact',
+      'research → draft → review → correction → publish; retained text stays intact',
     minimum: 1,
   },
   {
@@ -67,7 +61,7 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
     id: 'code-freshness',
     file: 'tests/review.test.ts',
     pattern:
-      'new commits block both publish modes and cannot be blessed by rendering an old digest',
+      'new commits block publishing and cannot be blessed by rendering an old digest',
     minimum: 1,
   },
   {

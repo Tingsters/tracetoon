@@ -30,10 +30,10 @@ Each line has `type`, `timestamp`, `cwd`, `gitBranch` and `message`.
 Read only what you need. Do not copy secrets, tokens, absolute paths or other
 projects' content into the description.
 
-## 3. Write, show, and post only with approval
+## 3. Write, then post
 
-Write the description following [writing-guide.md](writing-guide.md). Show the
-user the full title and body. Only after they approve:
+Write the description following [writing-guide.md](writing-guide.md), then
+create or update the PR (only when the user's request includes making one):
 
 ```sh
 gh pr create --title "<title>" --body-file <file>       # new PR

@@ -37,9 +37,8 @@ test('package selection fails closed on missing, skipped, failed and renamed con
 test('package contracts are unique and keep the important runtime boundaries', () => {
   expect(new Set(BUNDLE_CONTRACTS.map((c) => c.id)).size).toBe(BUNDLE_CONTRACTS.length);
   for (const id of [
-    'local-http-preview',
     'publication-recovery',
-    'exact-author-approval',
+    'exact-render-publication',
     'comic-assets-and-body',
     'research-review-handoff',
     'runtime-selection',

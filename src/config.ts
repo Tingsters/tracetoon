@@ -19,8 +19,6 @@ export function comicMode(v: unknown): ComicMode {
 }
 
 export interface Config {
-  /** Skip the preview step when every safety check passes. Default false. */
-  yolo: boolean;
   /** Quote the user's prompts verbatim in the PR ("verbatim") or paraphrase ("paraphrase"). */
   promptQuoting: 'verbatim' | 'paraphrase';
   /** Trailer style to suggest: kernel-style Assisted-by, Co-Authored-By, or none. */
@@ -41,7 +39,6 @@ export interface Config {
 
 export const DEFAULTS: Config = {
   enabled: true,
-  yolo: false,
   promptQuoting: 'paraphrase',
   disclosure: 'assisted-by',
   budgetTokens: 12000,

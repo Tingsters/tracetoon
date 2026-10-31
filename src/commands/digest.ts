@@ -11,10 +11,9 @@ import { describeTitleRules, readTitleRules } from '../github/titleRules.ts';
 import { findRun, newRun, readJson, writeJson } from '../run.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { submissionSnapshot } from '../review/snapshot.ts';
-import { pendingNotice } from './pending.ts';
 import { checkReport, receiptEvidence } from '../workflow/checks.ts';
 import { detectInterop } from '../git/interop.ts';
-import { readTask } from '../workflow/state.ts';
+import { readTask, saveTask } from '../workflow/state.ts';
 import { receipts } from '../workflow/checks.ts';
 import { fileHash } from '../workflow/readiness.ts';
 import { makeScrubber } from '../digest/sanitize.ts';
@@ -89,7 +88,6 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     interop,
     budgetTokens: Number.MAX_SAFE_INTEGER,
   });
-  const pending = pendingNotice(truth.toplevel, truth.gitDir);
   if (readTask(run)) {
     const report = checkReport(truth.toplevel, run);
     const validation = report.map((c) => ({
@@ -124,6 +122,33 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     throw new UserError(
       `This run belongs to branch ${previous.head}. Switch to that branch before refreshing it.`,
     );
+  // A digest is only built to make a PR. Record the request, so the session
+  // that asked for it can't end with the PR unmade, even without a redirected
+  // `gh pr create`.
+  const task = readTask(run);
+  if (task && task.state !== 'published') {
+    // The session running the digest is the one asking; the task owner is a fallback.
+    const by =
+      process.env.CODEX_THREAD_ID ||
+      process.env.CLAUDE_CODE_SESSION_ID ||
+      process.env.CLAUDE_SESSION_ID ||
+      task.session;
+    if (!task.prRequestedAt || (by && task.prRequestedBy !== by)) {
+      task.prRequestedAt ??= new Date().toISOString();
+      if (by) task.prRequestedBy = by;
+    }
+    if (
+      task.state === 'working' ||
+      task.state === 'blocked' ||
+      task.state === 'deferred'
+    ) {
+      if (task.state !== 'working')
+        task.recoveryGeneration = (task.recoveryGeneration ?? 0) + 1;
+      task.state = 'preparing';
+      task.reason = undefined;
+    }
+    saveTask(run, task);
+  }
   writeJson(run, 'session-selection.json', build);
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
@@ -145,7 +170,6 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
       ambiguous: ambiguous.map((s) => s.ref),
       stats: digest.stats,
       notes: digest.notes,
-      pendingDrafts: pending.pendingDrafts,
     },
     () =>
       [
@@ -155,10 +179,9 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
             .map((s) => `${s.ref} ${s.agent} "${s.title ?? ''}" (${s.band}, ${s.score})`)
             .join('; '),
         ambiguous.length
-          ? `Ambiguous: ${ambiguous.map((s) => s.ref).join(', ')}. Ask the user, then re-run with --include or --exclude.`
+          ? `Ambiguous, left out: ${ambiguous.map((s) => s.ref).join(', ')}. The PR message says so; re-run with --include only if one clearly belongs.`
           : '',
         ...digest.notes,
-        pending.text,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -260,7 +283,7 @@ export function contextCmd(
         `Contribution research: ${contribution.sourceSeeds.length} source seed(s); guidance-request.json and changes.patch written${contribution.offline ? ' (offline: do not browse external links)' : ''}.`,
         `AI policy: ${policy.verdict}${policy.excerpts.length ? ` (${policy.excerpts.length} mention(s))` : ''}`,
         ...policy.excerpts.slice(0, 5).map((e) => `  ${e.file}:${e.line}: ${e.text}`),
-        `yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting} | comic: ${config.comic}`,
+        `prompt quoting: ${config.promptQuoting} | comic: ${config.comic}`,
         ...describeTitleRules(titleRules),
         config.comic === 'off'
           ? ''
