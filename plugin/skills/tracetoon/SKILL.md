@@ -1,6 +1,6 @@
 ---
 name: tracetoon
-description: Create or update a GitHub PR with a description and optional comic written from agent session logs. Use when the user asks to open, create, describe or update a PR, when a hook redirects `gh pr create`/`gh pr edit` here, or when Tracetoon is mentioned. Finishing a task without a PR request, planning and questions are not triggers.
+description: Create or update a GitHub PR with a description and optional comic written from agent session logs. Use when the user asks to open, create, describe or update a PR, when a hook redirects a PR write (`gh pr create`/`edit`, hub, git pull-request, Git Town or the pulls API) here, or when Tracetoon is mentioned. Finishing a task without a PR request, planning and questions are not triggers.
 ---
 
 # Tracetoon: PR descriptions and comics from agent traces
@@ -24,12 +24,14 @@ re-run with the environment variable `TRACETOON_ALLOW_DOWNLOAD=1`. If no, follow
 ## When this skill is used
 
 Tracetoon runs only when a PR is being made: the user asked for one, or a hook
-stopped your direct `gh pr create` (or `gh pr edit` of a title or body) and
-pointed you here. If that just happened, follow the workflow below instead of
-retrying the `gh` command; Tracetoon writes the description and comic, then
-creates the PR. Finishing a task is not by itself a reason to make a PR. Plain
-`git push` is not intercepted; pushing branches, tags or release commits is the
-user's own workflow.
+stopped your direct PR write and pointed you here (`gh pr create`, `gh pr edit`
+of a title or body, a gh alias for them, `hub pull-request`, `git pull-request`,
+`git town propose`, a write to GitHub's pulls API by any HTTP client, or a
+GitHub connector PR tool). If that just happened, follow the workflow below
+instead of retrying the command another way; Tracetoon writes the description
+and comic, then creates the PR. Finishing a task is not by itself a reason to
+make a PR. Plain `git push` is not intercepted; pushing branches, tags or
+release commits is the user's own workflow.
 
 Tracetoon can be turned off. `tracetoon status` says whether it is on here and
 which setting decided. If it is off, tell the user why (for example "this repo

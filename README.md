@@ -113,9 +113,16 @@ start of your first PR.
 ### Tracetoon is the default for PRs, and easy to turn off
 
 The installer adds a small hook to each agent. When an agent tries to open a PR
-with `gh pr create` (or rewrite one with `gh pr edit --title/--body`), the hook
-points it to Tracetoon, which writes the description and comic, then creates
-the PR. Ordinary `git push`
+(or rewrite its title or body), the hook points it to Tracetoon, which writes
+the description and comic, then creates the PR. It recognizes `gh pr create`
+and `gh pr edit`, gh aliases for them, `hub pull-request`, git-extras
+`git pull-request`, Git Town `git town propose`, writes to GitHub's pulls API
+(through `gh api`, `hub api`, curl, wget, HTTPie or PowerShell, including
+GraphQL `createPullRequest`) and the GitHub connector tools agents use.
+Stacking tools such as Graphite and git-spice are left alone, since they manage
+whole stacks of PRs, as are API reads, state-only changes (closing a PR) and
+other forges' APIs. A call made from inside a script, or a GraphQL mutation
+read from a file, can't be recognized from the command line. Ordinary `git push`
 is left alone: pushing a branch for CI, a tag or a release commit is your
 workflow, not a PR. The hook only touches its
 own entries in each agent's config, backs up each file before the first change,

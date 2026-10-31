@@ -894,6 +894,24 @@ describe('ordinary git and task identity', () => {
     expect(
       run({ command: 'gh api -X PATCH repos/acme/demo/pulls/3 -f body=new' }),
     ).toContain('deny');
+    // Other ways agents open PRs go through Tracetoon too.
+    for (const command of [
+      'hub pull-request -m "Fix"',
+      'git pull-request',
+      'git town propose',
+      'curl -X POST https://api.github.com/repos/acme/demo/pulls -d @pr.json',
+      'Invoke-RestMethod -Method Post -Uri https://api.github.com/repos/acme/demo/pulls',
+    ])
+      expect(run({ command })).toContain('deny');
+    // Reads and stacking tools are not PR writes Tracetoon replaces.
+    expect(
+      run({ command: 'curl -s https://api.github.com/repos/acme/demo/pulls' }),
+    ).toBeUndefined();
+    expect(run({ command: 'gt submit --stack' })).toBeUndefined();
+    // Closing a PR through the API is left alone by both hooks, like gh pr close.
+    expect(
+      run({ command: 'gh api -X PATCH repos/acme/demo/pulls/3 -f state=closed' }),
+    ).toBeUndefined();
     // Text that only mentions a PR command is not a PR write.
     expect(run({ command: `echo "${prCreate}"` })).toBeUndefined();
     expect(

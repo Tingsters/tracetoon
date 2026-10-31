@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { decide, DENY_REASON, writesPr } from '../src/hook/prHook.ts';
+import { parseAliases } from '../src/hook/prCommands.ts';
 import {
   hookCommand,
   hookStatus,
@@ -57,8 +58,127 @@ describe('which commands are PR writes', () => {
     ["cat > t.ts <<EOF\nrun('git push && gh pr create --fill')\nEOF\nbun test", false],
     ['git commit -m "first line\ngh pr create --fill"', false],
     ["cat > a.txt <<'EOF'\nnothing\nEOF\ngh pr create --fill", true],
+    // Other PR CLIs.
+    ['hub pull-request -m "Fix it"', true],
+    ['hub pr list', false],
+    ['git pull-request', true],
+    ['git -C ../other pull-request', true],
+    ['git town propose', true],
+    ['git town new-pull-request', true],
+    ['git-town propose --title x', true],
+    ['git town sync', false],
+    // Stacking tools manage whole stacks; Tracetoon leaves them alone.
+    ['gt submit --stack', false],
+    ['git-spice branch submit', false],
+    // The API, through gh/hub or any HTTP client.
+    ['gh api repos/acme/demo/pulls -f title=x -f head=f -f base=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f body=new', true],
+    ['gh api repos/acme/demo/pulls', false],
+    [
+      "gh api graphql -f query='mutation { createPullRequest(input: {}) { clientMutationId } }'",
+      true,
+    ],
+    ['hub api -X POST repos/acme/demo/pulls --input pr.json', true],
+    ['curl -X POST https://api.github.com/repos/acme/demo/pulls -d @pr.json', true],
+    ['curl -s https://api.github.com/repos/acme/demo/pulls', false],
+    // curl's lowercase -x is --proxy: a read through a proxy, not a write.
+    ['curl -x proxy.example:8080 https://api.github.com/repos/acme/demo/pulls', false],
+    ['iwr -method POST https://api.github.com/repos/acme/demo/pulls', true],
+    // Joined and abbreviated flags.
+    ['curl -XPOST https://api.github.com/repos/acme/demo/pulls -d @pr.json', true],
+    ['curl -d@pr.json https://api.github.com/repos/acme/demo/pulls', true],
+    ['curl -X post https://api.github.com/repos/acme/demo/pulls -d "{}"', true],
+    [
+      'Invoke-RestMethod -Method:Post -Uri https://api.github.com/repos/acme/demo/pulls',
+      true,
+    ],
+    ['irm -Meth Post https://api.github.com/repos/acme/demo/pulls', true],
+    [
+      'Invoke-RestMethod -Uri https://api.github.com/repos/acme/demo/pulls -Body $b',
+      false,
+    ],
+    // Reads that carry data as a query string.
+    ['curl -G -d state=open https://api.github.com/repos/acme/demo/pulls', false],
+    ['http https://api.github.com/repos/acme/demo/pulls state==open', false],
+    // Closing a PR is not a description write, like gh pr close.
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=closed', false],
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"state":"closed"}\'',
+      false,
+    ],
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"title":"x"}\'',
+      true,
+    ],
+    // Other forges' pulls APIs are not GitHub PRs.
+    [
+      'curl -X POST https://gitea.example.com/api/v1/repos/acme/demo/pulls -d "{}"',
+      false,
+    ],
+    [
+      'curl -X POST https://ghe.example.com/api/graphql -d \'{"query":"mutation{createPullRequest}"}\'',
+      true,
+    ],
+    [
+      'curl --request PATCH https://ghe.example.com/api/v3/repos/acme/demo/pulls/4 --data-raw "{}"',
+      true,
+    ],
+    [
+      'curl -H "Authorization: x" --json @pr.json https://api.github.com/repos/acme/demo/pulls',
+      true,
+    ],
+    ['curl https://api.github.com/repos/acme/demo/pulls/4/comments -d "{}"', false],
+    [
+      'curl -X POST https://api.github.com/graphql -d \'{"query":"mutation{createPullRequest}"}\'',
+      true,
+    ],
+    ['wget --post-data "{}" https://api.github.com/repos/acme/demo/pulls', true],
+    ['http POST https://api.github.com/repos/acme/demo/pulls title=x', true],
+    ['http https://api.github.com/repos/acme/demo/pulls', false],
+    [
+      'Invoke-RestMethod -Method Post -Uri https://api.github.com/repos/acme/demo/pulls -Body $b',
+      true,
+    ],
+    ['irm https://api.github.com/repos/acme/demo/pulls', false],
+    ['echo "curl -X POST https://api.github.com/repos/acme/demo/pulls"', false],
   ])('%s -> %p', (cmd, expected) => {
     expect(writesPr(cmd)).toBe(expected);
+  });
+
+  test('gh aliases that expand to a PR write count, others do not', () => {
+    const dir = tempDir('gh-config-');
+    writeFileSync(
+      join(dir, 'config.yml'),
+      [
+        'git_protocol: https',
+        'aliases:',
+        '    prc: pr create --fill',
+        "    ship: '!gh pr create --fill && gh pr view --web'",
+        "    pushpr: '!git push -u origin HEAD && gh pr create --fill'",
+        '    co: pr checkout',
+        '    setbody: pr edit --body-file',
+        'editor: vim',
+        '',
+      ].join('\n'),
+    );
+    const before = process.env.GH_CONFIG_DIR;
+    process.env.GH_CONFIG_DIR = dir;
+    try {
+      expect(parseAliases(readFileSync(join(dir, 'config.yml'), 'utf8'))).toMatchObject({
+        prc: 'pr create --fill',
+        co: 'pr checkout',
+      });
+      expect(writesPr('gh prc')).toBe(true);
+      expect(writesPr('gh ship')).toBe(true);
+      expect(writesPr('gh setbody 5 b.md')).toBe(true);
+      // A shell alias writes the PR wherever the write sits in its command line.
+      expect(writesPr('gh pushpr')).toBe(true);
+      expect(writesPr('gh co 5')).toBe(false);
+      expect(writesPr('gh unknown-alias')).toBe(false);
+    } finally {
+      if (before === undefined) delete process.env.GH_CONFIG_DIR;
+      else process.env.GH_CONFIG_DIR = before;
+    }
   });
 });
 
