@@ -73,6 +73,7 @@ Write-Host "Installing Tracetoon $tag (windows-$arch)"
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("tracetoon-install-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
+$staged = @()
 try {
   Invoke-WebRequest -UseBasicParsing -Headers $headers "$base/checksums.txt" -OutFile (Join-Path $tmp 'checksums.txt')
   $sums = Get-Content (Join-Path $tmp 'checksums.txt')
@@ -96,7 +97,6 @@ try {
   }
   # Stage every skill before replacing any installed component. All moves stay
   # beside their explicitly selected tracetoon directory.
-  $staged = @()
   foreach ($t in $targets) {
     $targetPath = [IO.Path]::GetFullPath($t.Dir)
     if ((Split-Path -Leaf $targetPath) -ne 'tracetoon') { throw "Unexpected install target: $targetPath" }
@@ -113,8 +113,41 @@ try {
   & (Join-Path $tmp $bin) --version | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Downloaded binary does not run.' }
   Copy-Item -LiteralPath (Join-Path $tmp $bin) -Destination ($stable + '.new') -Force
-  Move-Item -LiteralPath ($stable + '.new') -Destination $stable -Force
+  # Agent hooks start this binary all the time, and Windows refuses to overwrite
+  # a file a process is loading. It does allow a rename, so set the old binary
+  # aside, move the new one in, and delete the old one once nothing uses it.
+  $binDir = Split-Path -Parent $stable
+  # Earlier set-aside copies are only safe to delete while a binary is in place.
+  if (Test-Path -LiteralPath $stable) {
+    Get-ChildItem -LiteralPath $binDir -Filter 'tracetoon.exe.old-*' -ErrorAction SilentlyContinue |
+      ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+  }
+  $aside = $stable + '.old-' + [guid]::NewGuid().ToString('N')
+  if (Test-Path -LiteralPath $stable) { Move-Item -LiteralPath $stable -Destination $aside }
+  try { Move-Item -LiteralPath ($stable + '.new') -Destination $stable }
+  catch {
+    $moveError = $_
+    # Put the old binary back; report the original failure either way.
+    if (Test-Path -LiteralPath $aside) { Move-Item -LiteralPath $aside -Destination $stable -ErrorAction SilentlyContinue }
+    throw $moveError
+  }
+  Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue
   $exe = $stable
+  # The binary finds its comic fonts and renderer at ..\assets, beside bin\,
+  # so it can render comics when run directly (not only through a skill).
+  # Same set-aside swap, so a failure never leaves assets half removed.
+  $assets = Join-Path $homeRoot 'assets'
+  $assetsNew = $assets + '.new-' + [guid]::NewGuid().ToString('N')
+  $assetsOld = $assets + '.old-' + [guid]::NewGuid().ToString('N')
+  Copy-Item -LiteralPath (Join-Path $skill 'assets') -Destination $assetsNew -Recurse
+  if (Test-Path -LiteralPath $assets) { Move-Item -LiteralPath $assets -Destination $assetsOld }
+  try { Move-Item -LiteralPath $assetsNew -Destination $assets }
+  catch {
+    $moveError = $_
+    if (Test-Path -LiteralPath $assetsOld) { Move-Item -LiteralPath $assetsOld -Destination $assets -ErrorAction SilentlyContinue }
+    throw $moveError
+  }
+  Remove-Item -LiteralPath $assetsOld -Recurse -Force -ErrorAction SilentlyContinue
   # Binaries cached by older versions are no longer needed.
   Remove-Item -Recurse -Force (Join-Path $homeRoot 'cache') -ErrorAction SilentlyContinue
 
@@ -154,4 +187,10 @@ try {
 }
 finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+  # After a failure, leave no half-installed copies beside the real ones.
+  foreach ($s in $staged) {
+    if (Test-Path -LiteralPath $s.Stage) { Remove-Item -LiteralPath $s.Stage -Recurse -Force -ErrorAction SilentlyContinue }
+  }
+  Remove-Item -LiteralPath ($stable + '.new') -Force -ErrorAction SilentlyContinue
+  if ($assetsNew -and (Test-Path -LiteralPath $assetsNew)) { Remove-Item -LiteralPath $assetsNew -Recurse -Force -ErrorAction SilentlyContinue }
 }
