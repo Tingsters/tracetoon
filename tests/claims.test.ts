@@ -315,18 +315,3 @@ describe('false alarms found on real descriptions', () => {
     ).toEqual([]);
   });
 });
-
-describe('preview markers', () => {
-  test('only claims worth a look get a numbered marker beside the sentence', async () => {
-    const { annotateClaims } = await import('../src/preview/html.ts');
-    const body = 'Fixes the export.\n\nAll tests pass.';
-    const claims = check(body, digest([]));
-    const a = annotateClaims(body, claims);
-    const html = a.place(`<p>${a.body.replace(/\n\n/g, '</p><p>')}</p>`);
-    expect(html).toContain(
-      'All tests pass.<a class="claim not-established" href="#check-1"',
-    );
-    expect(a.notes).toContain('not established');
-    expect(a.notes).toContain('advisory');
-  });
-});

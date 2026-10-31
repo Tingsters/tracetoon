@@ -4,17 +4,17 @@ import {
   loadConfig,
   setUserConfig,
   COMIC_MODES,
+  comicMode,
   DEFAULTS,
   userConfigPath,
   type Config,
 } from './config.ts';
 import { doctor } from './commands/doctor.ts';
 import { guidanceCheckCmd } from './commands/guidance.ts';
-import { dismissPendingCmd } from './commands/pending.ts';
 import { imagesCmd } from './commands/images.ts';
 import { contextCmd, digestCmd, expandCmd, scanCmd } from './commands/digest.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
-import { previewCmd, publishCmd, renderCmd } from './commands/publish.ts';
+import { publishCmd, renderCmd } from './commands/publish.ts';
 import {
   comicArtCmd,
   comicRerollCmd,
@@ -31,7 +31,7 @@ import {
 } from './commands/switch.ts';
 import { runPrHook, type HookAgent } from './hook/prHook.ts';
 import { TOOL_VERSION, BUILD_INFO } from './version.ts';
-import { taskCmd, checkCmd, readyCmd } from './commands/workflow.ts';
+import { taskCmd, checkCmd } from './commands/workflow.ts';
 import { runLifecycle, type LifecycleEvent } from './hook/lifecycle.ts';
 import { findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
@@ -97,17 +97,6 @@ program
   )
   .argument('[command...]', 'program and arguments after --')
   .action((command, o) => checkCmd(cwd, command, { ...g(), ...o }));
-program
-  .command('ready')
-  .description('finish preparation and return the author review handoff')
-  .requiredOption('--run <id>', 'task run')
-  .option(
-    '--serve',
-    'keep a local HTTP preview running until stopped or idle for one hour',
-  )
-  .option('--open', 'open the preview in a browser')
-  .action((o) => readyCmd(cwd, { ...g(), ...o }));
-
 program
   .command('images')
   .description(
@@ -176,10 +165,13 @@ program
 program
   .command('render')
   .description(
-    'freeze body.md into the final PR body, scan it, and print an approval code',
+    'freeze body.md into the final PR body, scan it, and report the review results',
   )
   .option('--run <id>', 'run id (default: latest)')
-  .option('--allow-findings', 'allow posting even though the leak scan found something')
+  .option(
+    '--allow-findings',
+    'post even though the leak scan found something (only when the user says it is fine)',
+  )
   .option('--no-comic', 'leave the comic out even if one was rendered')
   .option('--retitle', 'replace a title a person chose (only after the user agrees)')
   .action((o) => {
@@ -188,26 +180,12 @@ program
   });
 
 program
-  .command('preview')
-  .description('show the rendered PR')
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--open', 'open the HTML preview in a browser')
-  .option(
-    '--serve',
-    'keep a local HTTP preview running until stopped or idle for one hour',
-  )
-  .action((o) => previewCmd(cwd, { ...g(), ...o }));
-
-program
   .command('publish')
-  .description('create or update the PR with exactly what was previewed')
+  .description('create or update the PR with exactly what was rendered')
   .option('--run <id>', 'run id (default: latest)')
-  .option('--code <code>', 'approval code from render/preview')
-  .option('--yolo', 'publish without a code when yolo is enabled and every check passes')
-  .option('--push', 'push the branch if GitHub does not have the approved revision')
-  .option('--no-push', 'require the approved revision to already be on the remote')
+  .option('--push', 'push the branch if GitHub does not have the rendered revision')
+  .option('--no-push', 'require the rendered revision to already be on the remote')
   .option('--draft', 'open the PR as a draft')
-  .option('--ack-policy', 'the user read the repo AI policy and still wants to post')
   .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
   .action((o) => publishCmd(cwd, { ...g(), ...o }));
 
@@ -291,13 +269,6 @@ for (const [name, on] of [
 const hook = program
   .command('hook')
   .description('the agent hook that routes PRs through Tracetoon');
-program
-  .command('pending')
-  .description('manage local PR review reminders')
-  .command('dismiss')
-  .description('dismiss a pending preview without deleting work')
-  .requiredOption('--run <id>', 'run awaiting review')
-  .action((o) => dismissPendingCmd(cwd, { ...g(), ...o }));
 hook
   .command('lifecycle')
   .requiredOption('--agent <agent>', 'claude, codex or antigravity')
@@ -339,7 +310,12 @@ config.command('set <key> <value>').action((key: string, value: string) => {
     );
   if (key === 'comic' && ![...COMIC_MODES, 'true', 'false'].includes(value))
     throw new UserError('comic is off, allowed or always.');
-  const c = setUserConfig(key as keyof Config, value);
+  const c = setUserConfig(
+    key as keyof Config,
+    key === 'comic'
+      ? comicMode(value === 'true' ? true : value === 'false' ? false : value)
+      : value,
+  );
   emit(g(), c, () => `${key} = ${String(c[key as keyof Config])}`);
 });
 
@@ -353,9 +329,7 @@ try {
 } finally {
   if (
     timedAction?.run &&
-    ['digest', 'context', 'render', 'ready', 'preview', 'art', 'check'].includes(
-      timedAction.name,
-    )
+    ['digest', 'context', 'render', 'publish', 'art', 'check'].includes(timedAction.name)
   ) {
     try {
       recordTiming(

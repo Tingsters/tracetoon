@@ -718,7 +718,7 @@ export function renderedComic(
     (!output || output.fingerprint !== artFingerprint(script, output.lettering))
   )
     throw new UserError(
-      'The rendered comic is stale for this script or composition. Draw and render the current comic before preparing the PR preview.',
+      'The rendered comic is stale for this script or composition. Draw and render the current comic before rendering the PR.',
     );
   for (const [name, mime] of [
     ['comic.png', 'image/png'],

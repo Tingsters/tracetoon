@@ -57,7 +57,6 @@ export function reviewInput(input: {
       'context.json',
       'author.md',
       'final-body.md',
-      'preview.html',
       'approval.json',
       ...(input.changeMap ? ['change-map.json'] : []),
       ...(input.comic

@@ -13,7 +13,6 @@ import {
 import { makeScrubber } from '../src/digest/sanitize.ts';
 import { commandKey, isTestCommand } from '../src/digest/build.ts';
 import { mentionsAnyRoot } from '../src/trace/pathMatch.ts';
-import { sanitizeHtml } from '../src/preview/html.ts';
 import { ClaudeLog } from './helpers.ts';
 
 const emptySession = (): TraceSession => ({
@@ -159,21 +158,6 @@ describe('helpers', () => {
   test('path mentions respect name boundaries and Git Bash spelling', () => {
     expect(mentionsAnyRoot('cd /c/Users/a/app && ls', ['C:\\Users\\a\\app'])).toBe(true);
     expect(mentionsAnyRoot('cd /c/Users/a/app-old', ['C:\\Users\\a\\app'])).toBe(false);
-  });
-
-  test('preview HTML keeps GitHub-safe tags and escapes the rest', () => {
-    expect(sanitizeHtml('<details open><summary>x</summary>')).toBe(
-      '<details open><summary>x</summary>',
-    );
-    expect(sanitizeHtml('<img src="comic.png" onerror="alert(1)">')).toBe(
-      '<img src="comic.png">',
-    );
-    expect(sanitizeHtml('<script>alert(1)</script>')).toBe(
-      '&lt;script&gt;alert(1)&lt;/script&gt;',
-    );
-    expect(sanitizeHtml('<img src="javascript:alert(1)">')).toBe('<img>');
-    expect(sanitizeHtml('<img src="data:image/png;base64,aGVsbG8=">')).toBe('<img>');
-    expect(sanitizeHtml('<img src="data:image/svg+xml;base64,PHN2Zy8+">')).toBe('<img>');
   });
 });
 

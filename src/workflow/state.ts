@@ -1,4 +1,4 @@
-/** Worktree-local task state. A rendered artifact and a delivered handoff are distinct. */
+/** Worktree-local task state: the evidence window and, once asked for, the PR. */
 import { existsSync, readdirSync, lstatSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -8,8 +8,7 @@ import { readLocal, writeLocal } from '../util/localJson.ts';
 import { findRun, newRun, type Run } from '../run.ts';
 import { defaultBase, gitIdentity } from '../git/pr.ts';
 
-export type TaskState =
-  'working' | 'preparing' | 'ready' | 'blocked' | 'deferred' | 'published';
+export type TaskState = 'working' | 'preparing' | 'blocked' | 'deferred' | 'published';
 export interface Task {
   v: 1;
   run: string;
@@ -23,15 +22,15 @@ export interface Task {
   reason?: string;
   checks?: string[];
   noChecksReason?: string;
-  readyCode?: string;
-  readyReviewSha?: string;
-  readyChecksSha?: string;
-  readyPreviewSha?: string;
-  presentedCode?: string;
+  /**
+   * When a PR write in this session was redirected to Tracetoon. The PR was
+   * asked for, so finishing the session without publishing it would orphan it.
+   */
+  prRequestedAt?: string;
+  /** The host session whose PR request is waiting on this task. */
+  prRequestedBy?: string;
   startedAt: string;
   updatedAt: string;
-  readyAt?: string;
-  presentedAt?: string;
   recoveryGeneration?: number;
 }
 
@@ -105,7 +104,14 @@ export function contentFingerprint(root: string): string {
 }
 
 export const taskPath = (run: Run) => join(run.dir, 'task.json');
-export const readTask = (run: Run) => readLocal<Task>(taskPath(run));
+export const readTask = (run: Run): Task | undefined => {
+  const task = readLocal<Omit<Task, 'state'> & { state: TaskState | 'ready' }>(
+    taskPath(run),
+  );
+  // Older versions held finished tasks as "ready" until a person approved a preview.
+  if (task && task.state === 'ready') task.state = 'preparing';
+  return task as Task | undefined;
+};
 export function saveTask(run: Run, task: Task): Task {
   task.updatedAt = new Date().toISOString();
   writeLocal(taskPath(run), task);
@@ -133,13 +139,7 @@ export function tasks(gitDir: string): { run: Run; task: Task }[] {
  * them; authored drafts (body, title, comic, art), content-bound check receipts
  * and the record of an already published PR stay.
  */
-const TARGET_BOUND = [
-  'approval.json',
-  'submission.json',
-  'review-state.json',
-  'preview.html',
-  'final-body.md',
-];
+const TARGET_BOUND = ['approval.json', 'submission.json', 'final-body.md'];
 
 export function beginTask(
   cwd: string,
@@ -173,16 +173,6 @@ export function beginTask(
         );
       existing.task.branch = repo.branch;
       existing.task.state = 'working';
-      for (const key of [
-        'readyCode',
-        'readyReviewSha',
-        'readyChecksSha',
-        'readyPreviewSha',
-        'readyAt',
-        'presentedCode',
-        'presentedAt',
-      ] as const)
-        delete existing.task[key];
       for (const file of TARGET_BOUND)
         rmSync(join(existing.run.dir, file), { force: true });
     }
@@ -190,7 +180,6 @@ export function beginTask(
     if (options.transcript) existing.task.transcript = options.transcript;
     if (options.base && options.base !== existing.task.base) {
       existing.task.base = options.base;
-      existing.task.readyCode = undefined;
       existing.task.state = 'working';
     }
     saveTask(existing.run, existing.task);
@@ -221,7 +210,7 @@ export function taskSummary(gitDir: string) {
     branch: task.branch,
     root: task.root,
     reason: task.reason,
-    presented: !!task.readyCode && task.presentedCode === task.readyCode,
+    prRequested: !!task.prRequestedAt,
     nextAction:
       task.state === 'preparing' || task.state === 'blocked'
         ? `Resume preparation with --run ${run.id}`

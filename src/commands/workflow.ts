@@ -1,11 +1,8 @@
 import { defaultBase } from '../git/pr.ts';
-import { findRun, readJson } from '../run.ts';
+import { findRun } from '../run.ts';
 import { beginTask, readTask, repository, saveTask } from '../workflow/state.ts';
 import { executeCheck, receipts } from '../workflow/checks.ts';
-import { readiness } from '../workflow/readiness.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
-import { previewCmd, type Approval } from './publish.ts';
-import { setReviewState } from '../review/pending.ts';
 import { rememberRepository } from '../workflow/hostSession.ts';
 
 interface TaskOpts extends OutOpts {
@@ -24,7 +21,12 @@ export function taskCmd(
 ) {
   const info = beginTask(cwd, {
     ...opts,
-    session: opts.session ?? process.env.CODEX_THREAD_ID ?? process.env.CLAUDE_SESSION_ID,
+    session:
+      opts.session ??
+      (process.env.CODEX_THREAD_ID ||
+        process.env.CLAUDE_CODE_SESSION_ID ||
+        process.env.CLAUDE_SESSION_ID ||
+        undefined),
     // complete/defer/block keep the task's branch; only begin adopts another one.
     adopt: action === 'begin',
   });
@@ -43,7 +45,6 @@ export function taskCmd(
     task.state =
       action === 'complete' ? 'preparing' : action === 'block' ? 'blocked' : 'deferred';
     task.reason = opts.reason;
-    task.readyCode = undefined;
     if (opts.checks !== undefined) {
       task.checks = opts.checks
         .split(',')
@@ -60,7 +61,7 @@ export function taskCmd(
   }
   const next =
     task.state === 'preparing'
-      ? `${info.branch === task.base ? `Create a local feature branch first (PR head and base cannot both be ${task.base}), then adopt it with task begin --run ${run.id}. ` : ''}Finish applicable checks, then use the tracetoon skill with digest --run ${run.id}, context, research, drafting, comic and independent review. End with ready --run ${run.id} --serve and its exact handoff.`
+      ? `${info.branch === task.base ? `Create a local feature branch first (PR head and base cannot both be ${task.base}), then adopt it with task begin --run ${run.id}. ` : ''}When the user wants a PR, use the tracetoon skill with digest --run ${run.id}, context, research, drafting, comic and independent review, then tracetoon publish --run ${run.id}.`
       : `Resume this task with --run ${run.id}; complete it when the cohesive change is finished.`;
   emit(
     opts,
@@ -90,19 +91,7 @@ export function checkCmd(
     ...opts,
     name: opts.name ?? command.join(' '),
     command,
-    onStart: () => {
-      if (task?.state === 'ready') {
-        task.state = 'preparing';
-        task.readyCode = undefined;
-        saveTask(run, task);
-      }
-    },
   });
-  if (task && task.state === 'ready' && !receipt.reused) {
-    task.state = 'preparing';
-    task.readyCode = undefined;
-    saveTask(run, task);
-  }
   emit(
     opts,
     receipt,
@@ -111,30 +100,4 @@ export function checkCmd(
   );
   if (receipt.outcome === 'failed')
     process.exitCode = receipt.exitCode && receipt.exitCode > 0 ? receipt.exitCode : 1;
-}
-
-export async function readyCmd(
-  cwd: string,
-  opts: OutOpts & { run: string; serve?: boolean; open?: boolean },
-) {
-  const { root, gitDir, branch } = repository(cwd);
-  const run = findRun(gitDir, opts.run);
-  const task = readTask(run);
-  const approval = readJson<Approval>(run, 'approval.json');
-  if (!task || !approval)
-    throw new UserError('Complete this task and render its reviewed preview first.');
-  if (task.root !== root || task.branch !== branch)
-    throw new UserError('Switch to the task worktree and branch.');
-  const report = readiness(root, run, approval);
-  task.state = 'ready';
-  task.readyCode = approval.code;
-  task.readyReviewSha = report.reviewSha;
-  task.readyChecksSha = report.checksSha;
-  task.readyPreviewSha = report.previewSha;
-  task.readyAt = new Date().toISOString();
-  task.reason = undefined;
-  saveTask(run, task);
-  setReviewState(run, approval, 'pending');
-  // Return the standard branded handoff; the host Stop hook records actual presentation.
-  await previewCmd(cwd, opts);
 }

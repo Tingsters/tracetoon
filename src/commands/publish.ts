@@ -1,10 +1,10 @@
 /**
- * render → preview → publish. `render` freezes the exact title, body and comic
- * image and prints an approval code for them. `publish` refuses unless it gets
- * that code and nothing changed, so nothing can be posted that the user didn't
- * see. The only edits after approval fill in where the comic image is hosted.
+ * render → publish. `render` freezes the exact title, body and comic image.
+ * `publish` creates (or updates) the PR from that render, refusing only when
+ * something changed since or the leak scan found something. The only edits
+ * after rendering fill in where the comic image is hosted.
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   contributionPolicy,
   loadGuidance,
@@ -17,7 +17,7 @@ import {
   reviewLine,
   reviewSummary,
 } from '../contribution/review.ts';
-import type { GuidanceRequest, ReviewResult } from '../contribution/types.ts';
+import type { GuidanceRequest } from '../contribution/types.ts';
 import {
   existsSync,
   readdirSync,
@@ -49,12 +49,11 @@ import {
 } from '../github/body.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
 import { defaultBase, prTruth, type PrTruth } from '../git/pr.ts';
-import { renderPreviewHtml } from '../preview/html.ts';
 import { findRun, readJson, readText, writeJson, type Run } from '../run.ts';
 import { repoWeb } from '../github/history.ts';
 import type { TitleRules } from '../github/titleRules.ts';
 import { checkTitle, titleLine } from '../digest/titleCheck.ts';
-import { gh, git, run as exec } from '../util/exec.ts';
+import { gh, git } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { readComicStatus, renderedComic } from './comic.ts';
 import { digestHash } from './digest.ts';
@@ -65,14 +64,10 @@ import {
   submissionSnapshot,
   type SubmissionSnapshot,
 } from '../review/snapshot.ts';
-import { previewHandoff, terminalHandoff } from '../review/handoff.ts';
-import { activeBrowserPreview, serveBrowserPreview } from '../review/browser.ts';
-import { recordRendered, setReviewState } from '../review/pending.ts';
-import { userCommand } from '../util/userCommand.ts';
 import { comicSummary } from '../comic/composition.ts';
 import { comicObservationInput } from '../contribution/comicReview.ts';
 import { readTask, saveTask, workFingerprint } from '../workflow/state.ts';
-import { fileHash, readyProblem } from '../workflow/readiness.ts';
+import { fileHash, publishProblem } from '../workflow/readiness.ts';
 import { receipts } from '../workflow/checks.ts';
 import { publicationLock, recordTiming } from '../workflow/publication.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
@@ -92,7 +87,7 @@ interface Context {
 
 /**
  * One short disclosure line, added after the description and the comic. The
- * match percentage and session details live in the preview, not the PR.
+ * match percentage and session details stay in the render output, not the PR.
  */
 export function disclosureLine(
   digest: Pick<TraceDigest, 'disclosure'>,
@@ -106,11 +101,11 @@ export function disclosureLine(
   if (form === 'tool-and-use') {
     // e.g. Django, Ghostty: name the tool and model, and say what it was used for.
     const models = digest.disclosure.models.join(', ');
-    return `<sub>AI use: ${tools}${models ? ` (${models})` : ''} assisted with the code; this description was drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon) and reviewed by the author.</sub>`;
+    return `<sub>AI use: ${tools}${models ? ` (${models})` : ''} assisted with the code; this description was drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon).</sub>`;
   }
   const trailer =
     mode === 'assisted-by' ? trailers.join(' · ') : `AI-assisted with ${tools}`;
-  return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon) and reviewed by the author</sub>`;
+  return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon)</sub>`;
 }
 
 /** Whether the PR has a comic and, if not, why. */
@@ -119,8 +114,12 @@ export interface ComicStatus {
   detail?: string;
 }
 
+/**
+ * The frozen render that `publish` posts. `code` identifies this exact render
+ * (title, body, comic, target); publication uses it to reconcile retries.
+ */
 export interface Approval {
-  /** Managed tasks bind validation and the public worktree to the author handoff. */
+  /** Managed tasks bind validation and the public worktree to the render. */
   workspaceFingerprint?: string;
   checksSha?: string;
   originSha?: string;
@@ -143,7 +142,7 @@ export interface Approval {
   comicMode?: ComicMode;
   comicStatus?: ComicStatus;
   renderedAt: string;
-  /** Optional only for reading pre-upgrade previews; publishing requires it. */
+  /** Optional only for reading pre-upgrade renders; publishing requires it. */
   submission?: SubmissionSnapshot;
 }
 
@@ -199,6 +198,7 @@ ${transcript(script)}
 export interface RenderOpts extends OutOpts {
   run?: string;
   allowFindings?: boolean;
+  /** Leave the comic out of this PR. */
   noComic?: boolean;
   /** Replace a title a person chose (only after the user agrees). */
   retitle?: boolean;
@@ -415,80 +415,22 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     ctx.aiPolicy.text === 'author-written-recommended';
   const outline = evidenceNotes(digest);
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
-  // The comic is embedded, so the preview shows it in any browser and from any
-  // folder (sandboxed browsers can't read files inside .git).
-  const comicData = comic
-    ? `data:${comic.mime};base64,${comic.data.toString('base64')}`
-    : '';
-  let previewComic: { src: string; data: string } | undefined;
-  if (comic) {
-    let src: string;
-    do {
-      src = `tracetoon-preview-comic-${randomUUID()}.png`;
-    } while (body.includes(src));
-    previewComic = { src, data: comicData };
-  }
-  const previewBody = previewComic ? body.replaceAll(COMIC_SRC, previewComic.src) : body;
-  writeFileSync(
-    join(run.dir, 'preview.html'),
-    renderPreviewHtml({
-      title,
-      body: previewBody,
-      approval,
-      claims,
-      titleFindings,
-      titleNote,
-      notes,
-      policy: ctx.aiPolicy,
-      outline: writeYourself ? outline : undefined,
-      comicHeldBack: mediaBanned,
-      comicOverride:
-        comicStatus.state === 'included' && ctx.aiPolicy.media === 'prohibited',
-      digest,
-      previewComic,
-      contributionReview,
-      changeMapFindings,
-      share: comic
-        ? {
-            image: comicData,
-            caption: shareCaption(script, title, '(link to the PR)'),
-          }
-        : undefined,
-    }),
-    'utf8',
-  );
   writeJson(run, 'approval.json', approval);
-  recordRendered(truth.gitDir, run, approval);
+  for (const legacy of ['preview.html', 'review-state.json'])
+    if (existsSync(join(run.dir, legacy))) unlinkSync(join(run.dir, legacy));
   const task = readTask(run);
-  if (
-    task &&
-    task.state !== 'published' &&
-    (task.readyCode !== approval.code ||
-      task.readyReviewSha !==
-        (existsSync(join(run.dir, 'review.json')) ? fileHash(run, 'review.json') : ''))
-  ) {
+  if (task && task.state === 'working') {
     task.state = 'preparing';
-    task.readyCode = undefined;
     saveTask(run, task);
   }
 
-  const previewPath = join(run.dir, 'preview.html');
   const stale = digestStale(truth.toplevel, digest);
-  const handoff = previewHandoff({
-    root: truth.toplevel,
-    command: userCommand().run,
-    url: fileUrl(previewPath),
-    filePath: previewPath,
-    run: run.id,
-  });
   emit(
     opts,
     {
       run: run.id,
       ...approval,
-      previewPath,
-      previewUrl: fileUrl(previewPath),
-      previewHandoff: handoff,
+      ...(writeYourself ? { evidenceNotesPath: join(run.dir, 'evidence-notes.md') } : {}),
       titleChecks: titleFindings,
       contributionReview: reviewSummary(contributionReview),
       reviewInputPath: join(run.dir, 'review-input.json'),
@@ -536,12 +478,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         comicStatus.state === 'included'
           ? 'Comic: included.'
           : `Comic: none — ${comicStatus.detail ?? comicStatus.state}.`,
-        approval.policy === 'prohibited'
-          ? 'WARNING: this repository appears to prohibit AI-assisted contributions. Read the policy before posting.'
-          : '',
-        `Approval code: ${approval.code}`,
-        '',
-        terminalHandoff(handoff, fileUrl(previewPath)),
+        findings.length && !approval.allowFindings
+          ? 'Not ready to publish: fix what the leak scan found, then render again.'
+          : `Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -554,19 +493,16 @@ function policyLines(policy: AiPolicy, mediaBanned: boolean): string {
   const out: string[] = [];
   if (policy.text === 'prohibited')
     out.push(
-      'Policy: this repository appears to prohibit AI-written contributions. The draft is notes, not ready to post; see evidence-notes.md. Publishing needs --ack-policy.',
+      'Policy: this repository appears to prohibit AI-written contributions. The user asked for this PR, so it is still posted; mention the policy to them.',
     );
   else if (policy.text === 'author-written-recommended')
     out.push(
       'Policy: this repository asks authors to write PR text themselves. Offer evidence-notes.md as an outline to write from; the draft is optional.',
     );
-  if (mediaBanned)
-    out.push(
-      "Policy: this repository's rules forbid images in PRs, so the comic is left out (comic setting: allowed).",
-    );
+  void mediaBanned; // The comic line says why a comic was left out.
   if (policy.noPullRequests)
     out.push(
-      "Policy: the repo's agent instructions say never to open a PR. Only post if the user explicitly decides to (--ack-policy).",
+      "Policy: the repo's agent instructions say not to open PRs. The user asked for this one, so it is still posted; mention the instruction to them.",
     );
   if (policy.disclosure && policy.disclosure !== 'unspecified')
     out.push(
@@ -590,78 +526,12 @@ function claimLine(claims: ClaimFinding[]): string {
   ].join('\n');
 }
 
-export async function previewCmd(
-  cwd: string,
-  opts: OutOpts & { run?: string; open?: boolean; serve?: boolean },
-): Promise<void> {
-  const { run, truth } = loadRun(cwd, opts.run);
-  const approval = readJson<Approval>(run, 'approval.json');
-  const body = readText(run, 'final-body.md');
-  const contributionReview = readJson<ReviewResult>(run, 'review-result.json');
-  if (!approval || body === undefined)
-    throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
-  const htmlPath = join(run.dir, 'preview.html');
-  const browser =
-    activeBrowserPreview(run.dir) ??
-    (opts.serve ? await serveBrowserPreview(run.dir) : undefined);
-  const handoffUrl = browser?.url ?? fileUrl(htmlPath);
-  const problem = snapshotProblem(truth.toplevel, approval.submission);
-  const handoff = previewHandoff({
-    root: truth.toplevel,
-    command: userCommand().run,
-    url: handoffUrl,
-    filePath: htmlPath,
-    run: run.id,
-    problem,
-  });
-  if (opts.open) openInBrowser(browser?.url ?? htmlPath);
-  const shown = approval.comicFile
-    ? body.replaceAll(COMIC_SRC, approval.comicFile)
-    : body;
-  emit(
-    opts,
-    {
-      run: run.id,
-      title: approval.title,
-      body: shown,
-      code: approval.code,
-      comic: approval.comicFile ?? null,
-      previewPath: htmlPath,
-      previewUrl: fileUrl(htmlPath),
-      ...(browser ? { browserUrl: browser.url, artifactUrls: browser.artifacts } : {}),
-      previewHandoff: handoff,
-      contributionReview: contributionReview && reviewSummary(contributionReview),
-    },
-    () =>
-      [
-        '-'.repeat(72),
-        `Title: ${approval.title}`,
-        '-'.repeat(72),
-        shown,
-        contributionReview ? reviewLine(contributionReview) : '',
-        '-'.repeat(72),
-        approval.comicFile ? `Comic image: ${fileUrl(approval.comicFile)}` : '',
-        `Approval code: ${approval.code}`,
-        '',
-        terminalHandoff(handoff, handoffUrl),
-      ]
-        .filter(Boolean)
-        .join('\n'),
-  );
-}
-
 /**
  * A file path as an absolute file:/// URL. Terminals and agent UIs turn these
  * into clickable links (Ctrl+click), unlike bare or relative paths.
  */
 export function fileUrl(path: string): string {
   return pathToFileURL(resolve(path)).href;
-}
-
-function openInBrowser(path: string): void {
-  if (process.platform === 'win32') exec('cmd', ['/c', 'start', '', path]);
-  else if (process.platform === 'darwin') exec('open', [path]);
-  else exec('xdg-open', [path]);
 }
 
 function ghVersionAtLeast(cwd: string, min: [number, number]): boolean {
@@ -763,11 +633,8 @@ function hostComic(
 
 export interface PublishOpts extends OutOpts {
   run?: string;
-  code?: string;
-  yolo?: boolean;
   push?: boolean;
   draft?: boolean;
-  ackPolicy?: boolean;
   hosting?: 'auto' | 'branch' | 'attach';
 }
 
@@ -794,66 +661,34 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
   const problem = snapshotProblem(truth.toplevel, approval.submission);
   if (problem)
     throw new UserError(
-      `${problem} Run tracetoon digest --run ${run.id}, then refresh context, description, review and preview before publishing.`,
+      `${problem} Run tracetoon digest --run ${run.id}, then refresh context, description, review and render before publishing.`,
     );
   if (approval.submission?.usedWorkingTree)
     throw new UserError(
-      `This preview includes uncommitted work. Commit the changes, then run tracetoon digest --run ${run.id} and refresh the preview before publishing.`,
+      `This render includes uncommitted work. Commit the changes, then run tracetoon digest --run ${run.id} and render again before publishing.`,
     );
-  const preparationProblem = readyProblem(truth.toplevel, run, approval);
+  const preparationProblem = publishProblem(truth.toplevel, run, approval);
   if (preparationProblem) throw new UserError(preparationProblem);
   const body = readFileSync(bodyPath, 'utf8');
-  const current = codeFor(approval, body);
-  if (current !== approval.code || sha(body) !== approval.bodySha) {
+  if (codeFor(approval, body) !== approval.code || sha(body) !== approval.bodySha) {
     throw new UserError(
-      'The rendered body or publication target changed after it was approved. Run `tracetoon render` again.',
+      'The rendered body or publication target changed after rendering. Run `tracetoon render` again.',
     );
   }
   if (approval.findings.length && !approval.allowFindings) {
     throw new UserError(
-      'The leak scan found something in the body. Fix it and render again.',
-    );
-  }
-  if (approval.policy === 'prohibited' && !opts.ackPolicy) {
-    throw new UserError(
-      'This repository appears to prohibit AI-assisted contributions. Re-run with --ack-policy only if the user has read the policy and still wants to post.',
-    );
-  }
-  if (approval.noPullRequests && !opts.ackPolicy) {
-    throw new UserError(
-      "This repository's agent instructions say never to open a PR. Re-run with --ack-policy only if the user has read them and decides to post anyway.",
+      'The leak scan found something in the description. Have the drafter remove it and render again; nothing was posted.',
     );
   }
   const config = loadConfig(truth.toplevel);
-  if (opts.yolo) {
-    const blockers = [
-      !config.yolo && 'yolo is off (enable with `tracetoon config set yolo true`)',
-      approval.findings.length > 0 && 'the leak scan found something',
-      approval.ambiguousSessions.length > 0 && 'some sessions are ambiguous',
-      approval.policy === 'prohibited' &&
-        'the repository policy may prohibit AI contributions',
-      approval.noPullRequests && "the repo's agent instructions say never to open a PR",
-    ].filter(Boolean);
-    if (blockers.length) {
-      throw new UserError(
-        `Yolo publish blocked: ${blockers.join('; ')}. Show the preview instead.`,
-        2,
-      );
-    }
-  } else if (opts.code !== approval.code) {
-    throw new UserError(
-      'Publishing needs the approval code shown with the preview (`--code`).',
-    );
-  }
 
   if (approval.comicFile && sha(readFileSync(approval.comicFile)) !== approval.comicSha)
-    throw new UserError('The comic image changed after approval. Refresh the preview.');
+    throw new UserError('The comic image changed after rendering. Render again.');
   const published = readLocal<{ code: string; url: string; hosting: string }>(
     join(run.dir, 'published.json'),
   );
   if (published?.code === approval.code && published.url) {
     // Repair a crash between the durable publication receipt and local lifecycle updates.
-    setReviewState(run, approval, 'published');
     const task = readTask(run);
     if (task) {
       task.state = 'published';
@@ -872,10 +707,11 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
         mode: approval.mode,
         hosting: published.hosting,
         reused: true,
+        message: publishSummary(approval, published.url),
         ci: 'not-waited',
         merged: false,
       },
-      () => `Published: ${published.url}\nGitHub checks run separately.`,
+      () => publishSummary(approval, published.url),
     );
     return;
   }
@@ -897,7 +733,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       if (opts.push === false) {
         throw new UserError(
           remoteSha
-            ? `Branch ${approval.head} on GitHub differs from the approved code. Push it (or re-run with --push) and publish again.`
+            ? `Branch ${approval.head} on GitHub differs from the rendered code. Push it (or re-run with --push) and publish again.`
             : `Branch ${approval.head} is not on GitHub yet. Push it (or re-run with --push) and publish again.`,
         );
       }
@@ -971,7 +807,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     if (matching?.url) {
       if (matching.headRefOid && matching.headRefOid !== approval.submission!.headSha)
         throw new UserError(
-          'The existing PR head changed; refresh this preview before retrying.',
+          'The existing PR head changed; refresh the digest and render before retrying.',
         );
       url = matching.url;
     } else {
@@ -1008,11 +844,9 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     url,
     at: new Date().toISOString(),
     code: approval.code,
-    yolo: !!opts.yolo,
     hosting: hosted.hosting,
     assetsCommit: hosted.assetsCommit,
   });
-  setReviewState(run, approval, 'published');
   const task = readTask(run);
   if (task) {
     task.state = 'published';
@@ -1032,25 +866,45 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
           image: hosted.imageUrl ?? null,
         }
       : undefined;
+  const message = publishSummary(approval, url);
   emit(
     opts,
     {
       url,
       mode: approval.mode,
       hosting: hosted.hosting,
+      message,
       share,
       ci: 'not-waited',
       merged: false,
     },
-    () =>
-      [
-        `Published: ${url}${hosted.hosting !== 'none' ? ` (comic hosted via ${hosted.hosting})` : ''}`,
-        'GitHub checks run separately. The PR has not been merged.',
-        share
-          ? `\nShare it (offer this to the user):\n${share.caption}${share.image ? `\nImage: ${share.image}` : ''}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
+    () => message,
   );
+}
+
+/**
+ * The few lines the agent relays after creating the PR: that Tracetoon made
+ * it, whether it has a comic (and why not), and how to change that.
+ */
+export function publishSummary(approval: Approval, url: string): string {
+  const number = /\/pull\/(\d+)$/.exec(url)?.[1];
+  const verb = approval.mode === 'edit' ? 'updated' : 'created';
+  const status = approval.comicStatus;
+  const comic =
+    !status || status.state === 'included'
+      ? status
+        ? 'Comic: included.'
+        : ''
+      : `Comic: none — ${status.detail ?? status.state}.`;
+  const left = approval.ambiguousSessions.length;
+  return [
+    `Tracetoon ${verb} PR${number ? ` #${number}` : ''}: ${url}`,
+    comic,
+    left
+      ? `Left out: ${left} session${left === 1 ? '' : 's'} that may not belong to this PR.`
+      : '',
+    `Comics: tracetoon config set comic off|allowed|always (now: ${approval.comicMode ?? 'allowed'})`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }

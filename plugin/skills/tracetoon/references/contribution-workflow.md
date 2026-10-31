@@ -4,7 +4,7 @@ The host coordinates three distinct native subagents. This is a skill workflow;
 the CLI does not start another model or need model credentials. Use the current
 host's actual delegation tool when available. Record actual invocation ids, not
 persona names. If delegation is unavailable, perform each phase sequentially with
-`mode: "inline"`; the preview must say inline draft / self-review.
+`mode: "inline"`; the render output must say inline draft / self-review.
 
 Pass the resolved repository root and absolute run folder to every role as local
 tool context. Artifact paths below are relative to that run folder; run Tracetoon
@@ -77,7 +77,7 @@ Recommendations and advisory guidance cannot create mandatory restrictions.
 Unchanged-source restrictions remain effective when only the submission changes;
 the research and review still need refreshing and remain labeled stale.
 When explicit
-attribution requirements conflict, the preview reports the conflict and retains
+attribution requirements conflict, render reports the conflict and retains
 existing rendering. Human-only sections must never be filled in by an agent.
 
 ## 2. Drafter prompt
@@ -190,7 +190,7 @@ reader could not name the change, correct the `script` (labels, nearer
 metaphor) or `premise`, not the art. Reports written before relevance review
 stay readable but count as incomplete. Preserve useful inference and fictional exaggeration without
 inventing actual results. Route defects to the appropriate correction, not an
-automatic style reroll. Findings remain advisory and appear in the preview;
+automatic style reroll. Findings remain advisory and appear in `render` output;
 missing comic assessment makes a new packet incomplete. Legacy reports remain
 readable and are refreshed when their rendered content changes.
 
@@ -295,8 +295,8 @@ by the CLI.
 
 The coordinator re-renders to validate the report. Fix draftable findings through
 the drafter, then render and launch a fresh reviewer. Allow two correction rounds
-after the first review. Show remaining findings and collection gaps in the preview.
+after the first review. Remaining findings and collection gaps appear in `render` output; mention
+them briefly after publishing.
 Any change to the rendered PR, submitted diff/revision, evidence, source snapshots,
 author evidence or comic invalidates an old review. Re-rendering alone does not
-invalidate an unchanged review. Do not request final approval before this loop;
-normal publishing approval is still required afterward.
+invalidate an unchanged review. Publish only after this loop.

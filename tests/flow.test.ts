@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { git } from '../src/util/exec.ts';
 import { decodeMeta, regionContent } from '../src/github/body.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
@@ -257,12 +256,14 @@ describe('other agents', () => {
 
 describe('render and publish', () => {
   setDefaultTimeout(60_000);
-  function prepared() {
+  function prepared(contributing?: string) {
     const repo = makeRepo();
     const remote = tempDir('tracetoon-remote-');
     git(remote, ['init', '-q', '--bare']);
     git(repo.root, ['remote', 'add', 'origin', remote]);
     git(repo.root, ['push', '-q', 'origin', 'main']);
+    if (contributing)
+      repo.commit('CONTRIBUTING.md', contributing, 'docs: contribution rules');
     new ClaudeLog(repo.root)
       .prompt('Add greeting')
       .write(join(repo.root, 'src/greet.ts'), GREET)
@@ -277,86 +278,105 @@ describe('render and publish', () => {
       '## Summary\nAdds a greeting helper. Thanks @octocat!\n',
     );
     writeFileSync(join(runDir, 'title.txt'), 'Add greeting helper\n');
-    return { repo, runDir };
+    return { repo, runDir, run: d.json.run as string };
   }
 
-  test('publish needs the approval code for the exact rendered text', () => {
-    const { repo, runDir } = prepared();
+  const ghCalls = () =>
+    readFileSync(ghLog, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+
+  test('publish creates the PR from the exact render without a code', () => {
+    const { repo, runDir, run } = prepared();
     const r = cli(repo.root, 'render');
     expect(r.code).toBe(0);
     expect(r.json.findings).toEqual([]);
-    const code = r.json.code as string;
+    expect(r.json.previewHandoff).toBeUndefined();
+    expect(existsSync(join(runDir, 'preview.html'))).toBe(false);
     const finalBody = readFileSync(join(runDir, 'final-body.md'), 'utf8');
     expect(finalBody).toContain('<!-- tracetoon:start -->');
     expect(finalBody).toContain('@​octocat');
-    expect(existsSync(join(runDir, 'preview.html'))).toBe(true);
-    // Keep browser transport as file: while chat uses an actionable file path.
-    const url = pathToFileURL(join(runDir, 'preview.html')).href;
-    expect(r.json.previewUrl).toBe(url);
-    const shown = cli(repo.root, 'preview');
-    expect(shown.json.previewUrl).toBe(url);
-    const text = spawnSync(process.execPath, [CLI, 'preview'], {
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
       cwd: repo.root,
       env,
       encoding: 'utf8',
     });
-    expect(text.stdout).toContain(`OPEN YOUR LOCAL PR PREVIEW: ${url}\n`);
-    expect(text.stdout.trimEnd()).toEndWith(r.json.previewHandoff.terminal);
-    expect(shown.json.previewHandoff.markdown).toContain(
-      `preview --run ${r.json.run} --serve --open`,
-    );
-    expect(shown.json.previewHandoff.markdown).not.toContain('file://');
+    expect(text.status).toBe(0);
+    expect(text.stdout.trimEnd()).toEndWith(`Next: tracetoon publish --run ${run}`);
 
-    expect(cli(repo.root, 'publish').code).toBe(1);
-    expect(cli(repo.root, 'publish', '--code', 'deadbeef').code).toBe(1);
-
-    const yolo = cli(repo.root, 'publish', '--yolo');
-    expect(yolo.code).toBe(2);
-    expect(yolo.json.error).toContain('yolo is off');
-
-    writeFileSync(join(runDir, 'final-body.md'), finalBody + '\nsneaky edit\n');
-    expect(cli(repo.root, 'publish', '--code', code).json.error).toContain(
-      'changed after it was approved',
-    );
-    writeFileSync(join(runDir, 'final-body.md'), finalBody);
-
-    const notPushed = cli(repo.root, 'publish', '--code', code, '--no-push');
+    const notPushed = cli(repo.root, 'publish', '--no-push');
     expect(notPushed.json.error).toContain('not on GitHub yet');
     expect(existsSync(ghLog)).toBe(false);
 
-    const ok = cli(repo.root, 'publish', '--code', code, '--push');
+    const ok = cli(repo.root, 'publish', '--push');
     expect(ok.code).toBe(0);
     expect(ok.json.url).toBe('https://github.com/acme/demo/pull/7');
-    const calls = readFileSync(ghLog, 'utf8')
-      .trim()
-      .split('\n')
-      .map((l) => JSON.parse(l));
-    const create = calls.find((c) => c.args[1] === 'create');
+    expect(ok.json.message).toStartWith(
+      'Tracetoon created PR #7: https://github.com/acme/demo/pull/7\n',
+    );
+    expect(ok.json.message).toMatch(/^Comic: (included|none — .+)\.$/m);
+    expect(ok.json.message).toContain(
+      'Comics: tracetoon config set comic off|allowed|always (now: ',
+    );
+    const create = ghCalls().find((c) => c.args[1] === 'create');
     expect(create.args).toContain('Add greeting helper');
+    expect(create.body).toBe(readFileSync(join(runDir, 'posted-body.md'), 'utf8'));
     expect(regionContent(create.body)).toBe(regionContent(finalBody));
-    expect(decodeMeta(create.body)?.submission).toBe(code);
+    const approval = JSON.parse(readFileSync(join(runDir, 'approval.json'), 'utf8'));
+    expect(decodeMeta(create.body)?.submission).toBe(approval.code);
   });
 
-  test('yolo publishes without a code only when enabled and clean', () => {
-    const { repo } = prepared();
+  test('a body edited after render must be rendered again', () => {
+    const { repo, runDir } = prepared();
     git(repo.root, ['push', '-q', 'origin', 'feature']);
-    expect(cli(repo.root, 'config', 'set', 'yolo', 'true').code).toBe(0);
     expect(cli(repo.root, 'render').code).toBe(0);
-    const r = cli(repo.root, 'publish', '--yolo');
+    const finalBody = readFileSync(join(runDir, 'final-body.md'), 'utf8');
+    writeFileSync(join(runDir, 'final-body.md'), finalBody + '\nsneaky edit\n');
+    expect(cli(repo.root, 'publish').json.error).toContain('description changed');
+    expect(existsSync(ghLog)).toBe(false);
+    expect(cli(repo.root, 'render').code).toBe(0);
+    const r = cli(repo.root, 'publish');
     expect(r.code).toBe(0);
     expect(r.json.url).toContain('/pull/7');
   });
 
   test('render refuses to post a body with a leaked secret', () => {
     const { repo, runDir } = prepared();
+    git(repo.root, ['push', '-q', 'origin', 'feature']);
     writeFileSync(
       join(runDir, 'body.md'),
       'Config: api_key = sk-live-abcdefghijklmnop1234567890\n',
     );
     const r = cli(repo.root, 'render');
     expect(r.json.findings.length).toBeGreaterThan(0);
-    expect(cli(repo.root, 'publish', '--code', r.json.code).json.error).toContain(
-      'leak scan',
+    expect(cli(repo.root, 'publish').json.error).toContain('leak scan');
+    expect(existsSync(ghLog)).toBe(false);
+    expect(cli(repo.root, 'render', '--allow-findings').code).toBe(0);
+    const posted = cli(repo.root, 'publish');
+    expect(posted.code).toBe(0);
+    expect(posted.json.url).toContain('/pull/7');
+  });
+
+  test('repo bans on AI PRs do not block a requested PR', () => {
+    const { repo, runDir, run } = prepared(
+      '# Contributing\n\nWe do not accept AI-generated contributions.\n',
     );
+    git(repo.root, ['push', '-q', 'origin', 'feature']);
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    });
+    expect(text.status).toBe(0);
+    expect(text.stdout).toContain('appears to prohibit AI-written contributions');
+    expect(text.stdout.trimEnd()).toEndWith(`Next: tracetoon publish --run ${run}`);
+    expect(JSON.parse(readFileSync(join(runDir, 'approval.json'), 'utf8')).policy).toBe(
+      'prohibited',
+    );
+    const r = cli(repo.root, 'publish');
+    expect(r.code).toBe(0);
+    expect(r.json.url).toBe('https://github.com/acme/demo/pull/7');
+    expect(ghCalls().some((c) => c.args[1] === 'create')).toBe(true);
   });
 });
