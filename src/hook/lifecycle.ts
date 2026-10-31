@@ -23,6 +23,7 @@ import { parseClaudeLines } from '../trace/claude.ts';
 import { parseAntigravityLines } from '../trace/antigravity.ts';
 import type { TraceSession } from '../trace/types.ts';
 import { publicationTargets } from './publicationTarget.ts';
+import { leakBlocks, leakNotice } from '../review/leak.ts';
 
 type Payload = Record<string, any>;
 export type LifecycleEvent = 'SessionStart' | 'PreToolUse' | 'PostToolUse' | 'Stop';
@@ -296,6 +297,17 @@ export function lifecycle(
     if (!active) continue;
     const { run, task } = active;
     const fingerprint = workFingerprint(repo.root);
+    // A render the leak scan blocked needs the user, not another automatic attempt.
+    const rendered = readLocal<Approval>(join(run.dir, 'approval.json'));
+    if (leakBlocks(rendered)) {
+      task.state = 'blocked';
+      task.reason = 'The leak scan found a possible secret in the PR text.';
+      saveTask(run, task);
+      return continuation(
+        agent,
+        `${leakNotice(rendered!)} Start your response with that, in plain words, so the user sees the PR was not submitted and why; do not claim a PR exists. A new PR request resumes task ${run.id}.`,
+      );
+    }
     const reason = `The PR requested in this session (task ${run.id}) has not been created. Finish it with the tracetoon skill: digest --run ${run.id}, context, research, drafting, comic and review, then tracetoon publish --run ${run.id}, and relay its message. If it cannot be made, record task block --run ${run.id} --reason <actual problem> and tell the user.`;
     const key = createHash('sha256')
       .update(`${run.id}:${fingerprint}:${task.recoveryGeneration ?? 0}`)

@@ -350,7 +350,25 @@ describe('render and publish', () => {
     );
     const r = cli(repo.root, 'render');
     expect(r.json.findings.length).toBeGreaterThan(0);
-    expect(cli(repo.root, 'publish').json.error).toContain('leak scan');
+    // The finding is located, so the user can act on it; its value is never echoed.
+    expect(r.json.findingAt.some((at: string) => /^final-body\.md:\d+$/.test(at))).toBe(
+      true,
+    );
+    // Agents read render --json: the notice is there, ready to relay first.
+    expect(r.json.leakNotice).toStartWith('PR NOT CREATED');
+    expect(r.json.leakNotice).not.toContain('sk-live');
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    }).stdout;
+    expect(text).toStartWith('PR NOT CREATED');
+    expect(text).not.toContain('sk-live');
+    const refused = cli(repo.root, 'publish').json.error;
+    expect(refused).toStartWith('PR NOT CREATED: the leak scan found a possible secret');
+    expect(refused).toContain('final-body.md:');
+    expect(refused).toContain('Tell the user this first');
+    expect(refused).not.toContain('sk-live');
     expect(existsSync(ghLog)).toBe(false);
     expect(cli(repo.root, 'render', '--allow-findings').code).toBe(0);
     const posted = cli(repo.root, 'publish');

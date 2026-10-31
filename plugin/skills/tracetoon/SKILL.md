@@ -231,7 +231,10 @@ that bypass on your own initiative.
    after publishing. Never manufacture human attestations or test evidence.
    Guidance and review findings are advisory.
    - If the leak scan reports a possible secret, return it to the drafter and
-     render again; nothing is posted while it still trips. Use
+     render again; nothing is posted while it still trips. If it still trips
+     after the drafter's rewrite, stop: **start your response** by telling the
+     user the PR was not created because of a possible secret, with the kind and
+     place `render` prints (`PR NOT CREATED: …`), never the value. Use
      `render --allow-findings` only if the user explicitly says the finding is fine.
    - If code changed, refresh `digest --run <id>`, the description, render and
      review; `publish` refuses an old render. Commit working-tree changes first.

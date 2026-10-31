@@ -148,6 +148,34 @@ describe('finished task completion contract', () => {
     expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
   });
 
+  test('a requested PR stopped by the leak scan is reported once, prominently, not retried', () => {
+    const repo = makeRepo();
+    git(repo.root, ['switch', '-q', '-c', 'feature']);
+    const p = { cwd: repo.root, session_id: 'pr-secret' };
+    lifecycle(
+      'claude',
+      'PreToolUse',
+      { ...p, tool_input: { command: 'gh pr create --fill' } },
+      env(),
+    );
+    const [active] = tasks(repository(repo.root).gitDir);
+    writeLocal(join(active!.run.dir, 'approval.json'), {
+      findings: [{ kind: 'api-key', count: 1 }],
+      findingAt: ['final-body.md:3'],
+      allowFindings: false,
+    });
+    const told = JSON.parse(lifecycle('claude', 'Stop', p, env())!);
+    expect(told.decision).toBe('block');
+    expect(told.reason).toStartWith(
+      'PR NOT CREATED: the leak scan found a possible secret',
+    );
+    expect(told.reason).toContain('api-key x1 at final-body.md:3');
+    expect(told.reason).toContain('Start your response with that');
+    expect(readTask(active!.run)?.state).toBe('blocked');
+    // Told once; the user decides what happens next.
+    expect(lifecycle('claude', 'Stop', p, env())).toBeUndefined();
+  });
+
   test('an intercepted PR write keeps the session open until the PR is published', () => {
     const repo = makeRepo();
     git(repo.root, ['switch', '-q', '-c', 'feature']);
