@@ -250,7 +250,7 @@ describe('comic end to end', () => {
       env,
       encoding: 'utf8',
     }).stdout;
-    expect(text).toContain('No comic: comic.json exists but no comic was drawn');
+    expect(text).toContain('Comic: none — no image route');
     // Each render makes a new approval code; publish with the latest one.
     const r = cli(repo.root, 'render');
     expect(r.code).toBe(0);
@@ -441,7 +441,7 @@ describe('comic end to end', () => {
     env.TRACETOON_CODEX_BIN = FAKE_CODEX;
     const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
     expect(art.code).toBe(1);
-    expect(art.json.error).toContain('prohibits AI-generated media');
+    expect(art.json.error).toContain('rules forbid images in PRs');
     // A comic made before the policy was collected is also withheld at render.
     mkdirSync(join(runDir, 'out'), { recursive: true });
     writeFileSync(join(runDir, 'out', 'comic.png'), PIXEL);
@@ -460,6 +460,72 @@ describe('comic end to end', () => {
     const blocked = cli(repo.root, 'publish', '--code', r.json.code, '--push');
     expect(blocked.code).toBe(1);
     expect(blocked.json.error).toContain('never to open a PR');
+  });
+
+  test('comic off: render leaves the comic out and the comic commands refuse', () => {
+    const { repo, runDir } = prepared();
+    mkdirSync(join(runDir, 'out'), { recursive: true });
+    writeFileSync(join(runDir, 'out', 'comic.png'), PIXEL);
+    expect(cli(repo.root, 'config', 'set', 'comic', 'off').code).toBe(0);
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    for (const args of [
+      ['comic', 'art', '--provider', 'codex', '--consent'],
+      ['comic', 'prompts'],
+      ['comic', 'render'],
+      ['comic', 'reroll'],
+    ]) {
+      const refused = cli(repo.root, ...args);
+      expect(refused.code).toBe(1);
+      expect(refused.json.error).toContain('Comics are off');
+    }
+    expect(existsSync(join(runDir, 'art', 'page.png'))).toBe(false);
+    const r = cli(repo.root, 'render');
+    expect(r.code).toBe(0);
+    expect(r.json.comicSha).toBeUndefined();
+    expect(r.json.comicMode).toBe('off');
+    expect(r.json.comicStatus).toEqual({
+      state: 'off',
+      detail: 'comic is off in your settings',
+    });
+    expect(readFileSync(join(runDir, 'final-body.md'), 'utf8')).not.toContain(
+      'tracetoon:comic-src',
+    );
+  });
+
+  test('comic always: a repo media ban does not stop the comic', () => {
+    const { repo, runDir } = prepared();
+    writeFileSync(
+      join(repo.root, 'AI_POLICY.md'),
+      'AI-generated media (images, art, video) is not allowed for outside contributions.\n',
+    );
+    expect(cli(repo.root, 'config', 'set', 'comic', 'always').code).toBe(0);
+    expect(
+      cli(repo.root, 'context', '--offline', '--run', runDir.split(/[\\/]/).pop()!).code,
+    ).toBe(0);
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(0);
+    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+    const r = cli(repo.root, 'render');
+    expect(r.code).toBe(0);
+    expect(r.json.comicMode).toBe('always');
+    expect(r.json.comicStatus).toEqual({ state: 'included' });
+    expect(r.json.comicSha).toMatch(/^[0-9a-f]{64}$/);
+    expect(readFileSync(join(runDir, 'final-body.md'), 'utf8')).toContain(
+      '{{tracetoon:comic-src}}',
+    );
+    // The preview and render say the comic overrides the repo's rule, not that it was left out.
+    const preview = readFileSync(join(runDir, 'preview.html'), 'utf8');
+    expect(preview).toContain(
+      'the comic is included because the comic setting is always',
+    );
+    expect(preview).not.toContain('so the comic is left out');
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    }).stdout;
+    expect(text).toContain('the comic is included because the comic setting is always');
   });
 
   test('exports an Agent Trace record with line ranges', () => {

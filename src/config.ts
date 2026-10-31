@@ -7,6 +7,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+/** Whether PRs get a comic: never, unless the repo's rules forbid images in PRs, or always. */
+export type ComicMode = 'off' | 'allowed' | 'always';
+export const COMIC_MODES = ['off', 'allowed', 'always'] as const;
+
+/** A comic setting from any source: old booleans and `true`/`false` strings still work. */
+export function comicMode(v: unknown): ComicMode {
+  if (v === false || v === 'false') return 'off';
+  if (v === true || v === 'true') return 'allowed';
+  return (COMIC_MODES as readonly unknown[]).includes(v) ? (v as ComicMode) : 'allowed';
+}
+
 export interface Config {
   /** Skip the preview step when every safety check passes. Default false. */
   yolo: boolean;
@@ -20,8 +31,8 @@ export interface Config {
   hosting: 'auto' | 'branch' | 'attach';
   /** Image providers the user agreed to send comic prompts to. */
   imageConsent: string[];
-  /** Make a comic at all. */
-  comic: boolean;
+  /** Make a comic: `off`, `allowed` (unless the repo forbids images in PRs), or `always`. */
+  comic: ComicMode;
   /** Pin one art style for every comic (a style idea id or any description), or `auto` to vary. */
   style: string;
   /** Use Tracetoon for PRs at all. Off here, or in any other switch, wins. */
@@ -36,7 +47,7 @@ export const DEFAULTS: Config = {
   budgetTokens: 12000,
   hosting: 'auto',
   imageConsent: [],
-  comic: true,
+  comic: 'allowed',
   style: 'auto',
 };
 
@@ -75,6 +86,7 @@ export function loadConfig(root?: string): Config {
     ...DEFAULTS,
     ...user,
     ...repo,
+    comic: comicMode(repo.comic ?? user.comic ?? DEFAULTS.comic),
     imageConsent: user.imageConsent ?? DEFAULTS.imageConsent,
   };
 }
@@ -84,18 +96,20 @@ export function setUserConfig(key: keyof Config, raw: string): Config {
   const cur = readJson(p);
   const def = DEFAULTS[key];
   const value =
-    typeof def === 'boolean'
-      ? raw === 'true'
-      : typeof def === 'number'
-        ? Number(raw)
-        : Array.isArray(def)
-          ? raw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : raw;
+    key === 'comic'
+      ? comicMode(raw)
+      : typeof def === 'boolean'
+        ? raw === 'true'
+        : typeof def === 'number'
+          ? Number(raw)
+          : Array.isArray(def)
+            ? raw
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : raw;
   const next = { ...cur, [key]: value };
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(next, null, 2) + '\n', 'utf8');
-  return { ...DEFAULTS, ...next };
+  return { ...DEFAULTS, ...next, comic: comicMode(next.comic ?? DEFAULTS.comic) };
 }

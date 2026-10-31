@@ -827,7 +827,7 @@ describe('CLI contribution handoffs', () => {
     const result = cli('render');
     expect(result.json.comicSha).toBeUndefined();
     expect(readFileSync(join(dir, 'final-body.md'), 'utf8')).not.toContain('<img');
-    expect(cli('comic', 'prompts').json.error).toContain('prohibits AI-generated media');
+    expect(cli('comic', 'prompts').json.error).toContain('rules forbid images in PRs');
   });
 
   test('research → draft → review → correction → preview; retained text and approval stay intact', () => {

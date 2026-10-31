@@ -203,7 +203,8 @@ export function contextCmd(
   });
   const config = loadConfig(truth.toplevel);
   // Compact creative choices help this comic differ. Skipped when comics are off.
-  const recent = config.comic ? recentComics(truth, { offline: opts.offline }) : [];
+  const recent =
+    config.comic !== 'off' ? recentComics(truth, { offline: opts.offline }) : [];
   const ctx = {
     repo: truth.remote ? `${truth.remote.owner}/${truth.remote.name}` : null,
     head: truth.head,
@@ -259,9 +260,9 @@ export function contextCmd(
         `Contribution research: ${contribution.sourceSeeds.length} source seed(s); guidance-request.json and changes.patch written${contribution.offline ? ' (offline: do not browse external links)' : ''}.`,
         `AI policy: ${policy.verdict}${policy.excerpts.length ? ` (${policy.excerpts.length} mention(s))` : ''}`,
         ...policy.excerpts.slice(0, 5).map((e) => `  ${e.file}:${e.line}: ${e.text}`),
-        `yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting} | comic: ${config.comic ? 'on' : 'off'}`,
+        `yolo: ${config.yolo} | prompt quoting: ${config.promptQuoting} | comic: ${config.comic}`,
         ...describeTitleRules(titleRules),
-        !config.comic
+        config.comic === 'off'
           ? ''
           : config.style && config.style !== 'auto'
             ? `Comic style: pinned to ${config.style}`

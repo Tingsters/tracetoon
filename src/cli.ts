@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import {
   loadConfig,
   setUserConfig,
+  COMIC_MODES,
   DEFAULTS,
   userConfigPath,
   type Config,
@@ -336,6 +337,8 @@ config.command('set <key> <value>').action((key: string, value: string) => {
     throw new UserError(
       `Unknown setting "${key}". Known: ${Object.keys(DEFAULTS).join(', ')}`,
     );
+  if (key === 'comic' && ![...COMIC_MODES, 'true', 'false'].includes(value))
+    throw new UserError('comic is off, allowed or always.');
   const c = setUserConfig(key as keyof Config, value);
   emit(g(), c, () => `${key} = ${String(c[key as keyof Config])}`);
 });

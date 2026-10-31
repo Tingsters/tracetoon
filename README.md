@@ -33,7 +33,8 @@ branch and turns them into a redacted digest your agent writes from.
   is kept on the next update.
 - **Follows the repo's rules.** It reads AI policies, `AGENTS.md`, PR templates
   and contribution guides. It adds the disclosure a repo asks for, leaves the
-  comic out where AI images aren't allowed, and won't open a PR where agents
+  comic out where a repo forbids images in PRs (unless the comic setting is
+  `always`), and won't open a PR where agents
   are told not to.
 
 In a test on 8 real PRs, drafts written this way had no factual errors (the
@@ -53,8 +54,15 @@ included, and the agent proofreads every word.
 
 <p align="center"><a href="https://github.com/Tingsters/tracetoon/pull/17"><img src="docs/example-pr17.png" alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign." width="640"></a><br><sub>The comic Tracetoon made for <a href="https://github.com/Tingsters/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</sub></p>
 
-Comics are optional. Without an image route, or with `tracetoon config set
-comic false`, the PR simply has none.
+Comics are optional, set with `tracetoon config set comic <mode>`:
+
+- `allowed` (default): a comic, unless the repo's contributing rules forbid
+  images, graphics, comics or similar in PRs.
+- `always`: a comic even where the repo forbids images in PRs.
+- `off`: never a comic.
+
+Without an image route the PR simply has none. Render says why a PR has no
+comic. Older `true`/`false` values still work (`allowed`/`off`).
 
 ## Install
 
@@ -288,7 +296,7 @@ respect the story's panel count.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
-| `comic` | `true` | Make a comic at all |
+| `comic` | `allowed` | `off`, `allowed` (unless the repo forbids images in PRs) or `always` |
 | `style` | `auto` | Pin one art style for every comic (an idea from `references/styles.md` or any description), or `auto` to vary |
 | `yolo` | `false` | Allow `publish --yolo` to skip the preview when every check passes |
 | `promptQuoting` | `paraphrase` | `verbatim` quotes your prompts in the PR |

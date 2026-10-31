@@ -30,7 +30,8 @@ import { pathToFileURL } from 'node:url';
 import { approvalCode, scanComment } from '@showtail/agent-traces/share/comment';
 import { transcript } from '../comic/script.ts';
 import type { ComicScript } from '../comic/types.ts';
-import { loadConfig } from '../config.ts';
+import { loadConfig, type ComicMode } from '../config.ts';
+import { comicDecision } from '../comic/decision.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { checkClaims, claimSummary, type ClaimFinding } from '../digest/claims.ts';
 import { checkChangeMap } from '../digest/changeMap.ts';
@@ -55,7 +56,7 @@ import type { TitleRules } from '../github/titleRules.ts';
 import { checkTitle, titleLine } from '../digest/titleCheck.ts';
 import { gh, git, run as exec } from '../util/exec.ts';
 import { TOOL_VERSION } from '../version.ts';
-import { renderedComic } from './comic.ts';
+import { readComicStatus, renderedComic } from './comic.ts';
 import { digestHash } from './digest.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import {
@@ -112,6 +113,12 @@ export function disclosureLine(
   return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon) and reviewed by the author</sub>`;
 }
 
+/** Whether the PR has a comic and, if not, why. */
+export interface ComicStatus {
+  state: 'included' | 'off' | 'policy' | 'skipped' | 'no-route' | 'failed' | 'none';
+  detail?: string;
+}
+
 export interface Approval {
   /** Managed tasks bind validation and the public worktree to the author handoff. */
   workspaceFingerprint?: string;
@@ -133,6 +140,8 @@ export interface Approval {
   /** The repo's agent instructions say never to open a PR. */
   noPullRequests?: boolean;
   ambiguousSessions: string[];
+  comicMode?: ComicMode;
+  comicStatus?: ComicStatus;
   renderedAt: string;
   /** Optional only for reading pre-upgrade previews; publishing requires it. */
   submission?: SubmissionSnapshot;
@@ -251,8 +260,20 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   writeJson(run, 'title-checks.json', titleFindings);
 
   const script = readJson<ComicScript>(run, 'comic.json');
-  const mediaBanned = ctx.aiPolicy.media === 'prohibited';
-  const comic = opts.noComic || mediaBanned ? undefined : renderedComic(run);
+  const comicMode = loadConfig(truth.toplevel).comic;
+  const decision = comicDecision(comicMode, ctx.aiPolicy);
+  const mediaBanned = decision.state === 'policy';
+  const comic = opts.noComic || !decision.include ? undefined : renderedComic(run);
+  const comicStatus: ComicStatus =
+    comic && script
+      ? { state: 'included' }
+      : opts.noComic
+        ? { state: 'skipped', detail: 'left out for this PR' }
+        : !decision.include
+          ? { state: decision.state ?? 'off', detail: decision.reason }
+          : (((s) => (s ? { state: s.state, detail: s.detail } : undefined))(
+              readComicStatus(run),
+            ) ?? { state: 'none', detail: 'none was drawn for this PR' });
   // The description comes first; the comic is the closing beat, unless the
   // writer placed it with the marker. A short disclosure goes last.
   let content = defuseMentions(bodyMd).replace(COMIC_MARKER, '');
@@ -318,6 +339,8 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     ambiguousSessions: digest.sessions
       .filter((s) => s.band === 'ambiguous')
       .map((s) => s.ref),
+    comicMode,
+    comicStatus,
     renderedAt: new Date().toISOString(),
     submission: captured,
   };
@@ -418,9 +441,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       notes,
       policy: ctx.aiPolicy,
       outline: writeYourself ? outline : undefined,
-      comicHeldBack:
-        mediaBanned &&
-        ['comic.png', 'comic.svg'].some((name) => existsSync(join(run.dir, 'out', name))),
+      comicHeldBack: mediaBanned,
+      comicOverride:
+        comicStatus.state === 'included' && ctx.aiPolicy.media === 'prohibited',
       digest,
       previewComic,
       contributionReview,
@@ -507,9 +530,12 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`
           : '',
         policyLines(ctx.aiPolicy, mediaBanned),
-        !comic && !opts.noComic && !mediaBanned && existsSync(join(run.dir, 'comic.json'))
-          ? 'No comic: comic.json exists but no comic was drawn, so this PR has none.'
+        comicStatus.state === 'included' && ctx.aiPolicy.media === 'prohibited'
+          ? "Policy: this repository's rules forbid images in PRs; the comic is included because the comic setting is always."
           : '',
+        comicStatus.state === 'included'
+          ? 'Comic: included.'
+          : `Comic: none — ${comicStatus.detail ?? comicStatus.state}.`,
         approval.policy === 'prohibited'
           ? 'WARNING: this repository appears to prohibit AI-assisted contributions. Read the policy before posting.'
           : '',
@@ -536,7 +562,7 @@ function policyLines(policy: AiPolicy, mediaBanned: boolean): string {
     );
   if (mediaBanned)
     out.push(
-      'Policy: AI-generated images are not allowed here, so the comic is left out.',
+      "Policy: this repository's rules forbid images in PRs, so the comic is left out (comic setting: allowed).",
     );
   if (policy.noPullRequests)
     out.push(
