@@ -110,6 +110,21 @@ describe('which commands are PR writes', () => {
       'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"title":"x"}\'',
       true,
     ],
+    // The state-only check reads the payload, never the URL, and can't see into files.
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/state/pulls/3 -d \'{"title":"x"}\'',
+      true,
+    ],
+    ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d @state.json', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 --input state.json', true],
+    ['gh api -X POST repos/acme/demo/pulls -f state=open -f head=f -f base=main', true],
+    // HEAD is a read, for gh/hub api as for the HTTP clients.
+    ['gh api -X HEAD repos/acme/demo/pulls', false],
+    // PowerShell's colon form for -Uri.
+    [
+      'Invoke-RestMethod -Method Post -Uri:https://api.github.com/repos/acme/demo/pulls',
+      true,
+    ],
     // Other forges' pulls APIs are not GitHub PRs.
     [
       'curl -X POST https://gitea.example.com/api/v1/repos/acme/demo/pulls -d "{}"',

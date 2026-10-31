@@ -53,8 +53,15 @@ export interface PrWrite {
  */
 function stateOnly(url: string, args: string[]): boolean {
   if (!/\/pulls\/\d+\/?(?:[?#]|$)/.test(url)) return false;
-  const payload = args.join(' ');
-  return /\bstate\b/i.test(payload) && !/\b(title|body)\b/i.test(payload);
+  // Judge the payload only, never the URL (a repo can be named "state").
+  const payload = args.filter(
+    (a) => a !== url && !pullsRepo(a) && !/^https?:\/\//i.test(a),
+  );
+  // A payload read from a file can't be seen from here; count it as a write.
+  if (payload.some((a) => /(^|=|:)@/.test(a) || a === '--input' || a === '--body-file'))
+    return false;
+  const text = payload.join(' ');
+  return /\bstate\b/i.test(text) && !/\b(title|body)\b/i.test(text);
 }
 
 /** `gh api` / `hub api`: a non-GET call to the pulls endpoint or a PR mutation. */
@@ -67,9 +74,12 @@ function apiWrite(args: string[]): PrWrite | undefined {
       ? 'POST'
       : 'GET')
   ).toUpperCase();
-  if (method === 'GET') return;
+  if (method === 'GET' || method === 'HEAD') return;
   const path = args.find((a) => pullsRepo(a));
-  if (path) return stateOnly(path, args) ? undefined : { repo: pullsRepo(path) };
+  if (path)
+    return method === 'PATCH' && stateOnly(path, args)
+      ? undefined
+      : { repo: pullsRepo(path) };
   if (args.some((a) => PR_MUTATION.test(a))) return {};
 }
 
@@ -92,7 +102,9 @@ function flagValue(
 }
 
 /** curl, wget, HTTPie and PowerShell web calls that write a PR. */
-function httpWrite(program: string, args: string[]): PrWrite | undefined {
+function httpWrite(program: string, rawArgs: string[]): PrWrite | undefined {
+  // PowerShell also takes `-Uri:https://...`; read the value after the colon.
+  const args = rawArgs.map((a) => a.replace(/^-[a-z]+:(?=https?:\/\/)/i, ''));
   const urls = args.filter((a) => GITHUB_API.test(a));
   const url = urls.find((u) => pullsRepo(u));
   const graphql =
