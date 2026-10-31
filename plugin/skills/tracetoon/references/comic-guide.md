@@ -7,15 +7,15 @@ still get the joke, because labels name the real parts. Fun, true to the digest
 (no invented features, no fake results), and about *this* change.
 
 A comic can be well drawn and funny yet explain nothing. A waiter serving a
-photo of soup is a good gag, but no reader connects it to "the preview label
-looked like a link but didn't open". Name the real thing and the same gag
-works: label the photo `OPEN YOUR LOCAL PR PREVIEW`.
+photo of soup is a good gag, but no reader connects it to "the PR link in the
+terminal looked clickable but didn't open". Name the real thing and the same
+gag works: label the photo `PR #34`.
 
 ## 1. Anchor the change, then find the joke
 
 Start with the change itself: one sentence a reviewer would agree with, and the
 1–4 real names the PR uses for it (a command, flag, file, error, setting or
-concept: `ready --serve`, "skipped tests", `comic.json`). Write them in the
+concept: `publish --draft`, "skipped tests", `comic.json`). Write them in the
 script's `anchor` with a `mapping` from each drawn element to the technical
 thing it stands for. Then find the supported event, decision, or changed
 behavior from the digest that makes it funny. Keep the evidence reference in
@@ -28,8 +28,8 @@ system, or pick another concept.
 
 **Metaphor distance.** Choose the nearest metaphor that still gives a joke, and
 justify going further:
-1. The system's own parts as characters or objects: the hook, the preview
-   server, a CI job, a cache entry, two requests racing, with their real names.
+1. The system's own parts as characters or objects: the hook, the leak
+   scanner, a CI job, a cache entry, two requests racing, with their real names.
 2. A developer-world scene: a terminal, a review thread, a CI page, a stand-up.
 3. An everyday analogy (a restaurant, a bakery, a classroom). Allowed when it
    is the strongest joke, but only with labels on the elements that carry the

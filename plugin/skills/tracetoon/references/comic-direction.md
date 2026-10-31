@@ -37,7 +37,7 @@ Write brief candidates to `comic-design.json` in the local run: the anchor
 and PR-test result, the joke, necessary beats, frame arrangement, visible-title treatment, cast, visual style
 and why each could work. Choose one and state why it beats the other two.
 Put its concise reason in `comic.json.designReason`. This reasoning stays local;
-only compact categorical creative metadata is posted with the approved comic.
+only compact categorical creative metadata is posted with the comic.
 
 The candidates must differ in premise or visual storytelling, not just colors
 or a new animal species. Compare them with the last five available
@@ -70,4 +70,4 @@ The final visual check matters: attractive hierarchy, readable text and labels
 at PR and phone widths, unambiguous sequencing, no invented outcome, an actual
 payoff, and a picture that points at the change.
 Generate one finished image after selection; redraw only for a concrete problem
-or an explicit user reroll. The existing consent and preview approval apply.
+or an explicit user reroll. The existing image-route consent applies.

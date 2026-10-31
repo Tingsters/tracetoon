@@ -12,7 +12,6 @@ import { repoRoot, switchState } from '../hook/switches.ts';
 import { git } from '../util/exec.ts';
 import { selfProgram, userCommand } from '../util/userCommand.ts';
 export { userCommand } from '../util/userCommand.ts';
-import { pendingNotice } from './pending.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { taskSummary } from '../workflow/state.ts';
 import { BUILD_INFO } from '../version.ts';
@@ -77,8 +76,6 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
   const gitDir = root
     ? git(root, ['rev-parse', '--absolute-git-dir']).stdout.trim()
     : undefined;
-  const pending =
-    root && gitDir ? pendingNotice(root, gitDir) : { pendingDrafts: [], text: '' };
   const workflowTasks = gitDir ? taskSummary(gitDir) : [];
   emit(
     opts,
@@ -88,7 +85,6 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
       command,
       build: BUILD_INFO,
       tasks: workflowTasks,
-      pendingDrafts: pending.pendingDrafts,
     },
     () =>
       [
@@ -106,7 +102,6 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
         state.enabled
           ? 'Turn off: tracetoon off [--repo | --local], or TRACETOON=0 for one command.'
           : 'Turn on: tracetoon on [--repo | --local].',
-        pending.text,
         ...workflowTasks
           .filter((t) => ['preparing', 'blocked'].includes(t.state))
           .map(

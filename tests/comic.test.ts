@@ -171,33 +171,33 @@ describe('comic end to end', () => {
     ]);
     expect(meta.comic).toMatchObject({ panelCount: 2, styleFamily: 'flat-color' });
     expect(meta.style).toBe('sunday-strip');
-    const previewHtml = readFileSync(join(runDir, 'preview.html'), 'utf8');
-    // Assert the image inside the actual PR body, not the separate share card.
-    const description = /<div class="card">([\s\S]*?)<\/div>/.exec(previewHtml)?.[1];
-    const imageSrc = /<img\b[^>]*\bsrc="([^"]+)"/.exec(description ?? '')?.[1];
-    expect(imageSrc).toBe(
-      `data:image/png;base64,${readFileSync(join(runDir, 'out/comic.png')).toString('base64')}`,
-    );
-
-    expect(description).toContain(
+    // No local preview: render freezes the body, and an author's own image stays as written.
+    expect(existsSync(join(runDir, 'preview.html'))).toBe(false);
+    expect(finalBody).toContain(
       '<img src="tracetoon-preview-comic.png" alt="author image">',
     );
+    expect(r.json.comicStatus).toEqual({ state: 'included' });
+    expect(r.json.comicMode).toBe('allowed');
 
-    // Swapping the image after approval is refused.
+    // Swapping the image after rendering is refused.
     const png = readFileSync(join(runDir, 'out', 'comic.png'));
     writeFileSync(
       join(runDir, 'out', 'comic.png'),
       Buffer.concat([png, Buffer.from('x')]),
     );
-    expect(
-      cli(repo.root, 'publish', '--code', r.json.code, '--push').json.error,
-    ).toContain('comic image changed');
+    expect(cli(repo.root, 'publish', '--push').json.error).toContain('comic changed');
     writeFileSync(join(runDir, 'out', 'comic.png'), png);
+    expect(ghCalls().some((c) => c.args[1] === 'create')).toBe(false);
 
-    const ok = cli(repo.root, 'publish', '--code', r.json.code, '--push');
+    const ok = cli(repo.root, 'publish', '--push');
     expect(ok.code).toBe(0);
     expect(ok.json.hosting).toBe('branch');
+    expect(ok.json.message).toContain('Tracetoon created PR #7');
+    expect(ok.json.message).toContain('Comic: included.');
     const create = ghCalls().find((c) => c.args[1] === 'create')!;
+    expect(create.body).toContain(
+      '<img src="tracetoon-preview-comic.png" alt="author image">',
+    );
     const m =
       /https:\/\/github\.com\/acme\/demo\/blob\/([0-9a-f]{40})\/(comics\/[^?]+comic\.png)\?raw=true/.exec(
         create.body!,
@@ -237,6 +237,12 @@ describe('comic end to end', () => {
     expect(art.json.error).toContain('No approved image route');
     expect(art.json.error).toContain('tracetoon comic prompts');
     expect(art.json.error).toContain('skip the comic');
+    expect(
+      JSON.parse(readFileSync(join(runDir, 'comic-status.json'), 'utf8')),
+    ).toMatchObject({
+      state: 'no-route',
+      detail: expect.stringMatching(/^no image route/),
+    });
     expect(cli(repo.root, 'comic', 'art', '--provider', 'builtin').json.error).toContain(
       'removed',
     );
@@ -250,17 +256,26 @@ describe('comic end to end', () => {
       env,
       encoding: 'utf8',
     }).stdout;
-    expect(text).toContain('No comic: comic.json exists but no comic was drawn');
-    // Each render makes a new approval code; publish with the latest one.
+    expect(text).toContain('Comic: none — no image route');
+    expect(text).toContain('Next: tracetoon publish --run');
+    expect(text).not.toContain('Approval code');
     const r = cli(repo.root, 'render');
     expect(r.code).toBe(0);
     expect(r.json.comicSha).toBeUndefined();
+    expect(r.json.comicStatus).toMatchObject({
+      state: 'no-route',
+      detail: expect.stringMatching(/^no image route/),
+    });
     const body = readFileSync(join(runDir, 'final-body.md'), 'utf8');
     expect(body).not.toContain('tracetoon:comic-src');
     expect(decodeMeta(body)!.style).toBeUndefined();
-    const pub = cli(repo.root, 'publish', '--code', r.json.code, '--push');
+    const pub = cli(repo.root, 'publish', '--push');
     expect(pub.code).toBe(0);
     expect(pub.json.error).toBeUndefined();
+    expect(pub.json.message).toContain('Comic: none — no image route');
+    expect(pub.json.message).toContain(
+      'Comics: tracetoon config set comic off|allowed|always (now: allowed)',
+    );
   });
 
   test('art the host agent saved itself is used even with no approved route', () => {
@@ -427,7 +442,7 @@ describe('comic end to end', () => {
     expect(cli(repo.root, 'config', 'set', 'theme', 'pets').code).toBe(1);
   });
 
-  test("follows the repo's AI policy: no comic when AI images are banned, its disclosure form, and a no-PR rule", () => {
+  test("follows the repo's AI policy: no comic when AI images are banned, its disclosure form, and a no-PR rule the user overrode", () => {
     const { repo, runDir } = prepared();
     writeFileSync(
       join(repo.root, 'AI_POLICY.md'),
@@ -441,7 +456,7 @@ describe('comic end to end', () => {
     env.TRACETOON_CODEX_BIN = FAKE_CODEX;
     const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
     expect(art.code).toBe(1);
-    expect(art.json.error).toContain('prohibits AI-generated media');
+    expect(art.json.error).toContain('rules forbid images in PRs');
     // A comic made before the policy was collected is also withheld at render.
     mkdirSync(join(runDir, 'out'), { recursive: true });
     writeFileSync(join(runDir, 'out', 'comic.png'), PIXEL);
@@ -452,14 +467,98 @@ describe('comic end to end', () => {
     const body = readFileSync(join(runDir, 'final-body.md'), 'utf8');
     expect(body).not.toContain('{{tracetoon:comic-src}}');
     expect(body).toContain('AI use:');
-    const preview = readFileSync(join(runDir, 'preview.html'), 'utf8');
-    expect(preview).toContain('Repository policy:');
-    expect(preview).toContain('comic is left out');
+    expect(r.json.comicStatus.state).toBe('policy');
+    expect(r.json.comicStatus.detail).toContain(
+      "this repo's contributing rules forbid images in PRs (AI_POLICY.md:2)",
+    );
+    expect(existsSync(join(runDir, 'preview.html'))).toBe(false);
     expect(existsSync(join(runDir, 'evidence-notes.md'))).toBe(true);
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    }).stdout;
+    expect(text).toContain(
+      "Comic: none — this repo's contributing rules forbid images in PRs",
+    );
+    expect(text).toContain('The user asked for this one, so it is still posted');
 
-    const blocked = cli(repo.root, 'publish', '--code', r.json.code, '--push');
-    expect(blocked.code).toBe(1);
-    expect(blocked.json.error).toContain('never to open a PR');
+    // The user asked for this PR, so the agent-instructions rule doesn't stop it.
+    const posted = cli(repo.root, 'publish', '--push');
+    expect(posted.code).toBe(0);
+    expect(posted.json.message).toContain(
+      "Comic: none — this repo's contributing rules forbid images in PRs",
+    );
+    const create = ghCalls().find((c) => c.args[1] === 'create')!;
+    expect(create.body).not.toContain('comic.png');
+  });
+
+  test('comic off: render leaves the comic out and the comic commands refuse', () => {
+    const { repo, runDir } = prepared();
+    mkdirSync(join(runDir, 'out'), { recursive: true });
+    writeFileSync(join(runDir, 'out', 'comic.png'), PIXEL);
+    expect(cli(repo.root, 'config', 'set', 'comic', 'off').code).toBe(0);
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    for (const args of [
+      ['comic', 'art', '--provider', 'codex', '--consent'],
+      ['comic', 'prompts'],
+      ['comic', 'render'],
+      ['comic', 'reroll'],
+    ]) {
+      const refused = cli(repo.root, ...args);
+      expect(refused.code).toBe(1);
+      expect(refused.json.error).toContain('Comics are off');
+    }
+    expect(existsSync(join(runDir, 'art', 'page.png'))).toBe(false);
+    const r = cli(repo.root, 'render');
+    expect(r.code).toBe(0);
+    expect(r.json.comicSha).toBeUndefined();
+    expect(r.json.comicMode).toBe('off');
+    expect(r.json.comicStatus).toEqual({
+      state: 'off',
+      detail: 'comic is off in your settings',
+    });
+    expect(readFileSync(join(runDir, 'final-body.md'), 'utf8')).not.toContain(
+      'tracetoon:comic-src',
+    );
+    const pub = cli(repo.root, 'publish', '--push');
+    expect(pub.code).toBe(0);
+    expect(pub.json.message).toContain('Comic: none — comic is off in your settings.');
+    expect(pub.json.message).toContain('(now: off)');
+  });
+
+  test('comic always: a repo media ban does not stop the comic', () => {
+    const { repo, runDir } = prepared();
+    writeFileSync(
+      join(repo.root, 'AI_POLICY.md'),
+      'AI-generated media (images, art, video) is not allowed for outside contributions.\n',
+    );
+    expect(cli(repo.root, 'config', 'set', 'comic', 'always').code).toBe(0);
+    expect(
+      cli(repo.root, 'context', '--offline', '--run', runDir.split(/[\\/]/).pop()!).code,
+    ).toBe(0);
+    env.TRACETOON_CODEX_BIN = FAKE_CODEX;
+    const art = cli(repo.root, 'comic', 'art', '--provider', 'codex', '--consent');
+    expect(art.code).toBe(0);
+    expect(cli(repo.root, 'comic', 'render').code).toBe(0);
+    const r = cli(repo.root, 'render');
+    expect(r.code).toBe(0);
+    expect(r.json.comicMode).toBe('always');
+    expect(r.json.comicStatus).toEqual({ state: 'included' });
+    expect(r.json.comicSha).toMatch(/^[0-9a-f]{64}$/);
+    expect(readFileSync(join(runDir, 'final-body.md'), 'utf8')).toContain(
+      '{{tracetoon:comic-src}}',
+    );
+    const text = spawnSync(process.execPath, [CLI, 'render'], {
+      cwd: repo.root,
+      env,
+      encoding: 'utf8',
+    }).stdout;
+    expect(text).toContain('the comic is included because the comic setting is always');
+    const pub = cli(repo.root, 'publish', '--push');
+    expect(pub.code).toBe(0);
+    expect(pub.json.message).toContain('Comic: included.');
+    expect(pub.json.message).toContain('(now: always)');
   });
 
   test('exports an Agent Trace record with line ranges', () => {

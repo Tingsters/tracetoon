@@ -6,7 +6,7 @@
 about tests nobody saw pass. Tracetoon writes the PR from what actually
 happened in your agent sessions (your prompts, the plan, the decisions, the
 commands that ran), and adds a comic of the story that people want to read.
-You see the exact text and comic, and approve them, before anything is posted.
+When you ask your agent for a PR, Tracetoon writes it, checks it, and creates it.
 
 ## Better PRs
 
@@ -23,18 +23,19 @@ branch and turns them into a redacted digest your agent writes from.
 - **Short and reviewable.** The problem and the result first, the reason for
   the approach, what was checked, and where to start reviewing. No
   file-by-file lists or test-count inventories.
-- **Checked before you post.** An advisory claim check marks sentences the
-  evidence contradicts or doesn't establish, right beside them in the preview.
-  It also works on text you wrote yourself.
-- **Optional notes, never a form.** Next to the draft, Tracetoon lists what a
-  reviewer may want that the logs don't show (a manual check, the reason for a
-  choice). Add them or skip them.
+- **Checked before it's posted.** An advisory claim check marks sentences the
+  evidence contradicts or doesn't establish, and an independent reviewer checks
+  the description against the diff. It also works on text you wrote yourself.
+- **Optional notes, never a form.** Tracetoon lists what a reviewer may want
+  that the logs don't show (a manual check, the reason for a choice). Your agent
+  may mention them after the PR is up; add them or skip them.
 - **Your words stay yours.** Text you write in the PR, or edit on GitHub later,
   is kept on the next update.
 - **Follows the repo's rules.** It reads AI policies, `AGENTS.md`, PR templates
   and contribution guides. It adds the disclosure a repo asks for, leaves the
-  comic out where AI images aren't allowed, and won't open a PR where agents
-  are told not to.
+  comic out where a repo forbids images in PRs (unless the comic setting is
+  `always`), and reports any policy against AI contributions or agent PRs (your
+  request for the PR is the override).
 
 In a test on 8 real PRs, drafts written this way had no factual errors (the
 original descriptions had 10) and 2 unsupported claims instead of 34, at about
@@ -54,7 +55,7 @@ included, and the agent proofreads every word.
 <p align="center"><a href="https://github.com/Tingsters/tracetoon/pull/17"><img src="docs/example-pr17.png" alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign." width="640"></a><br><sub>The comic Tracetoon made for <a href="https://github.com/Tingsters/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</sub></p>
 
 Comics are optional. Without an image route, or with `tracetoon config set
-comic false`, the PR simply has none.
+comic off`, the PR simply has none, and the message after the PR says why.
 
 ## Install
 
@@ -88,8 +89,7 @@ Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
 again. Downloads are checked against the release's SHA-256 checksums.
 After an update, reload your host; Codex may require trusting the new entries
 in `/hooks`. `tracetoon doctor --json` distinguishes configured hooks, observed
-handler invocations, and mismatched runtimes. Missing completion hooks mean
-automatic preparation is not active, even if the older PR-command hook exists.
+handler invocations, and mismatched runtimes.
 
 ### Set up comics
 
@@ -113,20 +113,22 @@ start of your first PR.
 ### Tracetoon is the default for PRs, and easy to turn off
 
 The installer adds a small hook to each agent. When an agent tries to open a PR
-(or rewrite its title or body), the hook points it to Tracetoon, so you always
-get a preview first. It recognizes `gh pr create` and `gh pr edit`, gh aliases
-for them, `hub pull-request`, git-extras `git pull-request`, Git Town
-`git town propose`, writes to GitHub's pulls API (through `gh api`, `hub api`,
-curl, wget, HTTPie or PowerShell, including GraphQL `createPullRequest`) and
-the GitHub connector tools agents use. Stacking tools such as Graphite and
-git-spice are left alone, since they manage whole stacks of PRs, as are API
-reads, state-only changes (closing a PR) and other forges' APIs. A call made
-from inside a script, or a GraphQL mutation read from a file, can't be
-recognized from the command line. Ordinary `git push`
+(or rewrite its title or body), the hook points it to Tracetoon, which writes
+the description and comic, then creates the PR. It recognizes `gh pr create`
+and `gh pr edit`, gh aliases for them, `hub pull-request`, git-extras
+`git pull-request`, Git Town `git town propose`, writes to GitHub's pulls API
+(through `gh api`, `hub api`, curl, wget, HTTPie or PowerShell, including
+GraphQL `createPullRequest`) and the GitHub connector tools agents use.
+Stacking tools such as Graphite and git-spice are left alone, since they manage
+whole stacks of PRs, as are API reads, state-only changes (closing a PR) and
+other forges' APIs. A call made from inside a script, or a GraphQL mutation
+read from a file, can't be recognized from the command line. Ordinary `git push`
 is left alone: pushing a branch for CI, a tag or a release commit is your
 workflow, not a PR. The hook only touches its
 own entries in each agent's config, backs up each file before the first change,
-and lists every file it changed. Skip it with `TRACETOON_NO_HOOK=1`. Codex asks
+and lists every file it changed. If a PR command was redirected, the agent's
+stop hook keeps it from finishing until that PR is published, so a redirected PR
+isn't left behind. Skip it with `TRACETOON_NO_HOOK=1`. Codex asks
 you to trust a new hook once (`/hooks`), and the Antigravity IDE picks it up
 after a restart.
 
@@ -163,21 +165,28 @@ Turn it off at whichever level you need. Any "off" wins:
 
 ## How it works
 
-When a cohesive coding change is finished, the agent prepares a local Tracetoon
-automatically. You do not need to remember to ask for a PR. Planning, questions
-and unfinished work stay in progress; refinements update the same unpublished
-draft. If another PR is awaiting review, its reminder and link remain available.
+Tracetoon runs when you ask your agent for a PR (or when the agent runs
+`gh pr create` and the hook redirects it). Finishing a task does not open a PR
+on its own. There is no preview or approval step: the agent prepares the PR,
+has it reviewed, and creates it, then tells you what it did:
 
-Local checks finish before the author handoff. Open the prominent preview link,
-skim the description and comic, and reply **"Publish this PR"**. That approval
-covers pushing the approved branch, hosting its comic, and creating/updating the
-PR. The GitHub URL is returned without waiting for remote CI. Merging is separate.
+```text
+Tracetoon created PR #34: https://github.com/o/r/pull/34
+Comic: included.
+Left out: 1 session that may not belong to this PR.
+Comics: tracetoon config set comic off|allowed|always (now: allowed)
+```
 
-The host uses `task begin`, `check`, `task complete`, and `ready` to track these
-steps. Completed checks are tied to their tested content and environment, so
-unchanged approval does not repeat tests or regenerate the comic. CI-only checks,
-failures and unavailable evidence stay visible. `task defer --reason` records
-unfinished work; `task block --reason` records a preparation problem.
+When there's no comic, the second line says why (comics off in your settings,
+the repo's contributing rules forbid images in PRs, no image route set up, or
+drawing failed). The GitHub URL is returned without waiting for remote CI.
+Tracetoon never merges.
+
+While working, the agent registers the task with `task begin` and records checks
+with `check`. Completed checks are tied to their tested content and environment,
+so a commit with unchanged content does not repeat tests. CI-only checks,
+failures and unavailable evidence stay visible. `task complete`, `task defer`
+and `task block` are optional bookkeeping.
 
 1. **`tracetoon doctor`** checks git and gh, whether you can push to the repo,
    and whether a comic can be drawn, before any work starts.
@@ -187,7 +196,8 @@ unfinished work; `task block --reason` records a preparation problem.
    from worktrees since deleted), PR links, the branch, timing and working
    folder. It keeps your prompts, plans, decisions and each verification run,
    with how that run relates to later edits. Everything is redacted: secrets,
-   personal data, your home path and username.
+   personal data, your home path and username. Sessions that may not belong to
+   the PR are left out and counted in the message after the PR.
 3. **`tracetoon context`** reads the PR template, AI policies and agent
    instructions, any existing PR (and edits made to it on GitHub), your
    settings, and the art styles of the repo's recent comics. It also prepares
@@ -198,8 +208,8 @@ unfinished work; `task block --reason` records a preparation problem.
    drafter receives the guidance, redacted traces and submitted code, then writes
    the description (`body.md`) and comic brief (`comic.json`).
 5. **`tracetoon comic art` / `comic render`** draw the page with the image
-   route you approved, add a small "made with Tracetoon" footer bar, and print
-   the words to proofread.
+   route you approved (subject to the `comic` setting), add a small "made with
+   Tracetoon" footer bar, and print the words to proofread.
    The drafter first compares three short story/layout/cast concepts, then draws
    one image. Composition follows the joke: a single visual metaphor, a two-panel
    comparison, a vertical pause, unequal frames, insets or a diagonal split.
@@ -212,20 +222,18 @@ unfinished work; `task block --reason` records a preparation problem.
    reviewer. The reviewer checks adherence against the original guidance and
    evidence; the drafter gets up to two correction rounds. Re-rendering shows
    current findings, source citations, collection gaps and missing evidence in
-   the preview. Changed inputs invalidate old reviews. Reviews are advisory;
-   existing publishing restrictions still apply.
-7. **`tracetoon ready --run <id> --serve`**, then open the local preview using the linked label under the compact
-   Tracetoon logo at the end of the output. Skim the description and comic,
-   then tell your agent "Publish this PR". The note below the link explains
-   how to enable YOLO for future PRs if you prefer to skip that pause.
-8. **`tracetoon publish --code <code>`** posts exactly what you approved: the
+   its output (and `--json`). Changed inputs invalidate old reviews. Reviews are
+   advisory; the leak scan and freshness checks still apply.
+7. **`tracetoon publish --run <id>`** posts the rendered PR right away: the
    comic goes on the repo's `tracetoon-assets` branch (or as a GitHub
-   attachment for private repos), and `gh` creates or updates the PR. The approved
-   branch is pushed automatically if necessary; `--no-push` requires it to already
-   be on the remote. Network retries reconcile an existing PR before creating one.
+   attachment for private repos), and `gh` creates or updates the PR. The
+   branch is pushed if necessary; `--no-push` requires it to already be on the
+   remote at the rendered commit. `--draft` opens a draft PR. Network retries
+   reconcile an existing PR before creating one. It prints the short message
+   above (also `message` in `--json`).
 
 Other commands: `images`, `status`, `on`/`off`, `hook install`/`uninstall`,
-`scan`, `expand`, `preview`, `pending dismiss --run <id>`, `comic prompts`/`reroll`, `export --agent-trace`
+`scan`, `expand`, `comic prompts`/`reroll`, `export --agent-trace`
 ([Agent Trace](https://agent-trace.dev) line attribution), `config`. Every
 command takes `--json`.
 
@@ -233,7 +241,7 @@ These roles use the current host's native subagents, without another model API
 or credentials. Hosts without delegation use a clearly labeled inline draft and
 self-review. `context --offline` disables GitHub lookups and tells the researcher
 and reviewer to leave external references as collection gaps. Source snapshots
-and reports stay in the local run folder; only the approved PR text and comic
+and reports stay in the local run folder; only the rendered PR text and comic
 are published. The CLI validates handoff structure and local source hashes; the
 independent reviewer checks interpretation and remote sources. Role identity is
 reported by the host, not independently certified by the CLI.
@@ -246,41 +254,13 @@ panel count, title treatment and cast categories. It reads PR bodies to extract
 that metadata, then passes only those summaries into the next comic's context.
 Prior plots, character descriptions and traces are not creative context. Legacy
 missing fields remain unknown, and pinned styles still win. Run folders live in `.git/tracetoon/runs/` (git never tracks them),
-and the newest 20 scratch runs are kept in addition to active pending previews.
+and the newest 20 scratch runs are kept.
 
-If you continue working without submitting, `status` and the next PR workflow
-show **"You have a PR awaiting review"** with its preview link. Supported agent
-hooks also provide a nonblocking reminder when work resumes, once per session
-(or every 30 minutes when the host supplies no session ID). Successful publication
-or `pending dismiss --run <id>` clears it. A newer rendered preview supersedes
-the older one for that branch and PR target; starting a digest does not hide it.
-
-Use `digest --run <id>` to refresh a draft while preserving its description and
-comic. Approvals cover the code snapshot, title, body, comic and PR target.
-Changed code requires a refreshed digest, description, review and preview;
-YOLO still performs this freshness check. Pre-upgrade previews need a refresh
-before publishing. Working-tree drafts must be committed and refreshed first.
-JSON output adds `previewHandoff` (terminal and Markdown presentations) to
-render/preview and `pendingDrafts` to status/digest.
-
-The handoff makes **OPEN YOUR LOCAL PR PREVIEW** a local HTTP link, with the full
-copyable local file path directly underneath as a fallback. Codex TUI does not turn ordinary file/path Markdown
-references into terminal hyperlinks. `--serve` supplies a loopback browser URL
-and keeps the command running during review; it stops on Ctrl+C or after one hour
-idle. Re-running `preview --run <id> --serve` reuses a live server or starts a new
-one. Pending reminders reuse the live link and offer a restart command when it
-has stopped. The server exposes only the rendered preview, final description and
-comic. It does not expose repository directories or private run context.
-
-JSON preserves the file URL as `previewUrl` and adds `browserUrl` and `artifactUrls`
-for clickable preview, description and comic links, including "Also ready" lists.
-The same HTTP transport works on Windows, macOS and Linux without embedding local
-file paths in the browser link. Remote coding sessions need port forwarding from
-their host. Supporting terminals underline the label; redirected output stays
-plain with the URL beside it. `NO_COLOR` and `TERM=dumb` keep it plain too.
-`tracetoon preview --open` can still open the saved HTML through the system's
-browser launcher (`start`, `open` or `xdg-open`). Link colors in chat follow the
-host's theme. CI tests all three operating systems.
+Nothing is posted from an old render. New commits or working-tree changes
+after a render need a fresh digest and render (commit working-tree changes
+first), and `publish` checks that the remote branch matches the rendered commit.
+A possible secret found by the leak scan stops posting until the text is
+rewritten, or until you say the finding is fine (`render --allow-findings`).
 
 The [art-direction guide](plugin/skills/tracetoon/references/comic-direction.md)
 links the manga and joke-comic research behind these choices. New v2 scripts
@@ -296,9 +276,8 @@ respect the story's panel count.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
-| `comic` | `true` | Make a comic at all |
+| `comic` | `allowed` | `off`, `allowed` (include a comic unless the repo's contributing rules forbid images in PRs) or `always` (ignore those rules). `true`/`false` still mean `allowed`/`off` |
 | `style` | `auto` | Pin one art style for every comic (an idea from `references/styles.md` or any description), or `auto` to vary |
-| `yolo` | `false` | Allow `publish --yolo` to skip the preview when every check passes |
 | `promptQuoting` | `paraphrase` | `verbatim` quotes your prompts in the PR |
 | `disclosure` | `assisted-by` | Disclosure style (a repo's AI policy can ask for another) |
 | `hosting` | `auto` | Where the comic goes: `branch`, `attach`, or `auto` |

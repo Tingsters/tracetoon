@@ -10,7 +10,7 @@ decided, what was tried, and what actually ran. Use it to explain the *why* and
 the *evidence*. The diff already shows the *what*.
 
 Write a complete, useful draft from what's available. Don't wait for, or ask
-for, more input. (The preview offers the user optional notes about missing
+for, more input. (`render` prints optional notes about missing
 facts; see "Missing facts" below.)
 
 ## The title
@@ -77,7 +77,7 @@ Tracetoon keeps a title a person edited on GitHub; replace it only if the user
 agrees (`tracetoon render --retitle`).
 
 `render` runs an advisory title check (distinction, shape, truth, scope, repo
-rules) and lists anything to revise beside the title in the preview. Fix what
+rules) and lists anything to revise in its output. Fix what
 applies; it never blocks publishing.
 
 ## If the user already wrote something
@@ -227,7 +227,7 @@ Use headings only when the description is long enough to need them.
   and why. Write it only when a prompt, a recorded decision or the user's own
   text supports it. Otherwise state the reason neutrally, or leave it out.
 - **Where the change came from is context only the trace has.** The user's
-  report or request ("a Codex test showed the preview link couldn't be
+  report or request ("a Codex test showed the PR link couldn't be
   clicked") tells a reviewer why the change exists; put it in a sentence,
   paraphrased per `promptQuoting`. When the user asked for an outcome and no
   plan or decision about *how* was recorded, a short neutral note helps the
@@ -257,8 +257,8 @@ Use headings only when the description is long enough to need them.
   limitations, unverified areas, follow-ups. Don't hide it in a collapsed block.
 - `stats.unmatchedPct` means lines **not matched to captured evidence** (missing
   sessions, formatters, shell edits, generated files, hand edits). Don't call
-  them hand-written, and don't put match percentages in the description. The
-  preview shows them.
+  them hand-written, and don't put match percentages in the description. `render`
+  reports them.
 
 ## Quoting prompts
 
@@ -279,7 +279,7 @@ assistance" section. If the repo's policy asks for a particular disclosure form,
 
 When the trace lacks something a reviewer would want (why an approach was taken,
 whether a manual check was done), **don't fill the gap with a plausible story**.
-Write around it, or note it briefly if it matters. The preview shows the user
+Write around it, or note it briefly if it matters. `render` prints
 optional notes for exactly these gaps. If they add context, their words are
 author-reported facts you can use.
 
@@ -293,5 +293,5 @@ the diff, or the user's own words. Pay special attention to:
 - **Plans and decisions:** only what the digest records.
 - Never include absolute paths, usernames, tokens, or content from other repos.
 
-`tracetoon render` runs an advisory check and the preview marks what it finds.
+`tracetoon render` runs an advisory check and its output marks what it finds.
 Use it to fix wording. It never blocks publishing.

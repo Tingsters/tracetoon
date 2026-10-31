@@ -34,6 +34,13 @@ import {
   type Reference,
 } from '../comic/providers.ts';
 import { svgToPng } from '../comic/raster.ts';
+import { clearComicStatus, writeComicStatus } from '../comic/status.ts';
+export {
+  clearComicStatus,
+  readComicStatus,
+  writeComicStatus,
+  type ComicStatus,
+} from '../comic/status.ts';
 import { routeStatuses, setupAdvice, usable } from '../comic/routes.ts';
 import {
   checkScript,
@@ -114,9 +121,12 @@ function load(cwd: string, runId?: string): Loaded {
     context?.aiPolicy ?? detectAiPolicy(truth.toplevel),
     guidance,
   ).policy;
-  if (policy.media === 'prohibited')
+  const mode = loadConfig(truth.toplevel).comic;
+  if (mode === 'off')
+    throw new UserError('Comics are off (tracetoon config set comic allowed|always).');
+  if (mode === 'allowed' && policy.media === 'prohibited')
     throw new UserError(
-      'Repository guidance prohibits AI-generated media. Skip the comic for this PR.',
+      `This repository's rules forbid images in PRs${policy.mediaSource ? ` (${policy.mediaSource.file}:${policy.mediaSource.line})` : ''}. Skip the comic for this PR, or set tracetoon config set comic always.`,
     );
   const script = readJson<ComicScript>(run, 'comic.json');
   if (!script)
@@ -190,10 +200,18 @@ function chooseProvider(
 }
 
 /** Why there's no art, and what the user can do instead. */
-function noArtist(root: string): UserError {
+function noArtist(root: string, run: Run): UserError {
   const routes = routeStatuses(root);
   const ready = routes.filter(usable);
   const broken = routes.filter((r) => r.available && !usable(r));
+  writeComicStatus(run, {
+    state: 'no-route',
+    detail: ready.length
+      ? 'no image route approved (tracetoon images --approve <route>)'
+      : broken.length
+        ? `the image route can't draw yet (${broken[0]!.id}: see tracetoon images)`
+        : 'no image route set up (tracetoon images)',
+  });
   const options = [
     ...(ready.length
       ? [
@@ -273,12 +291,13 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
         results.push(await makePage(run, script, provider));
         clearPanels(run);
       } catch (e) {
+        writeComicStatus(run, { state: 'failed', detail: (e as Error).message });
         throw new UserError(
           `${providerInfo(provider).label} could not draw the page (${(e as Error).message}). Try again with --force, another --provider, or --lettering overlay; if it keeps failing, skip the comic.`,
         );
       }
     } else {
-      throw noArtist(root);
+      throw noArtist(root, run);
     }
     finish('page', 'model');
     return;
@@ -295,12 +314,13 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       results.push({ panel: i + 1, file: have.path, source: 'existing' });
   }
   if (todo.length) {
-    if (!provider) throw noArtist(root);
+    if (!provider) throw noArtist(root, run);
     try {
       await makePanels(run, script, provider, todo, results);
     } catch (e) {
       // Panels already drawn are kept; a retry draws only the missing ones.
       const missing = todo.filter((t) => !results.some((r) => r.panel === t.i + 1));
+      writeComicStatus(run, { state: 'failed', detail: (e as Error).message });
       throw new UserError(
         `${providerInfo(provider).label} could not draw panel${missing.length === 1 ? '' : 's'} ${missing.map((t) => t.i + 1).join(', ')} (${(e as Error).message}). Run \`tracetoon comic art\` again to draw the missing ones, or try another --provider; if it keeps failing, skip the comic.`,
       );
@@ -318,6 +338,7 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       panels: results,
     };
     writeJson(run, 'art/manifest.json', summary);
+    clearComicStatus(run);
     emit(opts, summary, () =>
       results
         .map((r) =>
@@ -697,7 +718,7 @@ export function renderedComic(
     (!output || output.fingerprint !== artFingerprint(script, output.lettering))
   )
     throw new UserError(
-      'The rendered comic is stale for this script or composition. Draw and render the current comic before preparing the PR preview.',
+      'The rendered comic is stale for this script or composition. Draw and render the current comic before rendering the PR.',
     );
   for (const [name, mime] of [
     ['comic.png', 'image/png'],

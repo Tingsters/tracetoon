@@ -1,8 +1,5 @@
 /** Native host lifecycle adapters. Hooks inspect local state; they never run models or checks. */
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { handoffShown } from '../review/handoff.ts';
-import { activeBrowserPreview } from '../review/browser.ts';
 import { closeSync, openSync, readSync, statSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { readLocal, writeLocal } from '../util/localJson.ts';
@@ -18,7 +15,6 @@ import { readHost, saveHost, rememberRepository } from '../workflow/hostSession.
 import { commandFrom, readStdin, type HookAgent, BYPASS_RE } from './prHook.ts';
 import { switchState } from './switches.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
-import { snapshotProblem } from '../review/snapshot.ts';
 import type { Approval } from '../commands/publish.ts';
 import { BUILD_INFO } from '../version.ts';
 import { userConfigPath } from '../config.ts';
@@ -27,11 +23,14 @@ import { parseClaudeLines } from '../trace/claude.ts';
 import { parseAntigravityLines } from '../trace/antigravity.ts';
 import type { TraceSession } from '../trace/types.ts';
 import { publicationTargets } from './publicationTarget.ts';
+import { leakBlocks, leakNotice } from '../review/leak.ts';
 
 type Payload = Record<string, any>;
 export type LifecycleEvent = 'SessionStart' | 'PreToolUse' | 'PostToolUse' | 'Stop';
 const instructions =
-  'Tracetoon is enabled. Before changing a repository, register the cohesive task with tracetoon task begin (actual session id and transcript path). Finish applicable local checks using tracetoon check. When the requested change is finished, use task complete and the tracetoon skill automatically, even without a PR request; finish with ready and its exact branded local handoff before publishing the PR. Record defer/block with a reason for unfinished work. Planning and questions are not completed changes. Approval publishes the reviewed PR, never merges it. Use the same contract for shell and GitHub connector writes.';
+  'Tracetoon is enabled. Before changing a repository, register the cohesive task with tracetoon task begin (actual session id and transcript path), and run applicable local checks with tracetoon check. ' +
+  'Tracetoon only acts when a pull request is being made: when the user asks for a PR, use the tracetoon skill instead of gh pr create/edit. It writes the description and comic, then creates the PR right away; relay its short message. Never merge. ' +
+  'Do not open a PR the user did not ask for. Use the same contract for shell and GitHub connector writes.';
 
 export function sessionId(p: Payload): string | undefined {
   return [p.session_id, p.sessionId, p.conversationId, p.conversation_id].find(
@@ -237,7 +236,7 @@ export function lifecycle(
           if (published)
             return denyPublication(
               agent,
-              `This snapshot is already published. Use tracetoon publish --run ${published.run.id} to retrieve or reconcile its approved PR; a direct write can change code or PR text outside the handoff.`,
+              `This snapshot is already published. Use tracetoon publish --run ${published.run.id} to retrieve or reconcile its PR; a direct write would change the PR text outside Tracetoon.`,
             );
           // An agent writing a PR outside Tracetoon starts a task so the PR gets prepared.
           const started = beginTask(root, { session: id, transcript });
@@ -247,7 +246,22 @@ export function lifecycle(
           saveTask(started.run, started.task);
           active = started;
         }
-        const reason = `Task ${active.run.id}: write this PR with tracetoon publish after the author approves its ready preview, so it gets the reviewed description and comic. Pushing branches is fine; only PR creation and title/body edits go through Tracetoon.`;
+        // The PR was asked for: remember it, and by which session, so that
+        // session can't end with it unmade. A fresh request revives a task
+        // whose earlier recovery gave up.
+        const task = active.task;
+        if (!task.prRequestedAt || task.prRequestedBy !== id) {
+          task.prRequestedAt ??= new Date().toISOString();
+          task.prRequestedBy = id;
+          saveTask(active.run, task);
+        }
+        if (task.state === 'blocked' || task.state === 'deferred') {
+          task.state = 'preparing';
+          task.reason = undefined;
+          task.recoveryGeneration = (task.recoveryGeneration ?? 0) + 1;
+          saveTask(active.run, task);
+        }
+        const reason = `Task ${active.run.id}: make this PR with the tracetoon skill, ending with tracetoon publish --run ${active.run.id}; it writes the description and comic, then creates the PR. Pushing branches is fine; only PR creation and title/body edits go through Tracetoon.`;
         return denyPublication(agent, reason);
       }
     }
@@ -260,30 +274,8 @@ export function lifecycle(
     (p.terminationReason && p.terminationReason !== 'model_stop')
   )
     return;
-  const tail = transcriptTail(transcript ?? host.transcript, agent);
-  const discoveredRoots = new Set<string>();
-  for (const record of tail?.records ?? []) {
-    // A read-only command in a transcript is not evidence of changed work.
-    const path =
-      record.kind === 'edit'
-        ? dirname(record.file)
-        : record.kind === 'command' && /\bgit\s+commit\b/.test(record.cmd)
-          ? record.cwd
-          : undefined;
-    if (path)
-      try {
-        discoveredRoots.add(repository(path).root);
-      } catch {
-        /* not a repo */
-      }
-  }
-  for (const root of discoveredRoots) {
-    if (!host.repos.some((r) => r.root === root) && switchState(root, env).enabled) {
-      // Unknown baseline is never treated as evidence that the work was unchanged.
-      rememberRepository(id, root, 'unclassified-transcript', transcript);
-    }
-  }
-  host = readHost(id);
+  // Only a PR that was asked for and redirected to Tracetoon keeps the session
+  // open; ordinary finished work never starts a PR on its own.
   for (const observed of host.repos) {
     if (!switchState(observed.root, env).enabled) continue;
     let repo;
@@ -292,82 +284,48 @@ export function lifecycle(
     } catch {
       continue;
     } // removed worktree
-    let active = tasks(repo.gitDir).find(
+    const active = tasks(repo.gitDir).find(
       (t) =>
         t.task.branch === repo.branch &&
-        (t.task.session === id || !t.task.session) &&
-        t.task.state !== 'published',
+        (t.task.prRequestedBy === id ||
+          (!t.task.prRequestedBy && (t.task.session === id || !t.task.session))) &&
+        !!t.task.prRequestedAt &&
+        t.task.state !== 'published' &&
+        t.task.state !== 'deferred' &&
+        t.task.state !== 'blocked',
     );
-    const fingerprint = workFingerprint(repo.root);
-    if (!active && observed.baseline !== fingerprint) {
-      const started = beginTask(repo.root, { session: id, transcript });
-      started.task.baseline = observed.baseline;
-      saveTask(started.run, started.task);
-      active = started;
-    }
     if (!active) continue;
     const { run, task } = active;
-    if (task.state === 'deferred' || task.state === 'blocked') continue;
-    if (task.state === 'working' && task.baseline === fingerprint) continue;
-    let reason: string | undefined;
-    if (task.state === 'ready') {
-      const approval = readLocal<Approval>(join(run.dir, 'approval.json'));
-      const problem = approval
-        ? snapshotProblem(repo.root, approval.submission)
-        : 'Missing approval';
-      if (problem || approval?.workspaceFingerprint !== fingerprint) {
-        task.state = 'working';
-        task.readyCode = undefined;
-        saveTask(run, task);
-        reason = `Task ${run.id} changed after its preview. Classify the current work and refresh its checks, digest, review and handoff when finished.`;
-      } else {
-        const url = pathToFileURL(join(run.dir, 'preview.html')).href;
-        const browserUrl = activeBrowserPreview(run.dir)?.url;
-        const replies = tail?.records.filter((r) => r.kind === 'assistant') ?? [];
-        const last = replies[replies.length - 1];
-        const message =
-          p.last_assistant_message ??
-          p.lastAssistantMessage ??
-          (last?.kind === 'assistant' ? last.text : '');
-        if (
-          handoffShown(message, {
-            fileUrl: url,
-            filePath: join(run.dir, 'preview.html'),
-            browserUrl,
-          })
-        ) {
-          task.presentedCode = task.readyCode;
-          task.presentedAt = new Date().toISOString();
-          saveTask(run, task);
-          continue;
-        }
-        if (task.presentedCode === task.readyCode) continue;
-        reason = `The ready Tracetoon ${run.id} has not been shown to the user. Run tracetoon ready --run ${run.id} --serve, keep that local preview process running, and end your response with its exact previewHandoff.markdown. Do not publish before approval.`;
-      }
-    } else if (task.state === 'working')
-      reason = `Changed task ${run.id} has no completion disposition. If the requested cohesive change is finished, run task complete --run ${run.id} and prepare its Tracetoon automatically. If work remains or you need user input, record task defer/block --run ${run.id} --reason <actual reason>. Do not treat a commit as a user review.`;
-    else
-      reason = `Task ${run.id} is finished but its Tracetoon preparation is incomplete. Resume the tracetoon skill with explicit --run ${run.id}, finish checks, draft, comic and review, then ready and the author handoff. If preparation is unavailable, record task block with the actual reason and tell the user.`;
+    const fingerprint = workFingerprint(repo.root);
+    // A render the leak scan blocked needs the user, not another automatic attempt.
+    const rendered = readLocal<Approval>(join(run.dir, 'approval.json'));
+    if (leakBlocks(rendered)) {
+      task.state = 'blocked';
+      task.reason = 'The leak scan found a possible secret in the PR text.';
+      saveTask(run, task);
+      return continuation(
+        agent,
+        `${leakNotice(rendered!)} Start your response with that, in plain words, so the user sees the PR was not submitted and why; do not claim a PR exists. A new PR request resumes task ${run.id}.`,
+      );
+    }
+    const reason = `The PR requested in this session (task ${run.id}) has not been created. Finish it with the tracetoon skill: digest --run ${run.id}, context, research, drafting, comic and review, then tracetoon publish --run ${run.id}, and relay its message. If it cannot be made, record task block --run ${run.id} --reason <actual problem> and tell the user.`;
     const key = createHash('sha256')
-      .update(
-        `${run.id}:${fingerprint}:${task.readyCode ?? ''}:${task.recoveryGeneration ?? 0}`,
-      )
+      .update(`${run.id}:${fingerprint}:${task.recoveryGeneration ?? 0}`)
       .digest('hex');
     const attempts = host.recoveries[key] ?? 0;
     if (attempts >= 2) {
       task.state = 'blocked';
-      task.reason =
-        'Automatic completion recovery exhausted; resume this task explicitly.';
+      task.reason = 'Automatic PR recovery exhausted; resume this task explicitly.';
       saveTask(run, task);
       return continuation(
         agent,
-        `Automatic completion recovery for ${run.id} is exhausted. Tell the user that Tracetoon preparation is blocked, give the actual remaining issue and the resume command, and do not claim a PR was published. The next stop is allowed.`,
+        `Automatic recovery for the PR in task ${run.id} is exhausted. Tell the user the PR was not created, give the actual remaining issue and the resume command (tracetoon publish --run ${run.id} after preparing it), and do not claim a PR exists. The next stop is allowed.`,
       );
     }
     host.recoveries[key] = attempts + 1;
     host.recoveries = Object.fromEntries(Object.entries(host.recoveries).slice(-100));
     saveHost(id, host);
-    return continuation(agent, reason!);
+    return continuation(agent, reason);
   }
 }
 

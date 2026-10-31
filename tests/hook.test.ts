@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { decide, writesPr } from '../src/hook/prHook.ts';
+import { decide, DENY_REASON, writesPr } from '../src/hook/prHook.ts';
 import { parseAliases } from '../src/hook/prCommands.ts';
 import {
   hookCommand,
@@ -186,7 +186,16 @@ describe('hook decisions', () => {
   test('denies in each agent format', () => {
     const c = JSON.parse(decide('claude', claude('gh pr create'), env())!);
     expect(c.hookSpecificOutput.permissionDecision).toBe('deny');
-    expect(c.hookSpecificOutput.permissionDecisionReason).toContain('tracetoon skill');
+    const reason: string = c.hookSpecificOutput.permissionDecisionReason;
+    expect(reason).toBe(DENY_REASON);
+    expect(reason).toContain(
+      'Tracetoon handles pull requests on this machine: it writes the description',
+    );
+    expect(reason).toContain('then creates the PR');
+    expect(reason).toContain('use the tracetoon skill and finish with tracetoon publish');
+    expect(reason).toContain('TRACETOON=0');
+    // The PR is created directly; nothing waits for a local preview or approval.
+    expect(reason).not.toMatch(/preview|approv/i);
     expect(
       JSON.parse(decide('codex', claude('gh pr create'), env())!).hookSpecificOutput
         .permissionDecision,
@@ -198,7 +207,7 @@ describe('hook decisions', () => {
         env(),
       )!,
     );
-    expect(a).toMatchObject({ decision: 'deny' });
+    expect(a).toMatchObject({ decision: 'deny', reason: DENY_REASON });
   });
 
   test('lets everything else through', () => {
@@ -207,6 +216,18 @@ describe('hook decisions', () => {
     expect(decide('claude', claude('gh pr view', cwd), env())).toBeUndefined();
     expect(decide('claude', {}, env())).toBeUndefined();
     expect(decide('claude', 'nonsense', env())).toBeUndefined();
+  });
+
+  test('ordinary commands in a repo with Tracetoon runs get no reminder', () => {
+    const repo = makeRepo();
+    mkdirSync(join(repo.root, '.git', 'tracetoon', 'runs', 'r1'), { recursive: true });
+    writeFileSync(
+      join(repo.root, '.git', 'tracetoon', 'runs', 'r1', 'approval.json'),
+      '{}',
+    );
+    for (const command of ['git status', 'bun test', 'git push -u origin HEAD'])
+      expect(decide('claude', claude(command, repo.root), env())).toBeUndefined();
+    expect(decide('antigravity', claude('git status', repo.root), env())).toBeUndefined();
   });
 
   test('every bypass and switch turns it off', () => {

@@ -1,4 +1,4 @@
-/** The code a preview describes, independent of local trace and run artifacts. */
+/** The code a render describes, independent of local trace and run artifacts. */
 import { objectHash, submission } from '../contribution/guidance.ts';
 import { prTruth, type PrTruth } from '../git/pr.ts';
 
@@ -30,14 +30,14 @@ export function snapshotProblem(
   snapshot?: SubmissionSnapshot,
 ): string | undefined {
   if (!snapshot)
-    return 'This preview predates code freshness checks and needs refreshing.';
+    return 'This render predates code freshness checks and needs refreshing.';
   try {
     const truth = prTruth(root, { base: snapshot.base, noGh: true });
     if (truth.head !== snapshot.head)
-      return `This preview belongs to branch ${snapshot.head}; the current branch is ${truth.head}.`;
+      return `This render belongs to branch ${snapshot.head}; the current branch is ${truth.head}.`;
     if (!sameSubmission(snapshot, submissionSnapshot(truth)))
-      return 'The submitted code changed after this preview was prepared.';
+      return 'The submitted code changed after this render was prepared.';
   } catch {
-    return 'The submitted code could not be checked; refresh the preview before publishing.';
+    return 'The submitted code could not be checked; render again before publishing.';
   }
 }

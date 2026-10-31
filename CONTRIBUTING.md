@@ -52,7 +52,7 @@ bun run test
   scripts/packaged-contracts.ts. Their JUnit results must contain every selected
   contract; renamed, skipped, failed, or empty selections cannot pass silently.
   All source tests still run on each supported CI platform. Publication itself
-  reuses current validation; it never launches these suites after approval.
+  reuses current validation; it never launches these suites at publish.
   CI runs both packaged suites on every PR, on every platform, and is their
   gate before merge: any change to shipped code (`src/`, assets, the bundle,
   dependencies) can affect them. Locally they are optional and take about two

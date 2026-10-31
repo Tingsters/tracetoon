@@ -68,6 +68,19 @@ const MEDIA =
   /\b(images?|media|art(work)?|illustrations?|videos?|audio|pictures?|drawings?)\b/i;
 const AUTHOR_WRITTEN =
   /\b(strongly (recommend|encourage)\w*|should|please|must|expected to)\b[^.]{0,80}\b(write|author)\w*\b[^.]{0,60}\b(descriptions?|pr text|pull request text|commit messages?|yourself|own (words|voice))\b|\b(do not|don't|never)\b[^.]{0,60}\b(auto-?|automatically )?generat\w*\b[^.]{0,40}\b(pull request|pr)s?\b[^.]{0,20}\bdescriptions?\b|\byour own (ideas|judgment|judgement|voice)\b/i;
+/**
+ * A ban on pictures in PRs, AI or not: the prohibitions above plus softer
+ * "please don't include" wording. Separate from PROHIBIT so lines like "do not
+ * add AI trailers" don't read as a ban on AI-written text.
+ */
+const MEDIA_PROHIBIT = new RegExp(
+  String.raw`${PROHIBIT.source}|\b(do not|don't|please (do not|don't)|never) (include|add|attach|post|embed|put)\b|\bno\b[^.]{0,80}\bin (pull requests?|PRs?|PR descriptions?)\b`,
+  'i',
+);
+const MEDIA_ANY =
+  /\b(images?|graphics?|art(work)?|illustrations?|infographics?|comics?|cartoons?|diagrams?|gifs?|memes?|drawings?|pictures?|screenshots?|emoji art|visuals?)\b/i;
+// Rules about issues (screenshots of a bug, say) say nothing about PRs.
+const ABOUT_PRS = /\b(contribut\w*|pull requests?|PR descriptions?)\b/i;
 const PR_TEXT = /\b(pull requests?|PRs?\b|commit messages?)/i;
 const NO_PR = /\bnever (create|open|submit) (an? )?(issue|pr|pull request)/i;
 
@@ -82,7 +95,8 @@ export interface AiPolicy {
    * the labels, and the user decides.
    *  - text: AI-written text prohibited, author-written text recommended
    *    (e.g. LLVM "strongly recommends"; not a requirement), or nothing special;
-   *  - media: AI-generated images prohibited (e.g. Ghostty), which turns the comic off;
+   *  - media: images in PRs prohibited, AI-generated or not (e.g. Ghostty), which
+   *    turns the comic off unless the comic setting is `always`;
    *  - disclosure: the form the repo asks for, if it names one;
    *  - noPullRequests: an instruction to agents never to open PRs.
    */
@@ -90,6 +104,8 @@ export interface AiPolicy {
   media?: 'prohibited' | 'none';
   disclosure?: 'assisted-by' | 'tool-and-use' | 'unspecified';
   noPullRequests?: boolean;
+  /** The first line that forbids images in PRs, when `media` is prohibited. */
+  mediaSource?: { file: string; line: number; text: string };
   /** Instructions about PR text or commit messages from agent files (AGENTS.md…). */
   prInstructions?: { file: string; line: number; text: string }[];
 }
@@ -104,6 +120,7 @@ export function detectAiPolicy(root: string): AiPolicy {
   let prohibited = false;
   let disclose = false;
   let mediaBan = false;
+  let mediaSource: AiPolicy['mediaSource'];
   let authorWritten = false;
   let assistedBy = false;
   let toolAndUse = false;
@@ -118,11 +135,30 @@ export function detectAiPolicy(root: string): AiPolicy {
       if (agentFile && PR_TEXT.test(t) && t.length > 10)
         prInstructions.push({ file: rel, line: i + 1, text: t.slice(0, 300) });
       if (NO_PR.test(t)) noPullRequests = true;
+      const here = { file: rel, line: i + 1, text: t.slice(0, 300) };
+      // Pictures banned from PRs or contributions, whether or not AI is named.
+      // Rules about code assets ("no binary images in the repo") don't count.
+      // A rule only about issues ("Contributors: no screenshots in issues")
+      // says nothing about PRs.
+      const issuesOnly = /\bissues?\b/i.test(t) && !PR_TEXT.test(t);
+      if (
+        MEDIA_PROHIBIT.test(t) &&
+        MEDIA_ANY.test(t) &&
+        (PR_TEXT.test(t) || ABOUT_PRS.test(t)) &&
+        !issuesOnly
+      ) {
+        mediaBan = true;
+        mediaSource ??= here;
+        if (!excerpts.some((e) => e.file === rel && e.line === i + 1))
+          excerpts.push(here);
+      }
       if (!AI_TERMS.test(t) && !(agentFile && NO_PR.test(t))) return;
-      excerpts.push({ file: rel, line: i + 1, text: t.slice(0, 300) });
+      if (!excerpts.some((e) => e.file === rel && e.line === i + 1)) excerpts.push(here);
       const bans = PROHIBIT.test(t);
-      if (bans && MEDIA.test(t)) mediaBan = true;
-      else if (bans) prohibited = true;
+      if (bans && MEDIA.test(t)) {
+        mediaBan = true;
+        mediaSource ??= here;
+      } else if (bans) prohibited = true;
       if (AUTHOR_WRITTEN.test(t)) authorWritten = true;
       if (DISCLOSE.test(t)) disclose = true;
       if (/Assisted-by:/i.test(t)) assistedBy = true;
@@ -147,6 +183,7 @@ export function detectAiPolicy(root: string): AiPolicy {
         ? 'author-written-recommended'
         : 'none',
     media: mediaBan ? 'prohibited' : 'none',
+    ...(mediaSource ? { mediaSource } : {}),
     disclosure: assistedBy
       ? 'assisted-by'
       : toolAndUse

@@ -2,11 +2,11 @@
  * The PR hook. Each agent calls `tracetoon hook pre-pr --agent <id>` before it
  * runs a shell command. If the command creates a PR (or rewrites a PR's title or
  * body) with `gh`, the hook stops it and tells the agent to use the Tracetoon
- * skill instead. Other commands can receive a pending-review reminder. Any error lets the command
- * through: the hook must never get in the way of normal work.
+ * skill instead, which writes the description and comic and then creates the
+ * PR. Any error lets the command through: the hook must never get in the way of
+ * normal work.
  */
 import { switchState } from './switches.ts';
-import { pendingReminder } from '../review/reminder.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
 import { splitCommands } from '../util/shell.ts';
 import { otherPrWrite } from './prCommands.ts';
@@ -49,8 +49,8 @@ export function writesPr(command: string): boolean {
 }
 
 export const DENY_REASON =
-  'Tracetoon handles pull requests on this machine. Instead of creating or editing the PR directly (gh, hub, git pull-request, Git Town or the GitHub API), use the tracetoon skill: ' +
-  'it writes the description from your session logs and shows the user a preview before anything is posted. ' +
+  'Tracetoon handles pull requests on this machine: it writes the description from your session logs (and a comic, when enabled), then creates the PR. ' +
+  'Instead of creating or editing the PR directly (gh, hub, git pull-request, Git Town or the GitHub API), use the tracetoon skill and finish with tracetoon publish. ' +
   'Only if the user explicitly asked for a plain PR without Tracetoon, re-run the command with TRACETOON=0 in front ' +
   "(PowerShell: $env:TRACETOON='0'; ...).";
 
@@ -92,24 +92,7 @@ export function decide(
   if (!command || BYPASS_RE.test(command)) return undefined;
   const effectiveCwd = leadingCd(command, cwd ?? process.cwd()) ?? cwd ?? process.cwd();
   if (!switchState(effectiveCwd, env).enabled) return undefined;
-  if (!writesPr(command)) {
-    const reminder = pendingReminder(
-      agent,
-      payload as Record<string, any>,
-      cwd ?? process.cwd(),
-    );
-    if (!reminder) return undefined;
-    // Antigravity: https://antigravity.google/docs/hooks#pretooluse
-    // Codex/Claude: https://learn.chatgpt.com/docs/hooks#pretooluse
-    return agent === 'antigravity'
-      ? JSON.stringify({ decision: 'allow', reason: reminder })
-      : JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            additionalContext: reminder,
-          },
-        });
-  }
+  if (!writesPr(command)) return undefined;
   if (agent === 'antigravity')
     return JSON.stringify({ decision: 'deny', reason: DENY_REASON });
   return JSON.stringify({

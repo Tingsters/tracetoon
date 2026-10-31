@@ -1,7 +1,7 @@
 /**
  * A run's scratch folder: `<git dir>/tracetoon/runs/<id>/`. Git never tracks it and
- * each run is self-contained. Pending previews are retained until publication,
- * dismissal or replacement; other runs are disposable scratch.
+ * each run is self-contained. Runs with unfinished tasks are kept until
+ * publication; other runs are disposable scratch.
  */
 import {
   existsSync,
@@ -12,7 +12,6 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { activePendingRuns } from './review/pending.ts';
 
 export interface Run {
   id: string;
@@ -39,7 +38,7 @@ export function newRun(gitDir: string): Run {
   return { id: name, dir };
 }
 
-/** How many scratch runs to keep in addition to active pending previews. */
+/** How many scratch runs to keep in addition to unfinished tasks. */
 export const KEEP_RUNS = 20;
 
 /** Delete all but the newest run folders (never `keep`). */
@@ -49,7 +48,7 @@ export function pruneRuns(gitDir: string, keep?: string): void {
     .filter((d) => d.isDirectory() && /^\d{8}-\d{6}(-\d+)?$/.test(d.name))
     .map((d) => d.name)
     .sort();
-  const pending = new Set(activePendingRuns(gitDir).map((d) => d.run.id));
+  const pending = new Set<string>();
   // A paired evaluation is durable evidence, not disposable task scratch.
   try {
     const evaluation = JSON.parse(
