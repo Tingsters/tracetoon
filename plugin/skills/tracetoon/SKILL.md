@@ -1,6 +1,6 @@
 ---
 name: tracetoon
-description: Finish a cohesive coding change with a local, reviewable GitHub PR description and comic from agent session logs, then publish only after approval. Use automatically when an implementation is finished, even without a PR request; also use for requests to open, create, describe or update a PR, or mentions of Tracetoon. Planning, questions and unfinished work are not completion triggers.
+description: Finish a cohesive coding change with a local, reviewable GitHub PR description and comic from agent session logs, then publish only after approval. Use automatically when an implementation is finished, even without a PR request; also use for requests to open, create, describe or update a PR, when a hook redirects a PR write (`gh pr create`/`edit`, hub, git pull-request, Git Town or the pulls API) here, or mentions of Tracetoon. Planning, questions and unfinished work are not completion triggers.
 ---
 
 # Tracetoon: PR descriptions and comics from agent traces
@@ -25,10 +25,12 @@ re-run with the environment variable `TRACETOON_ALLOW_DOWNLOAD=1`. If no, follow
 ## When this skill is used
 
 Once installed, Tracetoon is the default for pull requests: a hook in your agent
-stops direct `gh pr create` (and `gh pr edit` of a title or body) and points you
-here. If that just happened, follow the workflow below instead of retrying the
-`gh` command. Plain `git push` is not intercepted; pushing branches, tags or
-release commits is the user's own workflow.
+stops a direct PR write (`gh pr create`, `gh pr edit` of a title or body, a gh
+alias for them, `hub pull-request`, `git pull-request`, `git town propose`, a
+write to GitHub's pulls API by any HTTP client, or a GitHub connector PR tool)
+and points you here. If that just happened, follow the workflow below instead
+of retrying the command another way. Plain `git push` is not intercepted;
+pushing branches, tags or release commits is the user's own workflow.
 
 Tracetoon can be turned off. `tracetoon status` says whether it is on here and
 which setting decided. If it is off, tell the user why (for example "this repo

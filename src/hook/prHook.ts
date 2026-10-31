@@ -9,6 +9,7 @@ import { switchState } from './switches.ts';
 import { pendingReminder } from '../review/reminder.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
 import { splitCommands } from '../util/shell.ts';
+import { otherPrWrite } from './prCommands.ts';
 
 export type HookAgent = 'claude' | 'codex' | 'antigravity';
 
@@ -32,7 +33,11 @@ export function writesPr(command: string): boolean {
       .replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, '') // VAR=value prefixes
       .replace(/^(?:sudo|command|exec|time)\s+/, '');
     const m = GH_PR_RE.exec(seg);
-    if (!m) continue;
+    if (!m) {
+      // hub, git-extras, Git Town, API calls and gh aliases.
+      if (otherPrWrite(raw)) return true;
+      continue;
+    }
     const verb = m[1]!.toLowerCase();
     const rest = m[2] ?? '';
     if (verb === 'create' || verb === 'new') return true;
@@ -44,7 +49,7 @@ export function writesPr(command: string): boolean {
 }
 
 export const DENY_REASON =
-  'Tracetoon handles pull requests on this machine. Instead of running gh pr create/edit, use the tracetoon skill: ' +
+  'Tracetoon handles pull requests on this machine. Instead of creating or editing the PR directly (gh, hub, git pull-request, Git Town or the GitHub API), use the tracetoon skill: ' +
   'it writes the description from your session logs and shows the user a preview before anything is posted. ' +
   'Only if the user explicitly asked for a plain PR without Tracetoon, re-run the command with TRACETOON=0 in front ' +
   "(PowerShell: $env:TRACETOON='0'; ...).";

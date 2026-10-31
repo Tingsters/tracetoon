@@ -1,16 +1,12 @@
 /** Resolve recognized publication commands without treating quoted examples as commands. */
 import { basename, resolve } from 'node:path';
 import { commandFrom, writesPr } from './prHook.ts';
+import { otherPrWrite, words } from './prCommands.ts';
 import { repoRoot } from './switches.ts';
 import { splitCommands } from '../util/shell.ts';
 import { git } from '../util/exec.ts';
 
 type Payload = Record<string, any>;
-function words(segment: string): string[] {
-  return (segment.match(/"[^"]*"|'[^']*'|[^\s]+/g) ?? []).map((s) =>
-    s.replace(/^["']|["']$/g, ''),
-  );
-}
 function remoteName(url: string): string | undefined {
   return /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/i.exec(url)?.[1]?.toLowerCase();
 }
@@ -78,6 +74,20 @@ export function publicationTargets(
       if (args[0]) folder = resolve(folder, args[0]);
       continue;
     }
+    // Other PR CLIs, API calls and gh aliases: the repo they name, or this folder.
+    const other = otherPrWrite(segment);
+    if (other) {
+      prWrite = true;
+      publication = true;
+      const roots = other.repo
+        ? forRepo(other.repo)
+        : forDirectory(resolve(folder, other.dir ?? '.'));
+      for (const root of roots) targets.add(root);
+      continue;
+    }
+    // `gh api` and `hub api` are judged by the recognizer alone, so both hooks
+    // agree (a state-only PATCH, for one, is not a PR write).
+    if ((program === 'gh' || program === 'hub') && args[0] === 'api') continue;
     let targetFolder = folder;
     if (program === 'git') {
       while (args[0]?.startsWith('-')) {
