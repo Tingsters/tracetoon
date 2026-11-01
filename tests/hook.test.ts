@@ -200,6 +200,50 @@ describe('which commands are PR writes', () => {
     ],
     ['wget --post-data "{}" https://api.github.com/repos/acme/demo/pulls', true],
     ['http POST https://api.github.com/repos/acme/demo/pulls title=x', true],
+    [
+      `http --raw '{"title":"new"}' PATCH https://api.github.com/repos/acme/demo/pulls/3`,
+      true,
+    ],
+    [`http --raw='{"title":"new"}' https://api.github.com/repos/acme/demo/pulls`, true],
+    ['http https://api.github.com/repos/acme/demo/pulls @pr.json', true],
+    [
+      'https -A bearer -a TOKEN PATCH https://api.github.com/repos/acme/demo/pulls/3 title=new',
+      true,
+    ],
+    [
+      'xh --auth-type bearer --auth TOKEN PATCH https://api.github.com/repos/acme/demo/pulls/3 title=new',
+      true,
+    ],
+    [
+      'xhs --timeout 30 PATCH https://api.github.com/repos/acme/demo/pulls/3 title=new',
+      true,
+    ],
+    [
+      `http --raw '{"title":"new"}' GET https://api.github.com/repos/acme/demo/pulls/3`,
+      false,
+    ],
+    ['http -A bearer -a TOKEN HEAD https://api.github.com/repos/acme/demo/pulls', false],
+    [
+      'http --auth=PATCH --style=POST GET https://api.github.com/repos/acme/demo/pulls',
+      false,
+    ],
+    ['http --auth PATCH https://api.github.com/repos/acme/demo/pulls', false],
+    [
+      `http --raw '{"state":"closed"}' PATCH https://api.github.com/repos/acme/demo/pulls/3`,
+      false,
+    ],
+    [
+      `http --raw='{"state":"closed"}' PATCH https://api.github.com/repos/acme/demo/pulls/3`,
+      false,
+    ],
+    [
+      'http -A bearer -a TOKEN PATCH https://api.github.com/repos/acme/demo/pulls/3 state=closed',
+      false,
+    ],
+    [
+      'http --auth-type=bearer --auth=TOKEN PATCH https://api.github.com/repos/acme/demo/pulls/3 state=closed',
+      false,
+    ],
     ['http https://api.github.com/repos/acme/demo/pulls', false],
     [
       'Invoke-RestMethod -Method Post -Uri https://api.github.com/repos/acme/demo/pulls -Body $b',
