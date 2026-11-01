@@ -118,8 +118,9 @@ export function checkChangeMap(input: {
 export function refPath(ref: string): string {
   let r = ref.trim().split(/\s/)[0]!;
   r = r.replace(/:[\d,\-]+$/, ''); // line numbers
-  // Anything before a colon is a revision (`main:`, `v1.2.0:`, `origin/x~1:`, a
-  // sha): repo-relative paths never contain one.
+  // Anything before a colon is taken as a revision (`main:`, `v1.2.0:`,
+  // `origin/x~1:`, a sha). Windows forbids colons in file names and they are
+  // rare elsewhere; a path that has one is flagged, and the check is advisory.
   const colon = r.indexOf(':');
   if (colon > 0) r = r.slice(colon + 1);
   return r;
