@@ -155,9 +155,40 @@ export function artFingerprint(
   script: ComicScript,
   lettering: 'model' | 'overlay',
 ): string {
-  // Local reasoning doesn't change the drawing; labels live in the dialogue.
+  // Only what the drawing is made from counts. Local reasoning, the anchor and
+  // the text written about the finished art (alt text, synopsis, each panel's
+  // `drawn` note) can be corrected without redrawing.
+  const {
+    designReason: _private,
+    anchor: _anchor,
+    altText: _alt,
+    synopsis: _synopsis,
+    ...art
+  } = script;
+  const panels = art.panels.map(({ drawn: _drawn, ...panel }) => panel);
+  return createHash('sha256')
+    .update(JSON.stringify({ art: { ...art, panels }, lettering }))
+    .digest('hex');
+}
+
+/**
+ * Whether a stored fingerprint belongs to this script's art. Earlier builds
+ * also hashed the alt text and synopsis, so art they drew still matches while
+ * that text is unchanged; `comic art` and `comic render` then re-stamp it, and
+ * later text edits no longer need a redraw.
+ */
+export function artMatches(
+  stored: string | undefined,
+  script: ComicScript,
+  lettering: 'model' | 'overlay',
+): boolean {
+  if (!stored) return false;
+  if (stored === artFingerprint(script, lettering)) return true;
   const { designReason: _private, anchor: _anchor, ...art } = script;
-  return createHash('sha256').update(JSON.stringify({ art, lettering })).digest('hex');
+  return (
+    stored ===
+    createHash('sha256').update(JSON.stringify({ art, lettering })).digest('hex')
+  );
 }
 
 const STYLE_GROUPS: [StyleFamily, string[]][] = [
