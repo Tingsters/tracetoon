@@ -115,6 +115,10 @@ describe('which commands are PR writes', () => {
       'curl -X PATCH https://api.github.com/repos/acme/state/pulls/3 -d \'{"title":"x"}\'',
       true,
     ],
+    // A repo named "state" with a payload that never mentions state (passed on main).
+    ['gh api -X PATCH repos/acme/state/pulls/3 -f base=main', true],
+    // Only PATCH can be a state-only change.
+    ['gh api -X PUT repos/acme/demo/pulls/3 -f state=closed', true],
     ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d @state.json', true],
     ['gh api -X PATCH repos/acme/demo/pulls/3 --input state.json', true],
     ['gh api -X POST repos/acme/demo/pulls -f state=open -f head=f -f base=main', true],
