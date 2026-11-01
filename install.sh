@@ -106,7 +106,16 @@ fi
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+cleanup() {
+  # After a failure, leave no half-installed copies beside the real ones.
+  if [ -f "$tmp/targets" ]; then
+    while IFS='|' read -r _ d; do rm -rf "$d.new-$$"; done < "$tmp/targets"
+  fi
+  rm -f "$stable.new"
+  rm -rf "$home_root/assets.new-$$"
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
 if [ -z "$tag" ]; then
   # Newest release, including release candidates. The API sorts by tag name
   # (so rc.10 lands before rc.2), not by date: pick the latest published one.
@@ -148,7 +157,20 @@ mkdir -p "$(dirname "$stable")"
 cp "$tmp/$bin" "$stable.new"
 chmod +x "$stable.new"
 "$stable.new" --version >/dev/null 2>&1 || die "downloaded binary does not run"
+# A rename replaces the binary atomically, even while an agent hook runs it
+# (Git Bash's mv manages that on Windows too).
 mv -f "$stable.new" "$stable"
+# The binary finds its comic fonts and renderer at ../assets, beside bin/,
+# so it can render comics when run directly (not only through a skill).
+# The old assets are set aside first, so a failure never leaves them half removed.
+rm -rf "$home_root/assets.new-$$" "$home_root/assets.old-$$"
+cp -R "$tmp/skill/tracetoon/assets" "$home_root/assets.new-$$"
+[ ! -e "$home_root/assets" ] || mv "$home_root/assets" "$home_root/assets.old-$$"
+if ! mv "$home_root/assets.new-$$" "$home_root/assets"; then
+  [ ! -e "$home_root/assets.old-$$" ] || mv "$home_root/assets.old-$$" "$home_root/assets"
+  die "could not activate the comic assets; previous ones restored"
+fi
+rm -rf "$home_root/assets.old-$$"
 # Binaries cached by older versions are no longer needed.
 rm -rf "$cache_root" "$home_root/cache"
 
