@@ -88,6 +88,10 @@ describe('change map refs', () => {
     ['feat/comic-setting:src/split.ts:36-41', 'src/split.ts'],
     ['main:src/split.ts:3', 'src/split.ts'],
     ['3f303e3:src/split.ts', 'src/split.ts'],
+    ['fix-x:src/split.ts:5', 'src/split.ts'],
+    ['v1.2.0:src/split.ts', 'src/split.ts'],
+    ['origin/release-1.2:src/split.ts:7', 'src/split.ts'],
+    ['origin/main~1:src/split.ts', 'src/split.ts'],
     ['src/split.ts:300-310 (old behavior)', 'src/split.ts'],
   ])('%s names %s', (ref, path) => {
     expect(refPath(ref)).toBe(path);

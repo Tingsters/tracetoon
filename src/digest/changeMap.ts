@@ -14,7 +14,7 @@ export interface ChangeGroup {
 }
 export interface ChangeMap {
   groups: ChangeGroup[];
-  /** Lines the drafter traced for the body's concrete example, as `path:start[-end]`. */
+  /** Lines the drafter traced for the body's concrete example, as `path:start[-end]`; see refPath for the other accepted forms. */
   example?: { refs: string[] };
 }
 export interface ChangeMapFinding {
@@ -112,19 +112,15 @@ export function checkChangeMap(input: {
 
 /**
  * The file a ref points at. Drafters write refs several ways; all name a file:
- * `src/a.ts:12-30`, `src/a.ts:12,40-44`, `origin/main:src/a.ts:12` (a revision
+ * `src/a.ts:12-30`, `src/a.ts:12,40-44`, `origin/main:src/a.ts:12` (any revision
  * first), or with a note after it (`src/a.ts:12 (old behavior)`).
  */
 export function refPath(ref: string): string {
   let r = ref.trim().split(/\s/)[0]!;
   r = r.replace(/:[\d,\-]+$/, ''); // line numbers
-  // A leading revision: `main:`, `HEAD:`, `origin/x:`, `feat/x:` or a commit sha.
-  const rev = /^([^:]+):(.+)$/.exec(r);
-  if (
-    rev &&
-    /^(?:HEAD|main|master|[0-9a-f]{7,40}|[\w.-]+\/[\w./-]+)$/.test(rev[1]!) &&
-    !/\.\w+$/.test(rev[1]!)
-  )
-    r = rev[2]!;
+  // Anything before a colon is a revision (`main:`, `v1.2.0:`, `origin/x~1:`, a
+  // sha): repo-relative paths never contain one.
+  const colon = r.indexOf(':');
+  if (colon > 0) r = r.slice(colon + 1);
   return r;
 }
