@@ -14,6 +14,13 @@ import { isPathUnder, pathKey } from '@showtail/agent-traces/paths/pathUtil';
 import type { PrTruth } from '../git/pr.ts';
 import { leadingCd, mentionsAnyRoot, rootOf, underAnyRoot } from '../trace/pathMatch.ts';
 import { splitCommands } from '../util/shell.ts';
+import {
+  commitMessage,
+  confirmsHead,
+  followsSuccess,
+  gitOperations,
+  oneGitDirectory,
+} from './gitEvidence.ts';
 import type { TraceRecord, TraceSession } from '../trace/types.ts';
 
 export const INCLUDE_AT = 0.5;
@@ -108,7 +115,11 @@ function belongs(r: TraceRecord, truth: PrTruth, w: TimeWindow): boolean {
     return underAnyRoot(r.worktreePath, truth.roots);
   }
   if (!inWindow(r.ts, w)) return false;
+  if (r.kind === 'edit') return underAnyRoot(r.file, truth.roots);
   if (r.kind === 'command') {
+    const operations = gitOperations(r.cmd, r.cwd);
+    if (operations.length)
+      return operations.some((op) => underAnyRoot(op.cwd, truth.roots));
     const dir = leadingCd(r.cmd, r.cwd);
     if (dir) return underAnyRoot(dir, truth.roots) || mentionsAnyRoot(r.cmd, truth.roots);
   }
@@ -117,7 +128,6 @@ function belongs(r: TraceRecord, truth: PrTruth, w: TimeWindow): boolean {
     // Same branch name in an unrelated repo is possible; require no conflicting cwd.
     return !r.cwd;
   }
-  if (r.kind === 'edit') return underAnyRoot(r.file, truth.roots);
   if (r.kind === 'command') return mentionsAnyRoot(r.cmd, truth.roots);
   return false;
 }
@@ -240,12 +250,21 @@ export function formerRootsOf(
   if (!pats.length) return [];
   const out = new Set<string>();
   for (const r of records) {
-    if (r.kind !== 'command' || !r.cwd || !r.output) continue;
-    if (underAnyRoot(r.cwd, truth.roots)) continue;
-    if (pathKey(r.cwd) === pathKey(home)) continue;
-    if (truth.roots.some((root) => isPathUnder(root, r.cwd!))) continue;
+    if (r.kind !== 'command' || !r.output) continue;
+    const operations = gitOperations(r.cmd, r.cwd);
+    if (!oneGitDirectory(operations)) continue;
+    const folder = operations[0]?.cwd;
+    if (!folder || underAnyRoot(folder, truth.roots)) continue;
+    if (pathKey(folder) === pathKey(home)) continue;
+    if (truth.roots.some((root) => isPathUnder(root, folder))) continue;
+    if (
+      !operations.some((op) =>
+        /^(commit|log|show|rev-parse|push|cherry-pick|revert|am|rebase)$/.test(op.verb),
+      )
+    )
+      continue;
     const text = r.output.toLowerCase();
-    if (pats.some((p) => p.test(text))) out.add(resolve(r.cwd));
+    if (pats.some((p) => p.test(text))) out.add(resolve(folder));
   }
   return [...out];
 }
@@ -253,9 +272,9 @@ export function formerRootsOf(
 type CommandRecord = Extract<TraceRecord, { kind: 'command' }>;
 
 /**
- * When the session made each commit: its SHA in a command's output (git commit,
- * git log, git push), or its subject in the message of a `git commit` command
- * (quiet commits print no SHA). Returns SHA -> time of the first such command.
+ * Commit creation evidence: a literal message, native commit output, or an
+ * unambiguous HEAD confirmation after committing. A history listing alone does
+ * not prove creation. Returns SHA -> time of the first such command.
  */
 export function commitMoments(
   records: TraceRecord[],
@@ -263,59 +282,58 @@ export function commitMoments(
   roots?: string[],
 ): Map<string, string | undefined> {
   const found = new Map<string, string | undefined>();
-  const commands = records.filter((r): r is CommandRecord => r.kind === 'command');
+  const commands = records
+    .filter((r): r is CommandRecord => r.kind === 'command')
+    .map((record) => {
+      const operations = gitOperations(record.cmd, record.cwd);
+      return {
+        record,
+        operations,
+        producers: operations.filter((op) =>
+          /^(commit|cherry-pick|revert|am|rebase)$/.test(op.verb),
+        ),
+      };
+    });
   for (const c of commits) {
-    const sha = commitLine(c.sha);
+    const prefix = c.sha.slice(0, 7).toLowerCase();
+    const native = new RegExp(`^\\s*\\[[^\\]\\n]*\\b${prefix}[0-9a-f]*\\]`, 'mi');
     const pushed = pushLine(c.sha);
     const subject = c.subject.trim().length >= 12 ? normalizeText(c.subject) : undefined;
-    for (const r of commands) {
-      // A command run in another repository can't have made this repo's commit,
-      // even if a matching SHA shows up in its output.
-      if (roots && !ranInRepo(r, roots)) continue;
-      // Only a command that creates commits can have made this one: a SHA in
-      // `git log` or `git show` output only means the session looked at it.
-      const commits = makesCommit(r.cmd);
+    for (const { record: r, operations, producers } of commands) {
+      const eligible = producers.filter((op) => !roots || underAnyRoot(op.cwd, roots));
+      if (!eligible.length) continue;
       const out = r.output?.toLowerCase() ?? '';
-      const byOutput = commits && sha.test(out);
-      // `git commit -q … && git push` prints no commit line, but the push names
-      // the commit it uploaded. A push on its own only uploads earlier work.
-      const byPush = commits && /\bgit\b[^\n]*\bpush\b/i.test(r.cmd) && pushed.test(out);
-      // Quiet commits print no SHA: the subject in the command's message counts,
-      // read the way the shell will (escaped quotes and the like undone).
+      const oneDirectory = oneGitDirectory(operations);
+      const byOutput = oneDirectory && native.test(out);
+      const producer = producers.length === 1 ? eligible[0] : undefined;
+      const byPush =
+        producer &&
+        oneDirectory &&
+        pushed.test(out) &&
+        operations.some(
+          (op) => op.verb === 'push' && followsSuccess(r.cmd, producer, op),
+        );
+      // Only a HEAD-only, bounded read can confirm a quiet commit. Mixed output
+      // containing other commit SHAs cannot be assigned to that read.
+      const heads = [...out.matchAll(/^\s*([0-9a-f]{7,40})(?:\s|$)/gm)].map((m) => m[1]!);
+      const byHead =
+        producer &&
+        oneDirectory &&
+        confirmsHead(r.cmd, operations, producer) &&
+        heads.length === 1 &&
+        (c.sha.toLowerCase().startsWith(heads[0]!) ||
+          heads[0]!.startsWith(c.sha.toLowerCase()));
       const bySubject =
+        !r.isError &&
         !!subject &&
-        /\bgit\b[^\n]*\bcommit\b/i.test(r.cmd) &&
-        normalizeShell(r.cmd).includes(subject);
-      if (byOutput || byPush || bySubject) {
+        eligible.some((op) => normalizeText(commitMessage(op) ?? '') === subject);
+      if (byOutput || byPush || byHead || bySubject) {
         found.set(c.sha, r.ts);
         break;
       }
     }
   }
   return found;
-}
-
-/**
- * Whether a command could have run in one of these repositories, judged by its
- * `git -C` target, a leading `cd`, or the directory the agent was in. Only a
- * directory that is clearly elsewhere (neither inside a root nor a parent of
- * one, like a sibling repository) rules it out; unknown counts as yes.
- */
-function ranInRepo(r: CommandRecord, roots: string[]): boolean {
-  const dirs: string[] = [];
-  for (const m of r.cmd.matchAll(/\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)/g)) {
-    const d = m[1]!.replace(/^["']|["']$/g, '');
-    dirs.push(r.cwd ? resolve(r.cwd, d) : d);
-  }
-  if (!dirs.length) {
-    const cd = leadingCd(r.cmd, r.cwd);
-    if (cd) dirs.push(cd);
-    else if (r.cwd) dirs.push(r.cwd);
-  }
-  if (!dirs.length) return true;
-  return dirs.some(
-    (d) => underAnyRoot(d, roots) || roots.some((root) => isPathUnder(root, d)),
-  );
 }
 
 /** `git checkout -b x`, `git switch -c x`, `git push -u origin x` and the like. */
@@ -326,14 +344,6 @@ export function worksOnBranch(cmd: string, branch: string): boolean {
       `\\bgit\\b(?:\\s+-C\\s+\\S+)*\\s+(?:checkout(?:\\s+-[^\\sbB]\\S*)*\\s+-[bB]|switch(?:\\s+-\\S+)*?\\s+(?:-c|-C|--create)|branch|push\\b[^\\n]*?)\\s+(?:\\S+\\s+)?["']?${b}["']?(?:\\s|$|:)`,
     ).test(part),
   );
-}
-
-const COMMIT_MAKER =
-  /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:commit|merge|cherry-pick|revert|am|rebase|pull)\b/;
-
-/** Does any part of this (possibly chained) command create commits? */
-function makesCommit(cmd: string): boolean {
-  return splitCommands(cmd).some((part) => COMMIT_MAKER.test(part));
 }
 
 /** PR commits the session made. */
@@ -488,8 +498,12 @@ export function matchSession(
       kept.some(
         (r) =>
           r.kind === 'command' &&
-          ranInRepo(r, view.roots) &&
-          worksOnBranch(r.cmd, truth.head),
+          gitOperations(r.cmd, r.cwd).some(
+            (op) =>
+              underAnyRoot(op.cwd, view.roots) &&
+              ['checkout', 'switch', 'branch', 'push'].includes(op.verb) &&
+              worksOnBranch(op.command, truth.head),
+          ),
       ));
   const cwdInRepo = kept.some((r) => underAnyRoot(r.cwd, view.roots));
   const commandsTouchRepo = kept.some(

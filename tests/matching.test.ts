@@ -76,6 +76,45 @@ describe('shell edits', () => {
 });
 
 describe('quiet commits', () => {
+  test('a session started in another repo keeps edits before a commit-and-history command', () => {
+    const repo = makeRepo();
+    const startingRepo = tempDir('tracetoon-starting-repo-');
+    const base = git(repo.root, ['rev-parse', 'main']).stdout.trim();
+    const first = repo.commit(
+      'src/greet.ts',
+      GREET.join('\n') + '\n',
+      'Add the greeting helper',
+    );
+    const second = repo.commit(
+      'docs/greeting.md',
+      'Use the greeting helper with a name.\n',
+      'Document the greeting helper',
+    );
+    new ClaudeLog(startingRepo, 'unrelated-branch')
+      .prompt('Build and document the greeting helper')
+      .write(join(repo.root, 'src/greet.ts'), GREET.join('\n') + '\n')
+      .write(
+        join(repo.root, 'docs/greeting.md'),
+        'Use the greeting helper with a name.\n',
+      )
+      .write(join(startingRepo, 'private.ts'), 'PRIVATE-SIBLING-CODE\n')
+      .bash(
+        `cd "${repo.root}" && git commit -qm "Add the greeting helper" && git commit -qm "Document the greeting helper" && git log --oneline`,
+        `${second} Document the greeting helper\n${first} Add the greeting helper\n${base} base`,
+      )
+      .save(claudeHome, 'cross-repo');
+    const { out, full } = digest(repo.root);
+    expect(out.sessions).toHaveLength(1);
+    expect(out.sessions[0].band).toBe('included');
+    expect(full.stats.agentMatchedPct).toBe(100);
+    expect(full.stats.commitsMadeInSessions).toBe(2);
+    expect(full.sessions[0].filesEdited.sort()).toEqual([
+      'docs/greeting.md',
+      'src/greet.ts',
+    ]);
+    expect(JSON.stringify(full)).not.toContain('PRIVATE-SIBLING-CODE');
+  });
+
   test('a -q commit whose message has escaped quotes is credited, in Bash and PowerShell', () => {
     for (const [tool, cmd] of [
       ['bash', 'git add -A && git commit -q -m "feat: say \\"hello\\" to everyone"'],

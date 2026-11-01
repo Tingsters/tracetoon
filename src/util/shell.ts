@@ -4,20 +4,31 @@
  * inline (`python -c "..."`, `cat <<'EOF' ... EOF`), and a line inside one is
  * text, not a command: `print('bun test')` must not count as a test run.
  */
-export function splitCommands(cmd: string): string[] {
-  const parts: string[] = [];
+export interface ShellSegment {
+  command: string;
+  before?: '&&' | '||' | ';' | '|' | '\n';
+}
+
+export function shellSegments(cmd: string): ShellSegment[] {
+  const parts: ShellSegment[] = [];
+  let before: ShellSegment['before'];
   let cur = '';
   let quote: '"' | "'" | '`' | undefined;
   // A heredoc's body starts at the end of its line; skip from there to here.
   let bodyAt = -1;
   let bodyEnd = -1;
-  const push = () => {
-    if (cur.trim()) parts.push(cur.trim());
+  const push = (next: ShellSegment['before']) => {
+    if (cur.trim()) parts.push({ command: cur.trim(), before });
     cur = '';
+    before = next;
   };
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i]!;
     if (quote) {
+      if (quote === '"' && ch === '`' && /["'$`]/.test(cmd[i + 1] ?? '')) {
+        cur += ch + cmd[++i];
+        continue;
+      }
       if (ch === '\\' && quote !== "'" && i + 1 < cmd.length) {
         cur += ch + cmd[++i];
         continue;
@@ -51,23 +62,27 @@ export function splitCommands(cmd: string): string[] {
       continue;
     }
     if (ch === '\n' && i === bodyAt) {
-      push();
+      push('\n');
       i = bodyEnd - 1;
       bodyAt = -1;
       continue;
     }
     const two = cmd.slice(i, i + 2);
     if (two === '&&' || two === '||') {
-      push();
+      push(two as '&&' | '||');
       i++;
       continue;
     }
     if (ch === ';' || ch === '|' || ch === '\n') {
-      push();
+      push(ch as ';' | '|' | '\n');
       continue;
     }
     cur += ch;
   }
-  push();
+  push(undefined);
   return parts;
+}
+
+export function splitCommands(cmd: string): string[] {
+  return shellSegments(cmd).map((part) => part.command);
 }

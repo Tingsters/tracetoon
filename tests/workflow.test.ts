@@ -93,6 +93,35 @@ function ok(root: string, ...args: string[]) {
 }
 
 describe('finished task completion contract', () => {
+  for (const agent of ['claude', 'codex'] as const) {
+    test(`${agent}: syncing main after a published task creates no new task`, () => {
+      const repo = makeRepo();
+      const remote = tempDir('tracetoon-sync-remote-');
+      expect(git(remote, ['init', '-q', '--bare']).ok).toBe(true);
+      expect(git(repo.root, ['remote', 'add', 'origin', remote]).ok).toBe(true);
+      expect(git(repo.root, ['push', '-q', 'origin', 'main']).ok).toBe(true);
+      const id = `sync-${agent}`;
+      const { run, task } = beginTask(repo.root, { session: id });
+      const p = { cwd: repo.root, session_id: id, tool_input: { command: 'git status' } };
+      lifecycle(agent, 'PreToolUse', p, env());
+      repo.commit('feature.ts', 'export const featureValue = 42;\n', 'Add the feature');
+      task.state = 'published';
+      saveTask(run, task);
+      expect(git(repo.root, ['push', '-q', 'origin', 'feature:main']).ok).toBe(true);
+      expect(git(repo.root, ['switch', '-q', 'main']).ok).toBe(true);
+      const sync = { ...p, tool_input: { command: 'git pull --ff-only origin main' } };
+      expect(lifecycle(agent, 'PreToolUse', sync, env())).toBeUndefined();
+      expect(git(repo.root, ['pull', '-q', '--ff-only', 'origin', 'main']).ok).toBe(true);
+      expect(lifecycle(agent, 'PostToolUse', sync, env())).toBeUndefined();
+      expect(lifecycle(agent, 'Stop', p, env())).toBeUndefined();
+      expect(lifecycle(agent, 'Stop', p, env())).toBeUndefined();
+      expect(
+        tasks(repository(repo.root).gitDir).map((t) => [t.run.id, t.task.state]),
+      ).toEqual([[run.id, 'published']]);
+      expect(git(repo.root, ['status', '--porcelain']).stdout).toBe('');
+    });
+  }
+
   test('finished edits without a PR request end normally', () => {
     const repo = makeRepo();
     const p = {
