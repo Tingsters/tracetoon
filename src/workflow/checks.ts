@@ -69,7 +69,7 @@ export function checkEnvironment(env: NodeJS.ProcessEnv = process.env): string {
     Object.entries(env)
       .filter(
         ([k]) =>
-          !/^(TRACETOON|FAKE_|_|PWD$|OLDPWD$|SHLVL$)/.test(k) &&
+          !/^(TRACETOON|FAKE_|_|PWD$|OLDPWD$|SHLVL$|SHELL$)/.test(k) &&
           !HOST_SESSION_VARS.test(k),
       )
       .sort(([a], [b]) => a.localeCompare(b)),
