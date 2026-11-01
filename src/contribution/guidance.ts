@@ -414,7 +414,21 @@ export function contributionPolicy(
   } else if (required) disclosure = 'required';
   if (disclosure === 'required' && next.verdict !== 'prohibited')
     next.verdict = 'disclosure-required';
-  if (has('media-prohibited')) next.media = 'prohibited';
+  if (has('media-prohibited')) {
+    next.media = 'prohibited';
+    // Name where the rule is, as the line check does, when it came from research.
+    if (!next.mediaSource) {
+      const rule = rules.find((r) => r.rendering === 'media-prohibited')!;
+      const ref = rule.sources[0];
+      const source = ref && result.guidance?.sources.find((s) => s.id === ref.source);
+      if (ref && source)
+        next.mediaSource = {
+          file: source.location,
+          line: ref.startLine,
+          text: rule.text.slice(0, 300),
+        };
+    }
+  }
   if (has('text-prohibited')) {
     next.text = 'prohibited';
     next.verdict = 'prohibited';

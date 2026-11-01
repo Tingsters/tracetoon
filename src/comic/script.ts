@@ -159,6 +159,8 @@ export function checkScript(script: unknown, opts: CheckOpts = {}): ScriptProble
     if (p.beat && !BEATS.includes(p.beat))
       bad(`${at}.beat`, `must be one of ${BEATS.join(', ')} (or left out)`);
     if (!p.scene?.trim()) bad(`${at}.scene`, 'is required');
+    if (p.drawn !== undefined && (typeof p.drawn !== 'string' || !p.drawn.trim()))
+      bad(`${at}.drawn`, 'must be a sentence describing the finished art (or left out)');
     if (!Array.isArray(p.characters)) bad(`${at}.characters`, 'must be a list');
     for (const [j, c] of (p.characters ?? []).entries()) {
       if (!c?.name || !names.has(c.name.toLowerCase()))
@@ -356,7 +358,7 @@ export function transcript(script: ComicScript): string {
                   ? `[${d.text}]`
                   : `**${d.speaker}:** ${d.text}`,
         );
-        return `${i + 1}. ${p.scene}${lines.length ? '\n   ' + lines.join('\n   ') : ''}`;
+        return `${i + 1}. ${p.drawn ?? p.scene}${lines.length ? '\n   ' + lines.join('\n   ') : ''}`;
       })
       .join('\n')
   );
