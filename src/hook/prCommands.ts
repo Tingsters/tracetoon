@@ -58,10 +58,36 @@ function stateOnly(url: string, args: string[]): boolean {
     (a) => a !== url && !pullsRepo(a) && !/^https?:\/\//i.test(a),
   );
   // A payload read from a file can't be seen from here; count it as a write.
-  if (payload.some((a) => /(^|=|:)@/.test(a) || a === '--input' || a === '--body-file'))
-    return false;
-  const text = payload.join(' ');
-  return /\bstate\b/i.test(text) && !/\b(title|body)\b/i.test(text);
+  if (payload.some(fromFile)) return false;
+  // State-only means every field sent is `state`; anything unparsed is a write.
+  const fields = payload.flatMap(payloadFields);
+  if (fields.includes(null)) return false;
+  return fields.length > 0 && fields.every((f) => f === 'state');
+}
+
+/** `-d @f`, `-d@f`, `field=@f`, `--input f`, `--input=f`, `-InFile f`, `-T f`. */
+function fromFile(arg: string): boolean {
+  return (
+    /(^|[=:])@/.test(arg) ||
+    /^-[A-Za-z]@/.test(arg) ||
+    /^--?(input|body-file|infile|upload-file)(?:[=:]|$)/i.test(arg) ||
+    arg === '-T'
+  );
+}
+
+/**
+ * The field names an argument sends: `state=closed`, `a=1&b=2`, httpie's
+ * `key:=json`, or JSON keys. Flags and bare words send none; JSON-like text
+ * whose keys can't be read is null (unknown).
+ */
+function payloadFields(arg: string): (string | null)[] {
+  if (arg.startsWith('-')) return [];
+  if (/^\s*[{[]/.test(arg)) {
+    const keys = [...arg.matchAll(/"([^"\\]+)"\s*:/g)].map((m) => m[1]!);
+    return keys.length ? keys : [null];
+  }
+  if (!arg.includes('=')) return [];
+  return arg.split('&').map((pair) => /^([\w.[\]-]+)(?::=|==|=)/.exec(pair)?.[1] ?? null);
 }
 
 /** `gh api` / `hub api`: a non-GET call to the pulls endpoint or a PR mutation. */

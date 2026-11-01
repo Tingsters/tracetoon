@@ -121,6 +121,28 @@ describe('which commands are PR writes', () => {
     ['gh api -X PUT repos/acme/demo/pulls/3 -f state=closed', true],
     ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d @state.json', true],
     ['gh api -X PATCH repos/acme/demo/pulls/3 --input state.json', true],
+    // Every spelling of a file payload is a write.
+    ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d@state.json', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 --input=state.json', true],
+    [
+      'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -InFile state.json',
+      true,
+    ],
+    // State-only means state is the only field sent.
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open -f base=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f base=state', true],
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"state":"open","base":"main"}\'',
+      true,
+    ],
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d state=open&base=main',
+      true,
+    ],
+    [
+      'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Body \'{"state":"closed"}\'',
+      false,
+    ],
     ['gh api -X POST repos/acme/demo/pulls -f state=open -f head=f -f base=main', true],
     // HEAD is a read, for gh/hub api as for the HTTP clients.
     ['gh api -X HEAD repos/acme/demo/pulls', false],
