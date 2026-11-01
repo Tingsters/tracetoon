@@ -28,7 +28,12 @@ import {
   tasks,
   workFingerprint,
 } from '../src/workflow/state.ts';
-import { checkReport, executeCheck, receipts } from '../src/workflow/checks.ts';
+import {
+  checkEnvironment,
+  checkReport,
+  executeCheck,
+  receipts,
+} from '../src/workflow/checks.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
 import { discoveryIndex } from '../src/trace/discovery.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
@@ -1090,10 +1095,27 @@ describe('ordinary git and task identity', () => {
         ['AI_AGENT', 'claude-code_2'],
         ['CODEX_THREAD_ID', 'another-thread'],
         ['CODEX_TOOL_CALL_ID', 'call-2'],
+        // Git Bash changes this login-shell hint between direct and scripted
+        // calls; executeCheck launches the named program without a shell.
+        ['SHELL', '/usr/bin/bash'],
+        ['SHELL', 'C:/Program Files/Git/bin/bash.exe'],
       ] as const) {
         process.env[k] = v;
         expect(current()).toBe(true);
+        expect(
+          executeCheck(repo.root, run, {
+            name: 'tests',
+            command: [process.execPath, '-e', '1'],
+          }).reused,
+        ).toBe(true);
       }
+      const environment = checkEnvironment();
+      expect(checkEnvironment({ ...process.env, PATH: 'changed-toolchain' })).not.toBe(
+        environment,
+      );
+      expect(
+        checkEnvironment({ ...process.env, BASH_ENV: 'different-startup-script' }),
+      ).not.toBe(environment);
       process.env.NODE_ENV = 'production';
       expect(current()).toBe(false);
     } finally {
