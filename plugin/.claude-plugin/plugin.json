@@ -1,6 +1,6 @@
 {
   "name": "tracetoon",
-  "version": "1.0.0-rc.22",
+  "version": "1.0.0-rc.23",
   "description": "Creates your PR with a description written from the agent session logs already on your machine, and an optional one-off comic.",
   "author": {
     "name": "Tingsters"
