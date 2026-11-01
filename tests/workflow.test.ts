@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   afterEach,
   beforeEach,
@@ -179,6 +180,34 @@ describe('finished task completion contract', () => {
     expect(readTask(active!.run)?.state).toBe('blocked');
     // Told once; the user decides what happens next.
     expect(lifecycle('claude', 'Stop', p, env())).toBeUndefined();
+
+    // Once body.md is fixed, the old render no longer counts as leak-blocked:
+    // a new request asks for a render and publish, not the old notice.
+    const fixedRepo = makeRepo();
+    git(fixedRepo.root, ['switch', '-q', '-c', 'feature']);
+    const q = { cwd: fixedRepo.root, session_id: 'pr-secret-fixed' };
+    lifecycle(
+      'claude',
+      'PreToolUse',
+      { ...q, tool_input: { command: 'gh pr create --fill' } },
+      env(),
+    );
+    const [fixedTask] = tasks(repository(fixedRepo.root).gitDir);
+    const leaked = 'Config: api_key = sk-live-abc\n';
+    writeFileSync(join(fixedTask!.run.dir, 'body.md'), leaked);
+    writeLocal(join(fixedTask!.run.dir, 'approval.json'), {
+      findings: [{ kind: 'api-key', count: 1 }],
+      findingAt: ['final-body.md:1'],
+      allowFindings: false,
+      sourceSha: createHash('sha256').update(leaked).digest('hex'),
+    });
+    writeFileSync(
+      join(fixedTask!.run.dir, 'body.md'),
+      'Config: read the key from the env.\n',
+    );
+    const after = lifecycle('claude', 'Stop', q, env())!;
+    expect(after).toContain('has not been created');
+    expect(after).not.toContain('PR NOT CREATED');
   });
 
   test('an intercepted PR write keeps the session open until the PR is published', () => {

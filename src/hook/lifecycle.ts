@@ -1,6 +1,13 @@
 /** Native host lifecycle adapters. Hooks inspect local state; they never run models or checks. */
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import { closeSync, openSync, readSync, statSync, existsSync } from 'node:fs';
+import {
+  closeSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  existsSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { readLocal, writeLocal } from '../util/localJson.ts';
 import {
@@ -299,7 +306,18 @@ export function lifecycle(
     const fingerprint = workFingerprint(repo.root);
     // A render the leak scan blocked needs the user, not another automatic attempt.
     const rendered = readLocal<Approval>(join(run.dir, 'approval.json'));
-    if (leakBlocks(rendered)) {
+    // A body.md fixed since that render is no longer blocked: it needs a render.
+    let bodyChanged = false;
+    try {
+      bodyChanged =
+        !!rendered?.sourceSha &&
+        createHash('sha256')
+          .update(readFileSync(join(run.dir, 'body.md')))
+          .digest('hex') !== rendered.sourceSha;
+    } catch {
+      /* no body.md: nothing was fixed */
+    }
+    if (leakBlocks(rendered) && !bodyChanged) {
       task.state = 'blocked';
       task.reason = 'The leak scan found a possible secret in the PR text.';
       saveTask(run, task);
