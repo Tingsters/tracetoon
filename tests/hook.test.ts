@@ -143,6 +143,31 @@ describe('which commands are PR writes', () => {
       'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Body \'{"state":"closed"}\'',
       false,
     ],
+    // Joined and long field flags are read too.
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open --field=base=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open --raw-field=base=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open -fbase=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -F state=open -Fbase=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 --field=state=closed', false],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -fstate=closed', false],
+    // A JSON key with an escape can't be read, so it is a write.
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"state":"closed","ba\\u0073e":"main"}\'',
+      true,
+    ],
+    // PowerShell: inline values, hashtable bodies, and headers that aren't payload.
+    [
+      'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Body:\'{"state":"closed"}\'',
+      false,
+    ],
+    [
+      'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Headers @{Accept=\'application/json\'} -Body \'{"state":"closed"}\'',
+      false,
+    ],
+    [
+      "Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Body @{state='closed'; base='main'}",
+      true,
+    ],
     ['gh api -X POST repos/acme/demo/pulls -f state=open -f head=f -f base=main', true],
     // HEAD is a read, for gh/hub api as for the HTTP clients.
     ['gh api -X HEAD repos/acme/demo/pulls', false],

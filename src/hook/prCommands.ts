@@ -54,13 +54,11 @@ export interface PrWrite {
 function stateOnly(url: string, args: string[]): boolean {
   if (!/\/pulls\/\d+\/?(?:[?#]|$)/.test(url)) return false;
   // Judge the payload only, never the URL (a repo can be named "state").
-  const payload = args.filter(
-    (a) => a !== url && !pullsRepo(a) && !/^https?:\/\//i.test(a),
-  );
+  const target = (a: string) => a === url || !!pullsRepo(a) || /^https?:\/\//i.test(a);
   // A payload read from a file can't be seen from here; count it as a write.
-  if (payload.some(fromFile)) return false;
+  if (args.some((a) => !target(a) && fromFile(a))) return false;
   // State-only means every field sent is `state`; anything unparsed is a write.
-  const fields = payload.flatMap(payloadFields);
+  const fields = sentFields(args, target);
   if (fields.includes(null)) return false;
   return fields.length > 0 && fields.every((f) => f === 'state');
 }
@@ -68,26 +66,79 @@ function stateOnly(url: string, args: string[]): boolean {
 /** `-d @f`, `-d@f`, `field=@f`, `--input f`, `--input=f`, `-InFile f`, `-T f`. */
 function fromFile(arg: string): boolean {
   return (
-    /(^|[=:])@/.test(arg) ||
+    /(^|[=:])@(?!\{)/.test(arg) ||
     /^-[A-Za-z]@/.test(arg) ||
     /^--?(input|body-file|infile|upload-file)(?:[=:]|$)/i.test(arg) ||
     arg === '-T'
   );
 }
 
+// Flags whose value is the request payload, and flags whose value is not.
+const PAYLOAD_FLAG =
+  /^(f|field|raw-field|d|data|data-raw|data-ascii|data-urlencode|json|body|form)$/i;
+const OTHER_FLAG =
+  /^(x|method|request|h|header|headers|hostname|jq|q|template|t|cache|preview|p|uri|contenttype|content-type|useragent|user-agent|a|user|u|o|output|w|write-out)$/i;
+
 /**
- * The field names an argument sends: `state=closed`, `a=1&b=2`, httpie's
- * `key:=json`, or JSON keys. Flags and bare words send none; JSON-like text
- * whose keys can't be read is null (unknown).
+ * The field names a call sends, reading each flag in context: `-f k=v`,
+ * `-fk=v`, `--field=k=v`, `-d 'a=1&b=2'`, `-Body:'{"k":1}'`, `-Body @{k=1}`,
+ * httpie's `k=v` / `k:=json`. A value that can't be read is null (unknown).
  */
-function payloadFields(arg: string): (string | null)[] {
-  if (arg.startsWith('-')) return [];
-  if (/^\s*[{[]/.test(arg)) {
-    const keys = [...arg.matchAll(/"([^"\\]+)"\s*:/g)].map((m) => m[1]!);
+function sentFields(args: string[], target: (arg: string) => boolean): (string | null)[] {
+  const out: (string | null)[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (target(arg)) continue;
+    if (!arg.startsWith('-')) {
+      out.push(...fieldsIn(arg, false));
+      continue;
+    }
+    // A short payload flag joined to its value: -fbase=main, -dstate=closed.
+    const joined = /^-([fFd])([A-Za-z_].*)$/.exec(arg);
+    if (joined && /[=&]/.test(joined[2]!)) {
+      out.push(...fieldsIn(joined[2]!, true));
+      continue;
+    }
+    const flag = /^--?([A-Za-z][\w-]*)(?:[=:]([\s\S]*))?$/.exec(arg);
+    if (!flag) {
+      out.push(null);
+      continue;
+    }
+    const [, name, inline] = flag;
+    const next = inline === undefined ? args[i + 1] : undefined;
+    if (PAYLOAD_FLAG.test(name!)) {
+      const value = inline ?? next;
+      if (inline === undefined) i++;
+      out.push(...(value === undefined ? [null] : fieldsIn(value, true)));
+    } else if (OTHER_FLAG.test(name!)) {
+      if (inline === undefined) i++; // its value is not payload
+    } else if (inline !== undefined) {
+      out.push(null); // an unknown flag with a value might carry payload
+    }
+  }
+  return out;
+}
+
+/** Field names in one payload value; `payload` means it can't be a bare word. */
+function fieldsIn(value: string, payload: boolean): (string | null)[] {
+  // The tokenizer can leave a quote on an inline value (-Body:'{...}).
+  const v = value.trim().replace(/^['"]|['"]$/g, '');
+  if (/^[{[]/.test(v)) {
+    // Escapes could hide a key; only plain keys can be read.
+    if (v.includes('\\')) return [null];
+    const keys = [...v.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]!);
     return keys.length ? keys : [null];
   }
-  if (!arg.includes('=')) return [];
-  return arg.split('&').map((pair) => /^([\w.[\]-]+)(?::=|==|=)/.exec(pair)?.[1] ?? null);
+  if (v.startsWith('@{')) {
+    // A `;` inside the hashtable splits the command, so a cut-off one is unknown.
+    if (!v.endsWith('}')) return [null];
+    const keys = [...v.matchAll(/(?:^@\{|;)\s*['"]?([\w-]+)['"]?\s*=/g)].map(
+      (m) => m[1]!,
+    );
+    return keys.length ? keys : [null];
+  }
+  if (!v.includes('=')) return payload ? [null] : [];
+  return v.split('&').map((pair) => /^([\w.[\]-]+)(?::=|==|=)/.exec(pair)?.[1] ?? null);
 }
 
 /** `gh api` / `hub api`: a non-GET call to the pulls endpoint or a PR mutation. */
