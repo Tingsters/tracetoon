@@ -255,7 +255,9 @@ image, lettering included**, so the words look like part of the comic. Then:
    stale. Set that panel's `drawn` to a sentence describing what the finished
    panel shows (the transcript uses it) and correct `altText`. Neither is sent
    to the image model, so no redraw is needed; run `tracetoon comic render`
-   again.
+   again. Art drawn by an earlier Tracetoon build is adopted the first time
+   `comic render` (or `comic art`) runs, so run it once before correcting
+   that text.
 5. Not loving the look? `tracetoon comic reroll` keeps the story and redraws it
    in a style idea the repo hasn't used lately (`--style "<any style>"` to choose
    one, `--format`, `--palette` to change those too).

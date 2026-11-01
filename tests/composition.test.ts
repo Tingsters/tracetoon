@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   artFingerprint,
+  artMatches,
   comicSummary,
   frameAspect,
   resolveComposition,
@@ -150,6 +152,22 @@ describe('story-led compositions', () => {
     // What the image model draws from still counts.
     s.panels[0]!.scene = `${s.panels[0]!.scene} At night.`;
     expect(artFingerprint(s, 'model')).not.toBe(original);
+  });
+
+  test('art drawn by an earlier build still matches until its text changes', () => {
+    const s = example('comparison');
+    // Earlier builds hashed everything but the private reasoning and anchor.
+    const { designReason: _d, anchor: _a, ...art } = s;
+    const legacy = createHash('sha256')
+      .update(JSON.stringify({ art, lettering: 'model' }))
+      .digest('hex');
+    expect(legacy).not.toBe(artFingerprint(s, 'model'));
+    expect(artMatches(legacy, s, 'model')).toBe(true);
+    expect(artMatches(artFingerprint(s, 'model'), s, 'model')).toBe(true);
+    expect(artMatches(legacy, s, 'overlay')).toBe(false);
+    expect(artMatches(undefined, s, 'model')).toBe(false);
+    s.altText = 'Edited before the art was adopted.';
+    expect(artMatches(legacy, s, 'model')).toBe(false);
   });
 
   test('repeat checks are semantic, advisory and respect style pins and unknown history', () => {

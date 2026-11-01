@@ -171,6 +171,26 @@ export function artFingerprint(
     .digest('hex');
 }
 
+/**
+ * Whether a stored fingerprint belongs to this script's art. Earlier builds
+ * also hashed the alt text and synopsis, so art they drew still matches while
+ * that text is unchanged; `comic art` and `comic render` then re-stamp it, and
+ * later text edits no longer need a redraw.
+ */
+export function artMatches(
+  stored: string | undefined,
+  script: ComicScript,
+  lettering: 'model' | 'overlay',
+): boolean {
+  if (!stored) return false;
+  if (stored === artFingerprint(script, lettering)) return true;
+  const { designReason: _private, anchor: _anchor, ...art } = script;
+  return (
+    stored ===
+    createHash('sha256').update(JSON.stringify({ art, lettering })).digest('hex')
+  );
+}
+
 const STYLE_GROUPS: [StyleFamily, string[]][] = [
   ['ink', ['manga-ink', 'noir', 'ligne-claire']],
   [
