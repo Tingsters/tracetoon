@@ -57,6 +57,7 @@ import {
 } from '../comic/types.ts';
 import {
   artFingerprint,
+  artMatches,
   comicSummary,
   frameAspect,
   pageAspect,
@@ -264,7 +265,9 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
   const manifest = readJson<{ fingerprint?: string }>(run, 'art/manifest.json');
   if (
     manifest &&
-    (manifest.fingerprint ? manifest.fingerprint !== fingerprint : !!script.composition)
+    (manifest.fingerprint
+      ? !artMatches(manifest.fingerprint, script, lettering)
+      : !!script.composition)
   ) {
     clearPage(run);
     clearPanels(run);
@@ -277,6 +280,9 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
       provider: provider ?? 'existing',
       panels: [],
     });
+  } else if (manifest?.fingerprint && manifest.fingerprint !== fingerprint) {
+    // Art drawn by an earlier build: adopt it under today's fingerprint.
+    writeJson(run, 'art/manifest.json', { ...manifest, fingerprint });
   }
   const results: { panel: number; file: string; source: string }[] = [];
 
@@ -501,7 +507,7 @@ function acceptRequestedArt(run: Run, script: ComicScript): void {
   if (
     !request ||
     !['model', 'overlay'].includes(request.lettering) ||
-    request.fingerprint !== artFingerprint(script, request.lettering)
+    !artMatches(request.fingerprint, script, request.lettering)
   )
     return;
   const current = artHashes(run, script, request.lettering);
@@ -515,7 +521,7 @@ function acceptRequestedArt(run: Run, script: ComicScript): void {
     provider: 'host',
     mode: request.lettering === 'model' ? 'page' : 'panels',
     lettering: request.lettering,
-    fingerprint: request.fingerprint,
+    fingerprint: artFingerprint(script, request.lettering),
   });
   rmSync(join(run.dir, 'art/request.json'), { force: true });
 }
@@ -535,11 +541,16 @@ export async function comicRenderCmd(
   const fingerprint = artFingerprint(script, lettering);
   if (
     manifest &&
-    (manifest.fingerprint ? manifest.fingerprint !== fingerprint : !!script.composition)
+    (manifest.fingerprint
+      ? !artMatches(manifest.fingerprint, script, lettering)
+      : !!script.composition)
   )
     throw new UserError(
       'The art belongs to an earlier script or composition. Run tracetoon comic art --force, or use comic prompts and save fresh host-tool images before rendering.',
     );
+  if (manifest?.fingerprint && manifest.fingerprint !== fingerprint)
+    // Art drawn by an earlier build: adopt it under today's fingerprint.
+    writeJson(run, 'art/manifest.json', { ...manifest, fingerprint });
   let svg: string;
   if (page) {
     svg = pageWithFooter({ mime: page.mime, data: readFileSync(page.path) });
@@ -715,7 +726,7 @@ export function renderedComic(
   if (
     script &&
     (output || script.composition) &&
-    (!output || output.fingerprint !== artFingerprint(script, output.lettering))
+    (!output || !artMatches(output.fingerprint, script, output.lettering))
   )
     throw new UserError(
       'The rendered comic is stale for this script or composition. Draw and render the current comic before rendering the PR.',
