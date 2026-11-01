@@ -75,9 +75,9 @@ function fromFile(arg: string): boolean {
 
 // Flags whose value is the request payload, and flags whose value is not.
 const PAYLOAD_FLAG =
-  /^(f|field|raw-field|d|data|data-raw|data-ascii|data-urlencode|json|body|form)$/i;
+  /^(f|field|raw-field|d|data|data-raw|data-ascii|data-urlencode|json|body|form|raw)$/i;
 const OTHER_FLAG =
-  /^(x|method|request|h|header|headers|hostname|jq|q|template|t|cache|preview|p|uri|contenttype|content-type|useragent|user-agent|a|user|u|o|output|w|write-out)$/i;
+  /^(x|method|request|h|header|headers|hostname|jq|q|template|t|cache|preview|p|uri|contenttype|content-type|useragent|user-agent|a|auth|auth-type|user|u|o|output|w|write-out)$/i;
 
 /**
  * The field names a call sends, reading each flag in context: `-f k=v`,
@@ -208,13 +208,7 @@ function httpWrite(program: string, rawArgs: string[]): PrWrite | undefined {
         ? 'POST'
         : 'GET');
   } else if (['http', 'https', 'xh', 'xhs'].includes(program)) {
-    const positional = args.find((a) => !a.startsWith('-'));
-    // Data items (`k=v`, `k:=json`, `k@file`) make a POST; `k==v` is a query parameter.
-    method = /^(GET|POST|PUT|PATCH|DELETE)$/i.test(positional ?? '')
-      ? positional!.toUpperCase()
-      : args.some((a) => /^[\w.-]+(?::=|=(?!=)|@)/.test(a) && !GITHUB_API.test(a))
-        ? 'POST'
-        : 'GET';
+    method = httpieMethod(args);
   } else {
     // Invoke-RestMethod / Invoke-WebRequest (irm, iwr): GET unless -Method says
     // otherwise. PowerShell accepts any unambiguous prefix and `-Method:Post`.
@@ -224,6 +218,37 @@ function httpWrite(program: string, rawArgs: string[]): PrWrite | undefined {
   if (url && method === 'PATCH' && stateOnly(url, args)) return;
   const repo = url ? pullsRepo(url) : undefined;
   return repo ? { repo } : {};
+}
+
+// HTTPie's option values can precede METHOD and URL. They are not positional
+// arguments: e.g. `http --raw '{...}' PATCH URL` or `http -A bearer -a TOKEN GET URL`.
+const HTTPIE_VALUE_FLAG =
+  /^(--raw|--auth|-a|--auth-type|-A|--session|--session-read-only|--proxy|--cert|--cert-key|--verify|--timeout|--max-redirects|--print|-p|--pretty|--style|--output|-o|--default-scheme|--format-options|--response-mime|--response-charset|--ssl|--ssl-ciphers|--max-headers|--boundary)$/;
+
+function httpieMethod(args: string[]): string {
+  const positional: string[] = [];
+  let raw = false;
+  let options = true;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (options && arg === '--') {
+      options = false;
+      continue;
+    }
+    if (options && arg.startsWith('-')) {
+      const name = arg.split('=', 1)[0]!;
+      if (name === '--raw') raw = true;
+      if (HTTPIE_VALUE_FLAG.test(name) && !arg.includes('=')) i++;
+      continue;
+    }
+    positional.push(arg);
+  }
+  if (/^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/i.test(positional[0] ?? ''))
+    return positional[0]!.toUpperCase();
+  // Raw bodies, files and data items imply POST; `k==v` is a query parameter.
+  return raw || positional.some((a) => /^(?:@|[\w.-]+(?::=|=(?!=)|@))/.test(a))
+    ? 'POST'
+    : 'GET';
 }
 
 const HTTP_PROGRAMS = [
