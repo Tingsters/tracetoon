@@ -690,6 +690,8 @@ describe('source-backed composition', () => {
     expect(stale.status).toBe('stale');
     const policy = contributionPolicy({ verdict: 'none', excerpts: [] }, stale).policy;
     expect(policy.media).toBe('prohibited');
+    // A researched ban names its source, like a ban found by the line check.
+    expect(policy.mediaSource).toMatchObject({ file: 'linked.md', line: 1 });
     expect(policy.noPullRequests).toBe(true);
     expect(stale.issues.join(' ')).toContain('research again');
   });
