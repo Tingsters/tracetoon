@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -14,6 +21,10 @@ import {
 import { switchState } from '../src/hook/switches.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
+
+// Several tests build real repos and run many git processes; Windows is slow
+// under load (the settings test timed out at the 5 s default).
+setDefaultTimeout(60_000);
 
 const CLI = process.env.TRACETOON_TEST_CLI ?? resolve(import.meta.dir, '../src/cli.ts');
 const claude = (command: string, cwd = tempDir()) => ({ tool_input: { command }, cwd });
