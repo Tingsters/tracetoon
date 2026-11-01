@@ -136,6 +136,9 @@ try {
   # The binary finds its comic fonts and renderer at ..\assets, beside bin\,
   # so it can render comics when run directly (not only through a skill).
   # Same set-aside swap, so a failure never leaves assets half removed.
+  # Earlier set-aside copies that could not be deleted are swept first.
+  Get-ChildItem -LiteralPath $homeRoot -Directory -Filter 'assets.old-*' -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   $assets = Join-Path $homeRoot 'assets'
   $assetsNew = $assets + '.new-' + [guid]::NewGuid().ToString('N')
   $assetsOld = $assets + '.old-' + [guid]::NewGuid().ToString('N')
