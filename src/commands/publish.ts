@@ -131,6 +131,8 @@ export interface Approval {
   comicSha?: string;
   comicFile?: string;
   findings: { kind: string; count: number }[];
+  /** SHA-256 of body.md as rendered, so a later fix can be told apart from this render. */
+  sourceSha?: string;
   /** Where the leak scan found something ("title" or "final-body.md:<line>"); never the value. */
   findingAt?: string[];
   allowFindings: boolean;
@@ -330,6 +332,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     code: '',
     title,
     bodySha: sha(body),
+    sourceSha: sha(bodyMd),
     comicSha,
     comicFile: comic?.path,
     findings,

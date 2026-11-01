@@ -133,6 +133,10 @@ mechanical. Every behavior file belongs to a group. When the map needs more
 than three separate behavior ideas that don't depend on each other, tell the
 user the PR may be several changes; don't split it yourself.
 
+`kind` is `behavior`, `test`, `docs` or `mechanical`. Each `example.refs` entry
+names a file and, optionally, lines: `src/a.ts:12-30`, `src/a.ts:12,40-44`, or
+with a revision first for base code (`origin/main:src/a.ts:12`).
+
 For the comic, the drafter uses `comic-direction.md` to compare three short
 concepts in local `comic-design.json`, then writes one selected `comic.json` with
 explicit composition and deliberate cast. The concepts are text, not extra
