@@ -55,6 +55,15 @@ const GREET =
 setDefaultTimeout(60_000);
 
 describe('digest', () => {
+  test('unavailable internal timing logs do not block evidence preparation', () => {
+    const repo = makeRepo();
+    const task = cli(repo.root, 'task', 'begin');
+    expect(task.code).toBe(0);
+    mkdirSync(join(task.json.runDir, 'timings.json'));
+    const result = cli(repo.root, 'digest', '--offline', '--run', task.json.run);
+    expect(result.code).toBe(0);
+    expect(existsSync(result.json.digestPath)).toBe(true);
+  });
   test('an invalid explicit context run never creates a replacement', () => {
     const repo = makeRepo();
     const r = cli(repo.root, 'context', '--offline', '--run', '20990101-000000');

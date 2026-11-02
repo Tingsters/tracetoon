@@ -89,8 +89,12 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     interop,
     budgetTokens: opts.budget ?? config.budgetTokens,
   });
-  recordTiming(run, 'digest-extraction', extractionMs);
-  recordTiming(run, 'digest-projection', projectionMs);
+  try {
+    recordTiming(run, 'digest-extraction', extractionMs);
+    recordTiming(run, 'digest-projection', projectionMs);
+  } catch {
+    // Optional telemetry must not prevent creation of the evidence packet.
+  }
   if (readTask(run)) {
     const report = checkReport(truth.toplevel, run);
     const validation = report.map((c) => ({
