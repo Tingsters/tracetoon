@@ -268,6 +268,14 @@ MSR 2026). The review has three passes:
    transfer assessment and suggest a concrete correction; never invent context
    just because it would improve completeness.
 
+Treat every assertion about what the user requested, including "the requested
+evaluation", as an intent claim. Compare its exact object with a prompt or
+recorded decision. Shared words, replay task labels, commit explanations and
+discoveries during dogfooding do not establish a user request. Use neutral
+behavior or attributed context when the request is unsupported. For substantial
+changes, the cold read must identify a concrete behavior, condition or code
+entry point where a reviewer should start, rather than just "the diff".
+
 For validation claims, compare exact commands, targets and flags. Distinguish
 historical R facts from current V receipts; a later failure does not contradict
 an explicitly historical pass. A whole-file or suite result does not prove a

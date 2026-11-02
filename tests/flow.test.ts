@@ -55,6 +55,28 @@ const GREET =
 setDefaultTimeout(60_000);
 
 describe('digest', () => {
+  test('an invalid explicit context run never creates a replacement', () => {
+    const repo = makeRepo();
+    const r = cli(repo.root, 'context', '--offline', '--run', '20990101-000000');
+    expect(r.code).toBe(1);
+    expect(r.json.error).toContain('No Tracetoon run');
+    const folder = join(repo.root, '.git', 'tracetoon', 'runs');
+    expect(existsSync(folder)).toBe(false);
+  });
+  test('preparation refuses a registered run owned by another branch', () => {
+    const repo = makeRepo();
+    const task = cli(repo.root, 'task', 'begin');
+    expect(task.code).toBe(0);
+    const file = join(task.json.runDir, 'task.json');
+    const metadata = JSON.parse(readFileSync(file, 'utf8'));
+    writeFileSync(file, JSON.stringify({ ...metadata, branch: 'other-feature' }));
+    expect(
+      cli(repo.root, 'digest', '--offline', '--run', task.json.run).json.error,
+    ).toContain('another worktree or branch');
+    expect(cli(repo.root, 'render', '--run', task.json.run).json.error).toContain(
+      'another worktree or branch',
+    );
+  });
   test('expands complete redacted facts with stable ids and commit explanations', () => {
     const repo = makeRepo();
     const prompt =

@@ -11,11 +11,25 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface Run {
   id: string;
   dir: string;
+}
+
+/** Legacy scratch runs have no owner; registered runs must stay in their worktree. */
+export function assertRunOwner(run: Run, root: string, branch: string): void {
+  const file = join(run.dir, 'task.json');
+  if (!existsSync(file)) return;
+  const task = JSON.parse(readFileSync(file, 'utf8'));
+  if (
+    (task.root && resolve(task.root) !== resolve(root)) ||
+    (task.branch && task.branch !== branch)
+  )
+    throw new Error(
+      `Run ${run.id} belongs to another worktree or branch. Select its checkout or use another --run.`,
+    );
 }
 
 function runsDir(gitDir: string): string {

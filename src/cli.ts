@@ -33,7 +33,7 @@ import { runPrHook, type HookAgent } from './hook/prHook.ts';
 import { TOOL_VERSION, BUILD_INFO } from './version.ts';
 import { taskCmd, checkCmd } from './commands/workflow.ts';
 import { runLifecycle, type LifecycleEvent } from './hook/lifecycle.ts';
-import { findRun } from './run.ts';
+import { assertRunOwner, findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
 import { recordTiming } from './workflow/publication.ts';
 
@@ -55,6 +55,13 @@ const program = new Command()
 const g = () => program.opts<{ json?: boolean }>();
 let timedAction: { name: string; run?: string; started: number } | undefined;
 program.hook('preAction', (_command, action) => {
+  if (
+    action.opts().run &&
+    ['render', 'publish', 'art', 'reroll', 'prompts'].includes(action.name())
+  ) {
+    const repo = repository(cwd);
+    assertRunOwner(findRun(repo.gitDir, action.opts().run), repo.root, repo.branch);
+  }
   timedAction = {
     name: action.name(),
     run: action.opts().run,

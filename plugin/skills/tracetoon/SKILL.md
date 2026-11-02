@@ -44,6 +44,11 @@ that bypass on your own initiative.
 
 ## Workflow
 
+Keep the selected JSON run ID and artifact paths in every handoff. An explicit
+run failure must not switch to another run. Start with compact evidence and
+notes; expand individual facts when needed rather than loading full traces into
+every role. Keep the researcher, drafter and independent reviewer separate.
+
 0. **Initialize PR preparation.** Reuse the run from the hook redirect, or run
    `tracetoon task begin --json` now and keep its run ID. Use actual host session
    and transcript identifiers when available; otherwise omit them. Hooks can
@@ -104,7 +109,7 @@ that bypass on your own initiative.
      their sources and environments distinct, and never infer hosted CI status.
      Historical edit markers can miss shell writes; they do not establish that
      code stayed unchanged. Current matching-content claims need a V receipt.
-3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
+3. **Context.** `tracetoon context --run <id> --json`. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).
    - **Researcher phase.** Launch a separate researcher with the host's native

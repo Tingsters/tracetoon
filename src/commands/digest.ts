@@ -3,14 +3,15 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeResearchPacket } from '../contribution/guidance.ts';
 import { loadConfig } from '../config.ts';
-import { buildDigest, type TraceDigest } from '../digest/build.ts';
+import { buildDigestPair, type TraceDigest } from '../digest/build.ts';
 import { findPrTemplate, detectAiPolicy } from '../github/repoContext.ts';
 import { decodeMeta, humanPart, regionContent, regionEdited } from '../github/body.ts';
 import { prTruth } from '../git/pr.ts';
 import { scan } from '../pipeline.ts';
 import { recentComics } from '../github/history.ts';
 import { describeTitleRules, readTitleRules } from '../github/titleRules.ts';
-import { findRun, newRun, readJson, writeJson } from '../run.ts';
+import { assertRunOwner, findRun, newRun, readJson, writeJson } from '../run.ts';
+import { recordTiming } from '../workflow/publication.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { submissionSnapshot } from '../review/snapshot.ts';
 import { checkReport, receiptEvidence } from '../workflow/checks.ts';
@@ -71,6 +72,7 @@ export function digestHash(d: TraceDigest): string {
 export function digestCmd(cwd: string, opts: DigestOpts): void {
   const { truth, matches } = scan(cwd, { base: opts.base, noGh: opts.offline });
   const run = opts.run ? findRun(truth.gitDir, opts.run) : newRun(truth.gitDir);
+  assertRunOwner(run, truth.toplevel, truth.head);
   const config = loadConfig(truth.toplevel);
   const selected = readJson<{ include?: string[]; exclude?: string[] }>(
     run,
@@ -82,17 +84,13 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
   };
   // Both digests describe the same truth; read its provenance once.
   const interop = detectInterop(truth);
-  const digest = buildDigest(truth, matches, {
+  const { digest, full, extractionMs, projectionMs } = buildDigestPair(truth, matches, {
     ...build,
     interop,
     budgetTokens: opts.budget ?? config.budgetTokens,
   });
-  const full = buildDigest(truth, matches, {
-    ...build,
-    interop,
-    budgetTokens: Number.MAX_SAFE_INTEGER,
-    full: true,
-  });
+  recordTiming(run, 'digest-extraction', extractionMs);
+  recordTiming(run, 'digest-projection', projectionMs);
   if (readTask(run)) {
     const report = checkReport(truth.toplevel, run);
     const validation = report.map((c) => ({
@@ -212,11 +210,15 @@ export function contextCmd(
 ): void {
   let truth = prTruth(cwd, { noGh: opts.offline });
   let run;
-  try {
-    run = findRun(truth.gitDir, opts.run);
-  } catch {
-    run = newRun(truth.gitDir);
+  if (opts.run) run = findRun(truth.gitDir, opts.run);
+  else {
+    try {
+      run = findRun(truth.gitDir);
+    } catch {
+      run = newRun(truth.gitDir);
+    }
   }
+  assertRunOwner(run, truth.toplevel, truth.head);
   const digest = readJson<TraceDigest>(run, 'digest.json');
   if (digest?.pr.base && digest.pr.base !== truth.base)
     truth = prTruth(cwd, { base: digest.pr.base, noGh: opts.offline });
@@ -267,6 +269,8 @@ export function contextCmd(
     {
       run: run.id,
       ...ctx,
+      runDir: run.dir,
+      contextPath: join(run.dir, 'context.json'),
       existingPr: ctx.existingPr && { ...ctx.existingPr, body: undefined },
     },
     () =>

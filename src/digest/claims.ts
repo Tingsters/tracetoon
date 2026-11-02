@@ -97,7 +97,7 @@ function commandIdentity(cmd: string): string {
 const AUTHOR =
   /\b(reported by the author|(the )?author (reports|says|checked|tested)|manually|by hand|I (tested|checked|ran|verified|tried))\b/i;
 const ATTRIBUTION =
-  /\b(the user|the author|you)\s+(chose|decided|picked|selected|asked|wanted|preferred|rejected|turned down|approved)\b/i;
+  /\b(the user|the author|you)\s+(chose|decided|picked|selected|asked|wanted|preferred|rejected|turned down|approved)\b|\b(?:the|a|an)\s+(?:requested|desired|wanted)\s+|\bin response to\s+(?:the user|the author|your|a request)/i;
 const ALTERNATIVE =
   /\b(instead of|rather than|considered|alternative|rejected|dropped|replaces?|replaced|removed|deleted|renamed|old|previously|no longer|was)\b/i;
 
@@ -372,6 +372,18 @@ function checkAttribution(s: string, input: ClaimInput): ClaimFinding | undefine
       'attribution',
       'not established',
       'A recorded choice shows what was picked; an unpicked option is not the same as a rejection with a reason.',
+      support.slice(0, 2).map((f) => f.id),
+    );
+  const explicit =
+    /\b(the user|the author|you)\s+(chose|decided|picked|selected|asked|wanted|preferred|rejected|turned down|approved)\b/i.test(
+      s,
+    );
+  if (!explicit || /\b(asked|wanted|requested)\b/i.test(s))
+    return finding(
+      s,
+      'attribution',
+      'not established',
+      'Related words are only candidate evidence. Inspect the cited prompts or decisions to establish this request; commit explanations and dogfooding do not establish user intent.',
       support.slice(0, 2).map((f) => f.id),
     );
   return finding(
