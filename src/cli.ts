@@ -141,7 +141,9 @@ program
 
 program
   .command('expand <ref>')
-  .description('print the untrimmed digest entry for one session')
+  .description(
+    'print full redacted evidence for a session, S/D/P/R/V fact or commit:<sha>',
+  )
   .option('--run <id>', 'run id (default: latest)')
   .action((ref, o) => expandCmd(cwd, ref, { ...g(), ...o }));
 
@@ -283,7 +285,9 @@ hook
   });
 hook
   .command('pre-pr')
-  .description('called by agents before shell commands; blocks direct PR creation and edits')
+  .description(
+    'called by agents before shell commands; blocks direct PR creation and edits',
+  )
   .requiredOption('--agent <agent>', 'claude, codex or antigravity')
   .action(async (o) => runPrHook(o.agent as HookAgent));
 hook

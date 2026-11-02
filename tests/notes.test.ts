@@ -157,11 +157,52 @@ describe('optional context notes', () => {
 });
 
 describe('evidence notes outline', () => {
+  test('the compact outline retains a recently repeated full-suite check', () => {
+    const runs = [run({ t: '2026-01-01' })];
+    for (let i = 0; i < 14; i++)
+      runs.push(
+        run({
+          cmd: `bun test tests/case-${i}.test.ts`,
+          id: `R${i + 2}`,
+          t: '2026-02-01',
+        }),
+      );
+    runs.push(run({ id: 'R20', t: '2026-03-01' }));
+    expect(evidenceNotes(digest({ runs }))).toContain('R20: `bun test`');
+  });
   test('facts grouped for someone writing it themselves', () => {
     const md = evidenceNotes(digest({ runs: [run()], decided: true }));
     expect(md).toContain('## What was asked');
     expect(md).toContain('Write the header first? → Yes');
-    expect(md).toContain('`bun test`: passed (12 pass, 0 fail); no later edits seen');
+    expect(md).toContain(
+      '`bun test`: passed; tested content unverified (12 pass, 0 fail)',
+    );
+    expect(md).not.toContain('no later edits seen');
     expect(md).toContain('- behavior: src/a.ts');
+  });
+
+  test('preserves historical passes separately from fresh failures, receipts and gaps', () => {
+    const d = digest({
+      runs: [
+        run({ revision: 'before later edits', t: '2026-10-01', id: 'R1' }),
+        run({ outcome: 'failed', summary: ['1 fail'], t: '2026-11-01', id: 'R2' }),
+      ],
+    });
+    d.verification = [run({ id: 'V1', verificationBasis: 'exact-content-receipt' })];
+    d.validation = [
+      {
+        name: 'hosted tests',
+        command: '',
+        outcome: 'not-run',
+        current: true,
+        reason: 'CI only',
+        durationMs: 0,
+      },
+    ];
+    const md = evidenceNotes(d);
+    expect(md).toContain('R2: `bun test`: failed');
+    expect(md).toContain('Earlier R1: passed; before later edits');
+    expect(md).toContain('## Current validation receipts');
+    expect(md).toContain('hosted tests: not-run; CI only');
   });
 });

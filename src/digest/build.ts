@@ -80,8 +80,9 @@ export interface DigestSession {
  * a pipe hid the status). `revision` relates the run to the final change and is
  * never certified by timestamps alone:
  *  - `before later edits`: files in the PR were edited after this run;
- *  - `no later edits seen`: no edit to PR files was captured after it (edits
- *    outside the logs, or a dirty tree, are still possible);
+ *  - `no later edits seen`: no normalized edit record to PR files followed it;
+ *    shell writes and other unrecognized edits may be present even in the logs.
+ *    This is a heuristic, not a freshness claim for prose;
  *  - `after later work`: it ran after the PR's last commit and after further
  *    edits to PR files, so it tested code that isn't this PR (the session kept
  *    going); it is not evidence about this PR either way;
@@ -129,6 +130,8 @@ export interface TraceDigest {
     commits: {
       sha: string;
       subject: string;
+      /** Redacted commit explanation; attribute it to the commit when used. */
+      body?: string;
       trailers: Record<string, string[]>;
       time?: string;
     }[];
@@ -314,10 +317,8 @@ export function runOutcome(
   // that found nothing), so judge by the output instead.
   if (isError === true && !masked)
     return { outcome: 'failed', basis: 'exit status', summary };
-  if (!masked) return { outcome: 'passed', basis: 'exit status', summary };
-  // Type checkers print nothing when they pass.
-  if (kind === 'typecheck' && !/\berror\b/i.test(output ?? ''))
-    return { outcome: 'passed', basis: 'output', summary };
+  if (!masked && isError === false)
+    return { outcome: 'passed', basis: 'exit status', summary };
   if (
     summary.length &&
     !summary.some((l) => /\b[1-9]\d*\s+(fail|failed|failing|errors?)\b/i.test(l))
@@ -384,7 +385,7 @@ function sessionDigest(
         }
         const p: DigestSession['prompts'][number] = {
           t: r.ts,
-          text: clip(scrub.text(r.text), 400),
+          text: scrub.text(r.text),
           ledToEdits: false,
           ...(r.feedback ? { pushback: true } : {}),
         };
@@ -407,21 +408,23 @@ function sessionDigest(
         plans.push({
           t: r.ts,
           approved: r.approved,
-          excerpt: clip(scrub.text(r.markdown), 1500),
+          excerpt: scrub.text(r.markdown),
         });
         if (r.approved) milestones.push('plan approved');
         break;
       case 'decision':
         decisions.push({
           t: r.ts,
-          text: clip(scrub.text(r.text), 300),
+          text: scrub.text(r.text),
           ...(r.questions?.length
             ? {
                 questions: r.questions.map((q) => ({
-                  question: clip(scrub.text(q.question), 200),
-                  options: q.options.map((o) => clip(scrub.text(o), 80)),
+                  question: scrub.text(q.question),
+                  options: q.options.map((o) => scrub.text(o)),
                   ...(q.answer !== undefined
-                    ? { answer: clip(scrub.text(q.answer), 400) }
+                    ? {
+                        answer: scrub.text(q.answer),
+                      }
                     : {}),
                   ...(q.ownWords !== undefined ? { ownWords: q.ownWords } : {}),
                 })),
@@ -451,7 +454,8 @@ function sessionDigest(
           runs.push({
             t: r.ts,
             ...run,
-            cmd: clip(scrub.text(run.cmd), 120),
+            cmd: scrub.text(run.cmd),
+            summary: run.summary.map((line) => scrub.text(line)),
             revision: 'unknown',
           });
         const seg = testSegment(r.cmd);
@@ -532,7 +536,7 @@ function sessionDigest(
     plans,
     artifacts,
     decisions,
-    runs: runs.slice(-25),
+    runs,
     commands: [...cmdGroups.entries()]
       .map(([cmd, g]) => ({ cmd, ...g }))
       .sort((a, b) => Number(b.isTest) - Number(a.isTest) || b.count - a.count)
@@ -556,7 +560,12 @@ function fitBudget(d: TraceDigest, budget: number): void {
     [
       'prompts that led to no surviving edits dropped',
       () =>
-        shrink((s) => (s.prompts = s.prompts.filter((p, i) => p.ledToEdits || i === 0))),
+        shrink(
+          (s) =>
+            (s.prompts = s.prompts.filter(
+              (p, i) => p.ledToEdits || p.pushback || i === 0,
+            )),
+        ),
     ],
     [
       'prompts shortened to 200 chars',
@@ -567,7 +576,19 @@ function fitBudget(d: TraceDigest, budget: number): void {
       () => shrink((s) => s.artifacts.forEach((a) => (a.excerpt = clip(a.excerpt, 500)))),
     ],
     ['delegations dropped', () => shrink((s) => (s.delegations = []))],
-    ['decisions dropped', () => shrink((s) => (s.decisions = []))],
+    [
+      'decision excerpts shortened to 150 chars',
+      () => shrink((s) => s.decisions.forEach((d) => (d.text = clip(d.text, 150)))),
+    ],
+    [
+      'commit explanations shortened to 300 chars',
+      () => {
+        d.pr.commits.forEach((c) => {
+          if (c.body) c.body = clip(c.body, 300);
+        });
+        return true;
+      },
+    ],
     [
       'runs limited to the last 10 per session',
       () => shrink((s) => (s.runs = s.runs.slice(-10))),
@@ -627,6 +648,8 @@ function numberFacts(sessions: DigestSession[]): void {
 
 export interface BuildOptions {
   budgetTokens?: number;
+  /** Preserve complete redacted fact text and runs for expansion. */
+  full?: boolean;
   /** Session ids the user chose to include or exclude, overriding the bands. */
   include?: string[];
   exclude?: string[];
@@ -662,6 +685,21 @@ export function buildDigest(
   });
   dedupeAcrossSessions(sessions);
   numberFacts(sessions);
+  const full = opts.full || opts.budgetTokens === Number.MAX_SAFE_INTEGER;
+  if (!full)
+    for (const s of sessions) {
+      s.prompts.forEach((p) => (p.text = clip(p.text, 400)));
+      s.plans.forEach((p) => (p.excerpt = clip(p.excerpt, 1500)));
+      s.decisions.forEach((d) => {
+        d.text = clip(d.text, 300);
+        d.questions?.forEach((q) => {
+          q.question = clip(q.question, 200);
+          q.options = q.options.map((o) => clip(o, 80));
+          if (q.answer !== undefined) q.answer = clip(q.answer, 400);
+        });
+      });
+      s.runs = s.runs.slice(-25);
+    }
   const commitsInSessions = new Set(chosen.flatMap((m) => m.commitsMade));
 
   const attribution = attribute(truth, prLines, chosen);
@@ -737,8 +775,11 @@ export function buildDigest(
       usedWorkingTree: truth.usedWorkingTree,
       ...(truth.dirty ? { dirty: true } : {}),
       commits: truth.commits.map((c) => ({
-        sha: c.sha.slice(0, 12),
+        sha: full ? c.sha : c.sha.slice(0, 12),
         subject: scrub.text(c.subject),
+        ...(c.body
+          ? { body: full ? scrub.text(c.body) : clip(scrub.text(c.body), 1200) }
+          : {}),
         trailers: c.trailers,
         ...(c.commitTime ? { time: new Date(c.commitTime).toISOString() } : {}),
       })),
@@ -789,7 +830,7 @@ export function buildDigest(
     notes,
     truncated: [],
   };
-  fitBudget(digest, opts.budgetTokens ?? 12000);
+  if (!full) fitBudget(digest, opts.budgetTokens ?? 12000);
   digest.privacy.redactions = scrub.redactions;
   return digest;
 }
