@@ -62,6 +62,8 @@ every role. Keep the researcher, drafter and independent reviewer separate.
      way to record checks the user or repository already requires. Reuse existing
      logs/receipts with their revision limits; do not rerun validation just to
      fill evidence gaps. Missing checks are reported as unknown, not as passes.
+     Serialize `tracetoon check` attempts for the same run; wait for each
+     command to finish before starting the next.
    - `task complete`, `task defer` and `task block` remain optional bookkeeping.
      Reuse unchanged research and art; refresh PR evidence and review when inputs change.
 

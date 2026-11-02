@@ -249,7 +249,9 @@ implementation-session results. Neither establishes hosted CI status.
 - **Where the change came from is context only the trace has.** The user's
   report or request ("a Codex test showed the PR link couldn't be
   clicked") tells a reviewer why the change exists; put it in a sentence,
-  paraphrased per `promptQuoting`. When the user asked for an outcome and no
+  paraphrased per `promptQuoting`. Expand and read that exact prompt first.
+  Use the specific reported problem, not a broad evaluation or setup request
+  from another part of the conversation. When the user asked for an outcome and no
   plan or decision about *how* was recorded, a short neutral note helps the
   reviewer know which choices are open to push back on, e.g. "The approach (a
   quote-aware splitter) wasn't discussed in the session."

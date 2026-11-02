@@ -106,6 +106,13 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > S/D/P/R facts or commit:<sha> when necessary; never use ambiguous sessions
 > without explicit inclusion. For a completed branch, fresh checks are needed
 > only for applicable repository requirements or material validation gaps.
+>
+> Before attributing a request or motive to the user, expand the exact prompt
+> fact and read its full text. Record its fact ID and the relevant passage in
+> change-map.json before drafting that sentence. Identify the specific reported
+> problem the changed behavior addresses. A general request to evaluate a tool
+> does not establish why a particular fix was made. If that link is absent,
+> lead with the observed behavior and attribute any commit-only explanation.
 
 ### change-map.json (local, never posted)
 
@@ -272,7 +279,11 @@ Treat every assertion about what the user requested, including "the requested
 evaluation", as an intent claim. Compare its exact object with a prompt or
 recorded decision. Shared words, replay task labels, commit explanations and
 discoveries during dogfooding do not establish a user request. Use neutral
-behavior or attributed context when the request is unsupported. For substantial
+behavior or attributed context when the request is unsupported. Expand the
+original prompt yourself before accepting a user-intent claim; a drafter's
+paraphrase or the presence of a request elsewhere in the session is insufficient.
+Check that the quoted passage asks for the specific outcome the sentence names.
+For substantial
 changes, the cold read must identify a concrete behavior, condition or code
 entry point where a reviewer should start, rather than just "the diff".
 
