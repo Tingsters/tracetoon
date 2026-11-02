@@ -21,6 +21,32 @@ const kinds = (raw: unknown, exists?: (p: string) => boolean) =>
   check(raw, exists).map((f) => f.kind);
 
 describe('change map checks', () => {
+  test('several behaviors within one file can carry separate patch evidence', () => {
+    const map = {
+      groups: [
+        {
+          ...group(['src/split.ts', 'src/run.ts']),
+          behaviorChecks: [
+            { behavior: 'Skip quoted separators.', evidence: ['diff:1'] },
+            { behavior: 'Resume after a heredoc.', evidence: ['diff:2-3'] },
+          ],
+        },
+      ],
+    };
+    const input = {
+      raw: map,
+      files,
+      changedPaths,
+      exists: () => false,
+      patch: '+quoted\n+heredoc\n+resume',
+    };
+    expect(checkChangeMap(input)).toEqual([]);
+    map.groups[0]!.behaviorChecks[1]!.evidence = ['diff:99'];
+    expect(checkChangeMap(input)[0]?.kind).toBe('invalid');
+    map.groups[0]!.behaviorChecks[1]!.evidence = ['digest:R1'];
+    expect(checkChangeMap(input)[0]?.kind).toBe('invalid');
+  });
+
   test('a map covering every behavior file is clean', () => {
     expect(
       check({

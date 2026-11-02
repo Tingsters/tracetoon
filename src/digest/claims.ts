@@ -47,8 +47,10 @@ export interface ClaimInput {
 
 /** Sentences of prose, skipping code blocks, headings markup and HTML comments. */
 export function sentences(markdown: string): string[] {
+  const code: string[] = [];
   const prose = markdown
     .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]+`/g, (literal) => `\0${code.push(literal) - 1}\0`)
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]+>/g, ' ');
   return prose
@@ -58,14 +60,39 @@ export function sentences(markdown: string): string[] {
         .replace(/^\s*(#+|[-*]|\d+\.)\s*/gm, '')
         .replace(/\s+/g, ' ')
         // Split on sentence ends, but not inside `code` or numbers like 1.0.
-        .split(/(?<=[.!?])\s+(?=[A-Z*`"(])/),
+        .split(/(?<=[.!?])\s+(?=[A-Z*`"(\0])/),
     )
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/\0(\d+)\0/g, (_, index) => code[Number(index)]!))
     .filter((s) => s.length > 3);
 }
 
 const VERIFY =
   /(`[^`]*\b(test|tests|tsc|lint|check|build|prettier|eslint|pytest|jest|vitest|cargo|bundle)\b[^`]*`[^.]{0,30}\b(pass\w*|succeed\w*|clean|green)\b)|\b(all (the )?tests? pass\w*|tests? (all )?(pass\w*|succeed\w*|(are|is|went) green)|(suite|build|ci|lint\w*|type ?check\w*|tsc|checks?)\b[^.]{0,40}\b(pass\w*|succeed\w*|clean|green)|\bpass(es|ed)? (locally|on (ci|this|the final))|\b\d+\s+(tests?|pass(es|ing)?)\b|no regressions?|verified|fully (tested|backward[- ]compatible)|works (everywhere|on all))/i;
+
+const CHECK_SUBJECT =
+  /\b(test\w*|regression|suite|build|bundle|ci|lint\w*|type ?check\w*|tsc|checks?|prettier|eslint|pytest|jest|vitest)\b/i;
+const FAILED = /\b(fail(?:ed|s|ing|ures?)?|errors?)\b/i;
+const RESULT =
+  /\b(pass(?:ed|es|ing)?|succeed\w*|failed|fails|failing|clean|green|reports?\b[^.]{0,60}\bfailures?)\b/i;
+const HISTORICAL =
+  /\b(before (?:the )?(?:(?:last|final|later) )?(?:edits|changes|commit)|during (?:development|implementation)|(?:earlier|historical|recorded|captured) (?:implementation )?(?:session|run)|previously)\b/i;
+
+/** Ignore output routing, but preserve every test target and execution flag. */
+function commandIdentity(cmd: string): string {
+  // Protect literals before normalizing shell syntax: spaces and redirect-like
+  // text inside arguments can change which tests run.
+  const literals: string[] = [];
+  const masked = cmd.replace(
+    /\\[\s\S]|'[^']*'|"(?:\\[\s\S]|[^"\\])*"|`(?:\\[\s\S]|[^`\\])*`/g,
+    (literal) => `\0${literals.push(literal) - 1}\0`,
+  );
+  return masked
+    .replace(/(?:^|[ \t])\d*>&\d+(?=[ \t]|$)/g, ' ')
+    .replace(/(?:^|[ \t])\d*>{1,2}[ \t]*\S+/g, ' ')
+    .trim()
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\0(\d+)\0/g, (_, index) => literals[Number(index)]!);
+}
 
 const AUTHOR =
   /\b(reported by the author|(the )?author (reports|says|checked|tested)|manually|by hand|I (tested|checked|ran|verified|tried))\b/i;
@@ -77,7 +104,7 @@ const ALTERNATIVE =
 /** Which kind of run a verification sentence is about. */
 function runKindsFor(s: string): Run['kind'][] {
   const kinds: Run['kind'][] = [];
-  if (/\btests?\b|\bsuite\b|\bpass(es|ed|ing)?\b/i.test(s)) kinds.push('test');
+  if (/\btests?\b|\bsuite\b|\bregression\b/i.test(s)) kinds.push('test');
   if (/\bbuild\b|\bbundle\b|\bcompil/i.test(s)) kinds.push('build');
   if (/\blint|prettier|eslint|format/i.test(s)) kinds.push('lint');
   if (/\btype ?check|\btsc\b|mypy/i.test(s)) kinds.push('typecheck');
@@ -87,7 +114,10 @@ function runKindsFor(s: string): Run['kind'][] {
 
 function allRuns(d: ClaimInput['digest']): Run[] {
   return (
-    [...d.sessions.flatMap((s) => s.runs ?? []), ...(d.verification ?? [])]
+    [
+      ...d.sessions.filter((s) => s.band === 'included').flatMap((s) => s.runs ?? []),
+      ...(d.verification ?? []),
+    ]
       // Runs on later work (after the PR's last commit and further edits) say nothing about this PR.
       .filter((r) => r.revision !== 'after later work')
       .slice()
@@ -104,29 +134,58 @@ function checkVerification(
 ): ClaimFinding | undefined {
   // Quoted text is an example, not a claim ("tests pass" when the run failed), and
   // a sentence about claims ("each sentence that claims a check passed") isn't one.
+  const commandCode = (text: string) =>
+    (/\s/.test(text) && CHECK_SUBJECT.test(text)) ||
+    /^(tsc|pytest|jest|vitest)$/.test(text);
   const bare = s.replace(/"[^"]*"|“[^”]*”/g, '""');
-  const hit = VERIFY.exec(bare);
-  if (!hit) return undefined;
+  const prose = bare.replace(/`([^`]+)`/g, (code, text: string) =>
+    commandCode(text.trim()) ? ' '.repeat(code.length) : code,
+  );
+  const hit =
+    VERIFY.exec(prose) ?? (CHECK_SUBJECT.test(bare) ? RESULT.exec(prose) : null);
+  const freshness =
+    /\b(no (?:later|subsequent|further) (?:file |code )?(?:edits|changes) (?:were )?(?:seen|captured|observed|made)|after (?:the )?(?:last|final) (?:edits|changes) (?:seen|captured|observed))\b/i.test(
+      prose,
+    );
+  const ciStatus =
+    /\bCI\b/i.test(prose) &&
+    (!!hit ||
+      /\b(?:results?|status)\b[^.]{0,50}\b(not (?:yet )?available|pending)\b/i.test(
+        prose,
+      ));
+  if (!hit && !ciStatus && !freshness) return undefined;
   if (
     /\b(claims?|claiming|says?|such as)\b/i.test(
-      bare.slice(Math.max(0, hit.index - 40), hit.index),
+      bare.slice(Math.max(0, (hit?.index ?? 0) - 40), hit?.index ?? 0),
     )
   )
     return undefined;
   const author = AUTHOR.test(s) || mentionedBy(input.authorText, s);
   // A named command narrows the runs: `bun test tests/x.test.ts`, `prettier --check`.
-  const named = [...s.matchAll(/`([^`]+)`/g)].map((m) => m[1]!.trim());
+  const named = [...s.matchAll(/`([^`]+)`/g)]
+    .map((m) => m[1]!.trim())
+    .filter(commandCode);
   const kinds = runKindsFor(s);
   let relevant = runs.filter((r) => kinds.includes(r.kind));
-  const byName = relevant.filter((r) =>
-    named.some(
-      (n) => r.cmd.startsWith(n) || n.startsWith(r.cmd.split(' ').slice(0, 2).join(' ')),
-    ),
+  if (named.length)
+    relevant = relevant.filter((r) =>
+      named.some((n) => commandIdentity(n) === commandIdentity(r.cmd)),
+    );
+  const historical = HISTORICAL.test(prose);
+  if (historical)
+    relevant = relevant.filter((r) => r.verificationBasis !== 'exact-content-receipt');
+  const expected = FAILED.test(prose.replace(/\b0\s+(?:fail\w*|errors?)\b/gi, ''))
+    ? 'failed'
+    : 'passed';
+  const scopes = named.length
+    ? named.map((n) =>
+        relevant.filter((r) => commandIdentity(n) === commandIdentity(r.cmd)),
+      )
+    : kinds.map((kind) => relevant.filter((r) => r.kind === kind));
+  const results = scopes.map((scope) =>
+    (historical ? scope.filter((r) => r.outcome === expected) : scope).at(-1),
   );
-  if (byName.length) relevant = byName;
-  const last = relevant[relevant.length - 1];
-  const passed = relevant.filter((r) => r.outcome === 'passed');
-  const lastPass = passed[passed.length - 1];
+  const result = results.at(-1);
   const ids = relevant
     .slice(-3)
     .map((r) => r.id ?? '')
@@ -144,52 +203,110 @@ function checkVerification(
       'A passing run shows what was checked, not that nothing else broke.',
       ids,
     );
-  if (last && last.outcome === 'failed' && !author)
+  if (freshness && !author)
+    return finding(
+      s,
+      'verification',
+      'not established',
+      'Historical edit markers can miss shell writes and other changes. Keep the historical result without asserting unchanged code; a current receipt can establish matching content.',
+      ids,
+    );
+  if (ciStatus && !author)
+    return finding(
+      s,
+      'verification',
+      'not established',
+      'Local checks do not establish hosted CI status. Cite a captured CI result or say no CI result was captured.',
+      [],
+    );
+  if (
+    /\b(all (?:the )?tests|full (?:test )?(?:suite|run))\b/i.test(prose) &&
+    !author &&
+    !relevant.some((r) =>
+      /^(?:(?:bun|npm|yarn|pnpm) (?:run )?test|pytest|cargo test|go test)$/.test(
+        commandIdentity(r.cmd),
+      ),
+    )
+  )
+    return finding(
+      s,
+      'verification',
+      'not established',
+      'A targeted check does not establish the full suite result. Name the captured command and its scope.',
+      ids,
+    );
+  // A suite result cannot identify a particular unnamed regression test.
+  if (
+    /\bregression\b|\bfocused (?:tests?|checks?)\b/i.test(s) &&
+    !named.length &&
+    !author
+  )
+    return finding(
+      s,
+      'verification',
+      'not established',
+      'Name the regression command and its captured result; a suite pass alone does not identify this regression.',
+      ids,
+    );
+  const contradicted = results.find(
+    (r) => r && r.outcome !== 'unknown' && r.outcome !== expected,
+  );
+  if (contradicted && !author)
     return finding(
       s,
       'verification',
       'contradicted',
-      `The last captured run (${last.id}: ${last.cmd}) failed${last.summary.length ? `: ${last.summary.join(', ')}` : ''}.`,
+      `The last matching captured run (${contradicted.id}: ${contradicted.cmd}) ${contradicted.outcome}${contradicted.summary.length ? `: ${contradicted.summary.join(', ')}` : ''}.`,
       ids,
     );
-  const numbers = [...s.matchAll(/\b(\d+)\s+(?:tests?|pass(?:es|ing)?)\b/gi)].map(
-    (m) => m[1]!,
-  );
-  if (numbers.length && lastPass && !author) {
-    const shown = lastPass.summary.join(' ');
-    const missing = numbers.filter((n) => !new RegExp(`\\b${n}\\b`).test(shown));
-    if (
-      missing.length &&
-      passed.every(
-        (r) => !missing.every((n) => new RegExp(`\\b${n}\\b`).test(r.summary.join(' '))),
-      )
-    )
+  const counts = [
+    ...prose.matchAll(
+      /\b(\d+)\s+(tests?|pass(?:ed|es|ing)?|fail(?:ed|s|ing)?|errors?)\b/gi,
+    ),
+  ];
+  if (counts.length && result && !author) {
+    const shown = result.summary.join(' ');
+    const missing = counts.filter((m) => {
+      const label = /^pass/i.test(m[2]!)
+        ? 'pass\\w*'
+        : /^fail/i.test(m[2]!)
+          ? 'fail\\w*'
+          : m[2]!;
+      return !new RegExp(`\\b${m[1]}\\s+${label}\\b`, 'i').test(shown);
+    });
+    if (missing.length)
       return finding(
         s,
         'verification',
         'not established',
-        `No captured run shows ${missing.join(', ')}; the last passing run shows: ${shown || 'no counts'}.`,
+        `The matching run does not show ${missing.map((m) => m[0]).join(', ')}; its summary shows: ${shown || 'no counts'}.`,
         ids,
       );
   }
-  if (lastPass) {
-    if (lastPass.revision === 'before later edits')
+  if (result && results.every((r) => r?.outcome === expected)) {
+    const stale = results.find((r) => r?.revision === 'before later edits');
+    if (stale && !historical)
       return finding(
         s,
         'verification',
-        'observed',
-        `${lastPass.id} passed, but files in the PR changed afterwards; say it passed before the final edits, or re-run.`,
+        'not established',
+        `${stale.id} ${expected}, but files in the PR changed afterwards; qualify it as a historical result.`,
         ids,
       );
     const dirty =
-      input.digest.pr.dirty && lastPass.verificationBasis !== 'exact-content-receipt'
+      input.digest.pr.dirty && result.verificationBasis !== 'exact-content-receipt'
         ? ' Uncommitted changes existed, so it may have covered code outside the PR.'
         : '';
     return finding(
       s,
       'verification',
       'observed',
-      `${lastPass.id} (${lastPass.cmd}) passed${lastPass.summary.length ? `: ${lastPass.summary.join(', ')}` : ''}${lastPass.verificationBasis === 'exact-content-receipt' ? '; its receipt matches the current content and environment' : ', with no later edits seen'}.${dirty}`,
+      results
+        .map(
+          (r) =>
+            `${r!.id} (${r!.cmd}) ${expected}${r!.summary.length ? `: ${r!.summary.join(', ')}` : ''}${r!.verificationBasis === 'exact-content-receipt' ? '; its receipt matches the current content and environment' : '; historical log evidence; tested content unverified'}.`,
+        )
+        .join(' ') + dirty,
       ids,
     );
   }
@@ -206,7 +323,7 @@ function checkVerification(
     'verification',
     'not established',
     relevant.length
-      ? 'No captured run shows this passing.'
+      ? `No matching captured run establishes this ${expected} result.`
       : 'No matching run was captured. If it ran elsewhere (CI, another terminal), keep it and note where; otherwise reword.',
     ids,
   );
@@ -216,8 +333,9 @@ function checkAttribution(s: string, input: ClaimInput): ClaimFinding | undefine
   if (!ATTRIBUTION.test(s)) return undefined;
   if (mentionedBy(input.authorText, s))
     return finding(s, 'attribution', 'author-reported', 'The author said so.', []);
-  const decisions = input.digest.sessions.flatMap((x) => x.decisions);
-  const prompts = input.digest.sessions.flatMap((x) => x.prompts);
+  const included = input.digest.sessions.filter((x) => x.band === 'included');
+  const decisions = included.flatMap((x) => x.decisions);
+  const prompts = included.flatMap((x) => x.prompts);
   const words = (t: string) =>
     new Set(t.toLowerCase().match(/[a-z0-9][a-z0-9-]{3,}/g) ?? []);
   const sw = words(s);

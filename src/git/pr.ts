@@ -10,6 +10,8 @@ import { privateRepoPath, readSubmittedFile, repoPath } from '../util/repoFiles.
 export interface Commit {
   sha: string;
   subject: string;
+  /** Commit-only explanations are attributed source material, not observed behavior. */
+  body?: string;
   authorTime: number;
   commitTime: number;
   trailers: Record<string, string[]>;
@@ -171,7 +173,7 @@ export function commitsBetween(cwd: string, from: string, to: string): Commit[] 
     'log',
     '--reverse',
     '--no-merges', // merging the base in isn't part of the PR's own work
-    '--format=%H%x1f%s%x1f%at%x1f%ct%x1f%(trailers:unfold,only)%x1e',
+    '--format=%H%x1f%s%x1f%at%x1f%ct%x1f%(trailers:unfold,only)%x1f%b%x1e',
     `${from}..${to}`,
   ]);
   if (!r.ok) return [];
@@ -180,10 +182,11 @@ export function commitsBetween(cwd: string, from: string, to: string): Commit[] 
     .map((rec) => rec.replace(/^\s+/, ''))
     .filter(Boolean)
     .map((rec) => {
-      const [sha, subject, at, ct, trailers] = rec.split('\x1f');
+      const [sha, subject, at, ct, trailers, body] = rec.split('\x1f');
       return {
         sha: sha!,
         subject: subject ?? '',
+        ...(body?.trim() ? { body: body.trim() } : {}),
         authorTime: Number(at) * 1000,
         commitTime: Number(ct) * 1000,
         trailers: parseTrailers(trailers ?? ''),

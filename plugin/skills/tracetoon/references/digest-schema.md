@@ -12,6 +12,7 @@ passing receipt supports only the command and environment that were checked.
 | Field | Meaning |
 |---|---|
 | `pr` | Base, head, merge base, commits (short SHA, subject, trailers, commit time), existing PR number and URL |
+| `pr.commits[].body` | Optional redacted commit explanation. Attribute commit-only accounts and related references; cite locally as `commit:<sha>`. A mention does not imply a saga relationship |
 | `pr.usedWorkingTree` | True when there are no commits yet and the digest describes uncommitted changes |
 | `pr.dirty` | Uncommitted changes existed: a run may have tested code that isn't in the PR |
 | `stats.agentMatchedPct` | Share of non-trivial added lines that match a captured agent edit |
@@ -38,3 +39,16 @@ passing receipt supports only the command and environment that were checked.
 | `linkedPrs` | Other PRs the sessions linked themselves to (context for the writer) |
 | `notes` | Things to tell the user or reflect in the text |
 | `truncated` | What was trimmed to fit the budget; use `tracetoon expand <ref>` for full detail |
+
+`no later edits seen` is a legacy heuristic over normalized edit records, which
+can miss shell writes even inside the same session. It never establishes that
+code stayed unchanged. Historical tested content remains unverified; use current
+matching-content receipts for claims about the submitted content.
+
+`digest` also writes `evidence-notes.md` before drafting, separating historical
+checks, current receipts and validation gaps. `expand` accepts session refs,
+individual `S1`, `D1`, `P1`, `R1`, `V1` facts (also `digest:R1`), and
+`commit:<sha>`. Complete redacted fact text and runs live in `digest-full.json`;
+ids stay consistent with the compact digest. Expanding an ambiguous session does
+not include it in the PR. Review packets fingerprint the full evidence as well
+as the optional change-map content; old packets remain readable.

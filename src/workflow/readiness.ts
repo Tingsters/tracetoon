@@ -7,6 +7,9 @@ import type { Approval } from '../commands/publish.ts';
 import { receipts } from './checks.ts';
 import { readTask, workFingerprint } from './state.ts';
 import { git } from '../util/exec.ts';
+import { objectHash } from '../contribution/guidance.ts';
+import type { ReviewInput } from '../contribution/types.ts';
+import type { TraceDigest } from '../digest/build.ts';
 const originHash = (root: string) =>
   createHash('sha256')
     .update(git(root, ['remote', 'get-url', 'origin']).stdout.trim())
@@ -21,13 +24,26 @@ function renderProblem(run: Run, approval: Approval): string | undefined {
   try {
     if (fileHash(run, 'final-body.md') !== approval.bodySha)
       return 'The rendered description changed; render and review it again.';
-    const packet = readJson<{ title: string; body: string }>(run, 'review-input.json');
+    const packet = readJson<ReviewInput>(run, 'review-input.json');
     if (
       !packet ||
       packet.title !== approval.title ||
       createHash('sha256').update(packet.body).digest('hex') !== approval.bodySha
     )
       return 'The reviewed title or description does not match this render.';
+    if (
+      packet.changeMapSha256 &&
+      objectHash(readJson(run, 'change-map.json')) !== packet.changeMapSha256
+    )
+      return 'The change map changed after rendering; render and review it again.';
+    if (packet.fullDigestSha256) {
+      const full = readJson<TraceDigest>(run, 'digest-full.json');
+      if (!full)
+        return 'The full evidence is missing; refresh the digest and render again.';
+      const { generatedAt: _time, ...stable } = full;
+      if (objectHash(stable) !== packet.fullDigestSha256)
+        return 'The full evidence changed after rendering; render and review it again.';
+    }
     if (
       approval.comicFile &&
       createHash('sha256').update(readFileSync(approval.comicFile)).digest('hex') !==

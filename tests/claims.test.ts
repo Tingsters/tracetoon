@@ -77,6 +77,11 @@ const check = (body: string, d: ClaimInput['digest'], more: Partial<ClaimInput> 
 const states = (f: ReturnType<typeof check>) => f.map((x) => `${x.kind}:${x.state}`);
 
 describe('sentences', () => {
+  test('preserves command literals while normalizing surrounding prose', () => {
+    expect(
+      sentences('Ran  a check. `bun test --filter "a. B" < input > output` passed.'),
+    ).toEqual(['Ran a check.', '`bun test --filter "a. B" < input > output` passed.']);
+  });
   test('splits prose but not version numbers, and skips code blocks', () => {
     expect(
       sentences(
@@ -127,10 +132,173 @@ describe('verification claims', () => {
     expect(f[0]!.detail).toContain('R2');
   });
 
-  test('a run before later edits is observed, with a note to say so', () => {
+  test('an unqualified pass before later edits needs qualification', () => {
     const f = check('Tests pass.', digest([run({ revision: 'before later edits' })]));
-    expect(f[0]!.state).toBe('observed');
-    expect(f[0]!.detail).toContain('before the final edits');
+    expect(f[0]!.state).toBe('not established');
+    expect(f[0]!.detail).toContain('historical');
+  });
+
+  test('historical edit markers do not establish unchanged code', () => {
+    const d = digest([run({})]);
+    for (const body of [
+      'During development, `bun test` passed with no later edits seen.',
+      '`bun test` passed after the last edits captured.',
+      'No later edits were captured.',
+    ])
+      expect(check(body, d)[0]?.state).toBe('not established');
+    const finding = check('During development, `bun test` passed.', d)[0];
+    expect(finding?.state).toBe('observed');
+    expect(finding?.detail).toContain('tested content unverified');
+    expect(finding?.detail).not.toContain('no later edits seen');
+  });
+
+  test('test targets and execution flags must match, not just the runner', () => {
+    const d = digest([run({ cmd: 'bun test tests/old.test.ts' })]);
+    expect(check('All tests pass.', d)[0]?.state).toBe('not established');
+    for (const body of [
+      '`bun test tests/new.test.ts` passed.',
+      '`bun test` passed.',
+      '`bun test tests/old.test.ts --coverage` passed.',
+    ])
+      expect(check(body, d)[0]?.state).toBe('not established');
+    expect(
+      check(
+        '`bun test tests/old.test.ts` passed.',
+        digest([run({ cmd: 'bun test tests/old.test.ts 2>&1' })]),
+      )[0]?.state,
+    ).toBe('observed');
+  });
+
+  test('ambiguous sessions cannot support a passing check', () => {
+    expect(
+      check('`bun test` passed.', digest([run({})], { band: 'ambiguous' }))[0]?.state,
+    ).toBe('not established');
+  });
+
+  test('input redirection remains part of the checked command', () => {
+    const d = digest([run({ cmd: 'bun test < fixtures/first.txt' })]);
+    expect(check('`bun test < fixtures/first.txt` passed.', d)[0]?.state).toBe(
+      'observed',
+    );
+    expect(check('`bun test < fixtures/second.txt` passed.', d)[0]?.state).toBe(
+      'not established',
+    );
+    expect(check('`bun test` passed.', d)[0]?.state).toBe('not established');
+  });
+
+  test('quoted filters retain literal redirects and whitespace', () => {
+    for (const [captured, claimed] of [
+      ['bun test --test-name-pattern "2>&1"', 'bun test --test-name-pattern ""'],
+      ["bun test --test-name-pattern 'a  b'", "bun test --test-name-pattern 'a b'"],
+      ['bun test\n--coverage', 'bun test --coverage'],
+    ])
+      expect(
+        check(`\`${claimed}\` passed.`, digest([run({ cmd: captured })]))[0]?.state,
+      ).toBe('not established');
+    expect(
+      check(
+        '`bun test --test-name-pattern "a  b"` passed.',
+        digest([
+          run({ cmd: 'bun test --test-name-pattern "a  b" > "result log.txt" 2>&1' }),
+        ]),
+      )[0]?.state,
+    ).toBe('observed');
+  });
+
+  test('filter text is neither a result claim nor a claimed test count', () => {
+    const command = "bun test --test-name-pattern 'failure handling 2 tests CI'";
+    expect(
+      check(`\`${command}\` passed.`, digest([run({ cmd: command })]))[0]?.state,
+    ).toBe('observed');
+    expect(check('Adds `bun test --filter failed`.', digest([]))).toEqual([]);
+  });
+
+  test('inline result counts are still audited outside command literals', () => {
+    expect(
+      check('`bun test` passed (`13 pass`, `0 fail`).', digest([run({})]))[0]?.state,
+    ).toBe('not established');
+    expect(
+      check('`bun test` passed (`96 pass`, `0 fail`).', digest([run({})]))[0]?.state,
+    ).toBe('observed');
+  });
+
+  test('every named command needs its own matching result', () => {
+    const a = run({ cmd: 'bun test tests/a.test.ts' });
+    const b = run({ id: 'R2', cmd: 'bun test tests/b.test.ts', t: '2026-11-01' });
+    const body = '`bun test tests/a.test.ts` and `bun test tests/b.test.ts` passed.';
+    expect(check(body, digest([a]))[0]?.state).toBe('not established');
+    expect(check(body, digest([a, b]))[0]?.state).toBe('observed');
+    expect(check(body, digest([{ ...a, outcome: 'failed' }, b]))[0]?.state).toBe(
+      'contradicted',
+    );
+    expect(
+      check(
+        '`prettier --check src` passed.',
+        digest([run({ kind: 'lint', cmd: 'eslint src' })]),
+      )[0]?.state,
+    ).toBe('not established');
+  });
+
+  test('a historical pass remains true after a fresh failure', () => {
+    const d = digest([
+      run({ revision: 'before later edits' }),
+      run({
+        id: 'R2',
+        t: '2026-11-01T00:00:00Z',
+        outcome: 'failed',
+        summary: ['1 fail'],
+      }),
+    ]);
+    expect(check('Before the final edits, `bun test` passed.', d)[0]?.state).toBe(
+      'observed',
+    );
+    expect(check('`bun test` passed.', d)[0]?.state).toBe('contradicted');
+    expect(check('`bun test` failed.', d)[0]?.state).toBe('observed');
+  });
+
+  test('regression successes and reported failures are audited', () => {
+    expect(check('The regression test passes.', digest([run({})]))[0]?.state).toBe(
+      'not established',
+    );
+    expect(
+      check('The focused lettering regression passes.', digest([run({})]))[0]?.state,
+    ).toBe('not established');
+    expect(
+      check('The full test run also reports a share-caption test failure.', digest([]))[0]
+        ?.state,
+    ).toBe('not established');
+    expect(check('`bun test` failed.', digest([run({})]))[0]?.state).toBe('contradicted');
+    expect(
+      check(
+        '`bun test` reported 2 failing and 0 errors.',
+        digest([run({ outcome: 'failed', summary: ['2 fail', '0 errors'] })]),
+      )[0]?.state,
+    ).toBe('observed');
+    expect(check('Adds regression tests for failure handling.', digest([]))).toEqual([]);
+  });
+
+  test('an unknown latest outcome cannot inherit an older pass', () => {
+    expect(
+      check(
+        '`bun test` passed.',
+        digest([
+          run({}),
+          run({ id: 'R2', t: '2026-11-01T00:00:00Z', outcome: 'unknown' }),
+        ]),
+      )[0]?.state,
+    ).toBe('not established');
+  });
+
+  test('failure counts need matching labels, and local checks do not establish CI status', () => {
+    expect(
+      check(
+        '`bun test` reported 35 passing, 15 failing and 5 errors.',
+        digest([run({ outcome: 'failed', summary: ['15 pass', '35 fail', '5 errors'] })]),
+      )[0]?.state,
+    ).toBe('not established');
+    expect(check('CI results are not yet available.', digest([run({})]))[0]?.state).toBe(
+      'not established',
+    );
   });
 
   test('hard case: a test run, then a metadata-only commit: still observed', () => {

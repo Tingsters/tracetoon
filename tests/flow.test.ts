@@ -55,6 +55,56 @@ const GREET =
 setDefaultTimeout(60_000);
 
 describe('digest', () => {
+  test('expands complete redacted facts with stable ids and commit explanations', () => {
+    const repo = makeRepo();
+    const prompt =
+      'Explain why this fixes empty exports. ' +
+      'context '.repeat(100) +
+      repo.root +
+      ' ghp_abcdefghijklmnopqrstuvwxyz0123456789 END-REQUEST';
+    const log = new ClaudeLog(repo.root)
+      .prompt(prompt)
+      .plan('# Plan\n' + 'Preserve the empty case. '.repeat(100) + 'END-PLAN')
+      .write(join(repo.root, 'src/greet.ts'), GREET);
+    for (let i = 0; i < 30; i++)
+      log.bash(`bun test tests/check-${i}.test.ts`, '1 pass\n0 fail');
+    log.save(claudeHome, 'evidence');
+    const sha = repo.commit(
+      'src/greet.ts',
+      GREET,
+      'fix: empty exports\n\nA blank output was reported during review; see #42.',
+    );
+    const r = cli(repo.root, 'digest', '--offline', '--budget', '1000');
+    expect(r.code).toBe(0);
+    const compact = JSON.parse(readFileSync(r.json.digestPath, 'utf8'));
+    const full = JSON.parse(
+      readFileSync(join(r.json.runDir, 'digest-full.json'), 'utf8'),
+    );
+    expect(compact.sessions[0].runs.length).toBeLessThan(full.sessions[0].runs.length);
+    for (const fact of compact.sessions[0].runs)
+      expect(full.sessions[0].runs.find((f: any) => f.id === fact.id)?.cmd).toBe(
+        fact.cmd,
+      );
+    expect(cli(repo.root, 'expand', 'S1', '--run', r.json.run).json.text).toContain(
+      'END-REQUEST',
+    );
+    expect(
+      cli(repo.root, 'expand', 'digest:P1', '--run', r.json.run).json.excerpt,
+    ).toContain('END-PLAN');
+    expect(cli(repo.root, 'expand', 'R1', '--run', r.json.run).json.cmd).toBe(
+      'bun test tests/check-0.test.ts',
+    );
+    expect(
+      cli(repo.root, 'expand', `commit:${sha}`, '--run', r.json.run).json.body,
+    ).toContain('#42');
+    expect(cli(repo.root, 'expand', 'R999', '--run', r.json.run).code).not.toBe(0);
+    expect(JSON.stringify(full)).not.toContain(repo.root);
+    expect(JSON.stringify(full)).not.toContain('ghp_');
+    expect(compact.pr.commits[0].body).toContain('blank output');
+    expect(compact.linkedPrs).toEqual([]); // A reference is not automatically a saga.
+    expect(readFileSync(r.json.evidenceNotesPath, 'utf8')).toContain('Historical checks');
+  });
+
   test('matches the session that wrote the code and drops other repos', () => {
     const repo = makeRepo();
     const other = tempDir('tracetoon-other-');

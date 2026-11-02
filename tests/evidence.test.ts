@@ -90,11 +90,11 @@ describe('verification runs', () => {
     });
   });
 
-  test('a type check with a hidden status passes only when it printed no errors', () => {
+  test('a silent type check with a hidden status remains unknown', () => {
     const piped = 'bun x tsc --noEmit 2>&1 | head -5';
     expect(runOutcome(piped, 'bun x tsc --noEmit', false, '', 'typecheck')).toMatchObject(
       {
-        outcome: 'passed',
+        outcome: 'unknown',
       },
     );
     expect(
@@ -130,7 +130,7 @@ describe('verification runs', () => {
       outcome: 'unknown',
       basis: 'none',
     });
-    // Type checkers print nothing when they pass.
+    // Silence alone does not establish success when a pipe hid the exit status.
     expect(
       runOutcome(
         'bun x tsc --noEmit 2>&1 | head',
@@ -140,8 +140,8 @@ describe('verification runs', () => {
         'typecheck',
       ),
     ).toMatchObject({
-      outcome: 'passed',
-      basis: 'output',
+      outcome: 'unknown',
+      basis: 'none',
     });
   });
 });

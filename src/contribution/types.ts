@@ -179,6 +179,9 @@ export interface ReviewInput {
   headSha: string;
   authorSha256: string;
   comicSha256: string;
+  /** Present when the complete redacted evidence or change map was supplied. */
+  fullDigestSha256?: string;
+  changeMapSha256?: string;
   /** Present on new comic renders; absent on legacy packets and comic-free PRs. */
   comic?: { imagePath: string; scriptPath: string; panelCount: number };
   /** Run-relative evidence paths for the reviewer. */

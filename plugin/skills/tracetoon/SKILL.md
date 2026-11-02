@@ -101,6 +101,15 @@ that bypass on your own initiative.
      says one belongs, re-run with `--include <refs>` (or `--exclude <refs>`).
    - If no sessions matched, say so. You can still write a normal description
      from the diff, without an agent trace section.
+   - For a completed branch, read `evidence-notes.md` first: it separates
+     historical log runs, current receipts and validation gaps. Reuse relevant
+     evidence with its revision limits. Run fresh checks only when applicable
+     repository guidance requires them or a material gap warrants validation;
+     do not reinstall dependencies or repeat suites merely to prepare PR text.
+     A failed fresh checkout does not erase an earlier development pass. Keep
+     their sources and environments distinct, and never infer hosted CI status.
+     Historical edit markers can miss shell writes; they do not establish that
+     code stayed unchanged. Current matching-content claims need a V receipt.
 3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).
@@ -133,7 +142,7 @@ that bypass on your own initiative.
    - `aiPolicy.prInstructions`: follow these repo instructions about PR text.
    - If it is `disclosure-required`, keep Tracetoon's disclosure line (`config.disclosure` must not be `none`) and add any extra disclosure the policy asks for at the end of `body.md`.
 4. **Drafter phase.** Launch a distinct drafter with `digest.json`, `changes.patch`,
-   `context.json`, `guidance.json`, relevant code read access, and the role prompt in
+   `evidence-notes.md`, `context.json`, `guidance.json`, relevant code read access, and the role prompt in
    [contribution-workflow.md](references/contribution-workflow.md). It reads the
    trace evidence (using `tracetoon expand <ref>` for detail) and writes `body.md`
    in the run folder following
@@ -158,6 +167,15 @@ that bypass on your own initiative.
      `change-map.json` grouping every change by idea in reading order (see the
      writing guide). It is never posted; `render` checks that it covers every
      behavior file and shares it with the reviewer.
+   - Within each idea, record material conditions, defaults, fallbacks and public
+     options as `behaviorChecks` with `diff:` evidence. A mapped file can contain
+     several distinct changes. Use these checks to catch omissions without
+     turning the body into an inventory.
+   - Include the strongest relevant motivation supported by a user request,
+     decision or commit explanation. Attribute commit-only accounts, preserve
+     useful issue/PR/doc references, and expand clipped facts with
+     `tracetoon expand <ref> --run <id>` as needed (`S1`, `D1`, `P1`, `R1`,
+     `V1` or `commit:<sha>`).
 5. **Have the drafter write the comic, then draw it** (skip if `comic` is `off`,
    the user doesn't want one, or `aiPolicy.media` is `prohibited` and `comic`
    isn't `always`; render applies the comic setting either way). Follow

@@ -74,6 +74,32 @@ function withRemote(root: string, push?: string) {
 }
 
 describe('publication freshness', () => {
+  test('editing the behavior checklist or expanded evidence invalidates a render', () => {
+    const { repo, dir } = prepared();
+    const mapPath = join(dir, 'change-map.json');
+    const map = {
+      groups: [
+        {
+          idea: 'Greeting',
+          behavior: 'Exports a greeting.',
+          kind: 'behavior',
+          paths: ['greet.ts'],
+        },
+      ],
+    };
+    writeFileSync(mapPath, JSON.stringify(map));
+    expect(cli(repo.root, 'render').code).toBe(0);
+    map.groups[0]!.behavior = 'Also specifies the empty-name fallback.';
+    writeFileSync(mapPath, JSON.stringify(map));
+    expect(cli(repo.root, 'publish').json.error).toContain('change map changed');
+    expect(cli(repo.root, 'render').code).toBe(0);
+    const fullPath = join(dir, 'digest-full.json');
+    const full = JSON.parse(readFileSync(fullPath, 'utf8'));
+    full.notes.push('Newly expanded evidence.');
+    writeFileSync(fullPath, JSON.stringify(full));
+    expect(cli(repo.root, 'publish').json.error).toContain('full evidence changed');
+  });
+
   test('publishing verifies the remote revision and binds the PR target to the render', () => {
     const { repo, run, dir } = prepared();
     withRemote(repo.root, 'main:feature');

@@ -4,7 +4,7 @@
  * what *was* captured, and never claims something wasn't done (it may have
  * happened outside the logs). Nothing here blocks or asks before drafting.
  */
-import type { TraceDigest } from './build.ts';
+import type { Run, TraceDigest } from './build.ts';
 import type { ClaimFinding } from './claims.ts';
 
 export interface ContextNote {
@@ -80,18 +80,18 @@ export function contextNotes(
  * (or must, by the repo's policy). Facts only, grouped; no prose to copy.
  */
 export function evidenceNotes(
-  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr' | 'verification'>,
+  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr' | 'verification' | 'validation'>,
 ): string {
   const included = digest.sessions.filter((s) => s.band === 'included');
   const lines: string[] = ['# Notes to write from', ''];
   const asks = included.flatMap((s) =>
-    s.prompts.filter((p) => p.ledToEdits || p.pushback),
+    s.prompts.filter((p, i) => p.ledToEdits || p.pushback || i === 0),
   );
   if (asks.length) {
     lines.push('## What was asked (your prompts that shaped the change)');
     for (const p of asks)
       lines.push(
-        `- ${p.text.replace(/\s+/g, ' ').slice(0, 200)}${p.pushback ? ' _(pushback)_' : ''}`,
+        `- ${p.id}: ${p.text.replace(/\s+/g, ' ').slice(0, 400)}${p.pushback ? ' _(pushback)_' : ''}`,
       );
     lines.push('');
   }
@@ -115,19 +115,60 @@ export function evidenceNotes(
       );
     lines.push('');
   }
-  const runs = [
-    ...included.flatMap((s) => s.runs ?? []),
-    ...(digest.verification ?? []),
-  ].filter((r) => r.revision !== 'after later work');
-  const lastByKind = new Map(
-    runs.map((r) => [`${r.kind}:${r.cmd.split(' ').slice(0, 2).join(' ')}`, r]),
-  );
-  if (lastByKind.size) {
-    lines.push('## Checks captured (last run of each)');
-    for (const r of lastByKind.values())
+  const history = included
+    .flatMap((s) => s.runs ?? [])
+    .filter((r) => r.revision !== 'after later work')
+    .sort((a, b) => (a.t ?? '').localeCompare(b.t ?? ''));
+  const lastByCommand = new Map(history.map((r) => [r.cmd, r]));
+  const historicalScope = (r: Run) =>
+    r.revision === 'before later edits'
+      ? 'before later edits; tested content unverified'
+      : 'tested content unverified';
+  if (lastByCommand.size) {
+    lines.push('## Historical checks (log evidence, not proof of the submitted content)');
+    for (const r of [...lastByCommand.values()]
+      .sort((a, b) => (a.t ?? '').localeCompare(b.t ?? ''))
+      .slice(-12)) {
       lines.push(
-        `- ${r.id ? `${r.id}: ` : ''}\`${r.cmd}\`: ${r.outcome}${r.summary.length ? ` (${r.summary.join(', ')})` : ''}; ${r.verificationBasis === 'exact-content-receipt' ? 'receipt matches current content and environment' : r.revision}`,
+        `- ${r.id}: \`${r.cmd}\`: ${r.outcome}; ${historicalScope(r)}${r.summary.length ? ` (${r.summary.join(', ')})` : ''}`,
       );
+      const earlierPass = history
+        .filter((p) => p.cmd === r.cmd && p.outcome === 'passed')
+        .at(-1);
+      if (r.outcome !== 'passed' && earlierPass)
+        lines.push(
+          `  Earlier ${earlierPass.id}: passed; ${historicalScope(earlierPass)}. The later result does not erase this historical run.`,
+        );
+    }
+    if (lastByCommand.size > 12)
+      lines.push('- More historical commands are available in digest-full.json.');
+    lines.push('');
+  }
+  if (digest.verification?.length) {
+    lines.push('## Current validation receipts');
+    for (const r of digest.verification)
+      lines.push(
+        `- ${r.id}: \`${r.cmd}\`: ${r.outcome}; receipt matches current content and environment.`,
+      );
+    lines.push('');
+  }
+  const gaps =
+    digest.validation?.filter(
+      (c) => !c.current || !['passed', 'failed'].includes(c.outcome),
+    ) ?? [];
+  if (gaps.length) {
+    lines.push('## Stale, missing or unavailable validation');
+    for (const c of gaps)
+      lines.push(
+        `- ${c.name}: ${c.current ? c.outcome : 'stale'}${c.reason ? `; ${c.reason}` : ''}`,
+      );
+    lines.push('');
+  }
+  const explanations = digest.pr.commits.filter((c) => c.body);
+  if (explanations.length) {
+    lines.push('## Commit explanations (attribute these accounts to the commit)');
+    for (const c of explanations)
+      lines.push(`- commit:${c.sha}: ${c.body!.slice(0, 1200)}`);
     lines.push('');
   }
   const byRole = new Map<string, string[]>();

@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { writeResearchPacket } from '../contribution/guidance.ts';
 import { loadConfig } from '../config.ts';
 import { buildDigest, type TraceDigest } from '../digest/build.ts';
@@ -17,6 +19,8 @@ import { readTask, saveTask } from '../workflow/state.ts';
 import { receipts } from '../workflow/checks.ts';
 import { fileHash } from '../workflow/readiness.ts';
 import { makeScrubber } from '../digest/sanitize.ts';
+import { digestFact } from '../digest/facts.ts';
+import { evidenceNotes } from '../digest/notes.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -87,6 +91,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     ...build,
     interop,
     budgetTokens: Number.MAX_SAFE_INTEGER,
+    full: true,
   });
   if (readTask(run)) {
     const report = checkReport(truth.toplevel, run);
@@ -152,6 +157,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
   writeJson(run, 'session-selection.json', build);
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
+  writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full), 'utf8');
   writeJson(run, 'submission.json', submissionSnapshot(truth));
   const ambiguous = digest.sessions.filter((s) => s.band === 'ambiguous');
   emit(
@@ -160,6 +166,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
       run: run.id,
       runDir: run.dir,
       digestPath: path,
+      evidenceNotesPath: join(run.dir, 'evidence-notes.md'),
       sessions: digest.sessions.map((s) => ({
         ref: s.ref,
         agent: s.agent,
@@ -196,10 +203,8 @@ export function expandCmd(
   const truth = prTruth(cwd, { noGh: true });
   const run = findRun(truth.gitDir, opts.run);
   const full = readJson<TraceDigest>(run, 'digest-full.json');
-  const s =
-    full?.sessions.find((x) => x.ref === ref) ??
-    full?.verification?.find((x) => x.id === ref.replace(/^digest:/, ''));
-  if (!s) throw new UserError(`No session ${ref} in run ${run.id}.`);
+  const s = full && digestFact(full, ref);
+  if (!s) throw new UserError(`No evidence ${ref} in run ${run.id}.`);
   emit(opts, s, () => JSON.stringify(s, null, 2));
 }
 
