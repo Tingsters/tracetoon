@@ -113,6 +113,10 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > problem the changed behavior addresses. A general request to evaluate a tool
 > does not establish why a particular fix was made. If that link is absent,
 > lead with the observed behavior and attribute any commit-only explanation.
+> Keep a verified overall request for this submission at the level it supports,
+> separately from the cause of each fix. Preserve material historical evaluation
+> outcomes with their source attribution and tested-content limits. A note that
+> an evaluation was not rerun should accompany its recorded outcome when known.
 
 ### change-map.json (local, never posted)
 
@@ -274,6 +278,13 @@ MSR 2026). The review has three passes:
    historical checks and validation limits too. Report gaps in the cold-read
    transfer assessment and suggest a concrete correction; never invent context
    just because it would improve completeness.
+
+Check for supported context lost during the claim audit: the overall request for
+this submission, a recorded decision, or a relevant historical evaluation result.
+Keep an overall request at its evidenced scope while checking each fix's cause
+separately. Restore material recorded outcomes with attribution and revision
+limits when current reproduction is unavailable. Suggest a concise correction
+for an omission that leaves the reviewer with only the diff's behavior summary.
 
 Treat every assertion about what the user requested, including "the requested
 evaluation", as an intent claim. Compare its exact object with a prompt or

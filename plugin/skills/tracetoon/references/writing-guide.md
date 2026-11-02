@@ -237,6 +237,9 @@ implementation-session results. Neither establishes hosted CI status.
   different command, the whole suite, or a particular unnamed new regression.
 - Never invent a test count, a pass, or a measurement. Never turn missing
   evidence into a claim that something wasn't done.
+- Preserve a material recorded evaluation outcome with its source and revision
+  limits, including outcomes reported only by a commit. Pair any current
+  reproduction limitation with that attributed outcome when it is known.
 
 ## Voice and attribution
 
@@ -251,7 +254,9 @@ implementation-session results. Neither establishes hosted CI status.
   clicked") tells a reviewer why the change exists; put it in a sentence,
   paraphrased per `promptQuoting`. Expand and read that exact prompt first.
   Use the specific reported problem, not a broad evaluation or setup request
-  from another part of the conversation. When the user asked for an outcome and no
+  from another part of the conversation. Retain a verified overall request for
+  this submission at the level it supports, and establish the cause of each
+  individual fix separately. When the user asked for an outcome and no
   plan or decision about *how* was recorded, a short neutral note helps the
   reviewer know which choices are open to push back on, e.g. "The approach (a
   quote-aware splitter) wasn't discussed in the session."
