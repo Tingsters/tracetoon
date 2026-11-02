@@ -2,7 +2,8 @@
 import type { TraceDigest } from '../digest/build.ts';
 import { bodyReviewLines, parseBodyReview } from './bodyReview.ts';
 import { comicReviewLines, parseComicReview } from './comicReview.ts';
-import { readText, type Run } from '../run.ts';
+import { readJson, readText, type Run } from '../run.ts';
+import { digestFact } from '../digest/facts.ts';
 import {
   checkRole,
   nonempty,
@@ -23,6 +24,7 @@ export function reviewInput(input: {
   body: string;
   guidance: GuidanceResult;
   digest: TraceDigest;
+  fullDigest?: TraceDigest;
   diffSha256: string;
   headSha: string;
   authorText?: string;
@@ -30,8 +32,10 @@ export function reviewInput(input: {
   comic?: ReviewInput['comic'];
   /** The drafter's local change map, shared as a coverage aid when present. */
   changeMap?: boolean;
+  changeMapSha256?: string;
 }): ReviewInput {
   const { generatedAt: _time, ...digest } = input.digest;
+  const { generatedAt: _fullTime, ...fullDigest } = input.fullDigest ?? input.digest;
   const stable = {
     title: input.title,
     body: input.body,
@@ -43,6 +47,8 @@ export function reviewInput(input: {
     headSha: input.headSha,
     authorSha256: textHash(input.authorText ?? ''),
     comicSha256: input.comicSha256 ?? '',
+    ...(input.fullDigest ? { fullDigestSha256: objectHash(fullDigest) } : {}),
+    ...(input.changeMapSha256 ? { changeMapSha256: input.changeMapSha256 } : {}),
     ...(input.comic ? { comic: input.comic } : {}),
   };
   return {
@@ -54,6 +60,8 @@ export function reviewInput(input: {
       'guidance.json',
       'changes.patch',
       'digest.json',
+      ...(input.fullDigest ? ['digest-full.json'] : []),
+      'evidence-notes.md',
       'context.json',
       'author.md',
       'final-body.md',
@@ -85,18 +93,21 @@ function evidenceExists(
   author: string,
 ): boolean {
   if (ref === 'title') return true;
+  if (/^commit:[a-f0-9]{7,40}$/i.test(ref)) return !!digestFact(digest, ref);
   const fact = /^digest:([^:]+)$/.exec(ref);
   if (fact)
     return (
       !!digest.verification?.some((r) => r.id === fact[1]) ||
-      digest.sessions.some((s) =>
-        [
-          ...(s.prompts ?? []),
-          ...(s.plans ?? []),
-          ...(s.decisions ?? []),
-          ...(s.runs ?? []),
-        ].some((f) => f.id === fact[1]),
-      )
+      digest.sessions
+        .filter((s) => s.band === 'included')
+        .some((s) =>
+          [
+            ...(s.prompts ?? []),
+            ...(s.plans ?? []),
+            ...(s.decisions ?? []),
+            ...(s.runs ?? []),
+          ].some((f) => f.id === fact[1]),
+        )
     );
   const range = /^(body|diff|author|source:([^:]+)):(\d+)(?:-(\d+))?$/.exec(ref);
   if (!range) return false;
@@ -209,11 +220,12 @@ export function loadReview(
       );
     const seen = new Set<string>();
     const author = readText(run, 'author.md') ?? '';
+    const fullDigest = readJson<TraceDigest>(run, 'digest-full.json') ?? digest;
     const bodyReview =
       value.bodyReview === undefined
         ? undefined
         : parseBodyReview(value.bodyReview, (ref) =>
-            evidenceExists(ref, input, guidance, digest, patch, author),
+            evidenceExists(ref, input, guidance, fullDigest, patch, author),
           );
     if (!bodyReview)
       base.issues.push(
@@ -241,7 +253,7 @@ export function loadReview(
       );
       for (const ref of finding.evidence)
         requireThat(
-          evidenceExists(ref, input, guidance, digest, patch, author),
+          evidenceExists(ref, input, guidance, fullDigest, patch, author),
           `Unknown evidence reference: ${ref}`,
         );
       const rule = base.requirements.find((r) => r.id === finding.requirement)!;

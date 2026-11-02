@@ -11,6 +11,8 @@ export interface ChangeGroup {
   behavior: string;
   kind: 'behavior' | 'test' | 'docs' | 'mechanical';
   paths: string[];
+  /** Material conditions, defaults and fallbacks within this idea, with patch lines. */
+  behaviorChecks?: { behavior: string; evidence: string[] }[];
 }
 export interface ChangeMap {
   groups: ChangeGroup[];
@@ -44,6 +46,21 @@ function parse(raw: unknown): ChangeMap | string {
       !g.paths.every(text)
     )
       return `change-map.json group ${i + 1} needs an idea, a behavior sentence, a kind (behavior, test, docs or mechanical) and its paths.`;
+    if (
+      g.behaviorChecks !== undefined &&
+      (!Array.isArray(g.behaviorChecks) ||
+        !g.behaviorChecks.every(
+          (c) =>
+            record(c) &&
+            text(c.behavior) &&
+            Array.isArray(c.evidence) &&
+            c.evidence.length > 0 &&
+            c.evidence.every(
+              (ref) => typeof ref === 'string' && /^diff:\d+(-\d+)?$/.test(ref),
+            ),
+        ))
+    )
+      return `change-map.json group ${i + 1} behaviorChecks need a behavior and nonempty diff:line evidence.`;
   }
   if (
     raw.example !== undefined &&
@@ -61,6 +78,8 @@ export function checkChangeMap(input: {
   files: { path: string; role?: string; added: number }[];
   /** Every path in the submitted diff. */
   changedPaths: string[];
+  /** The exact patch whose one-based lines are cited by behavior checks. */
+  patch?: string;
   /** Whether an example ref's path (outside the diff) exists in the checkout. */
   exists: (path: string) => boolean;
 }): ChangeMapFinding[] {
@@ -81,6 +100,22 @@ export function checkChangeMap(input: {
   const findings: ChangeMapFinding[] = [];
   const changed = new Set(input.changedPaths);
   const mapped = new Set(map.groups.flatMap((g) => g.paths));
+  for (const group of map.groups)
+    for (const check of group.behaviorChecks ?? []) {
+      for (const ref of check.evidence) {
+        const [, first, last] = /^diff:(\d+)(?:-(\d+))?$/.exec(ref)!;
+        if (
+          input.patch === undefined ||
+          Number(first) < 1 ||
+          Number(last ?? first) < Number(first) ||
+          Number(last ?? first) > input.patch.split(/\r?\n/).length
+        )
+          findings.push({
+            kind: 'invalid',
+            text: `Behavior check "${check.behavior}" cites an unavailable patch range: ${ref}.`,
+          });
+      }
+    }
   for (const path of mapped)
     if (!changed.has(path))
       findings.push({

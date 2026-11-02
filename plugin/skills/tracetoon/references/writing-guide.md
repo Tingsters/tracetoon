@@ -121,6 +121,10 @@ reason (Bacchelli & Bird, ICSE 2013). Three steps before any prose:
      FSE 2022).
    - Every behavior file belongs to a group. The body is written from the map,
      so an idea missing from the map is usually missing from the body.
+   - A file can change several contracts. Add evidence-backed `behaviorChecks`
+     for material conditions, defaults, fallbacks, public options and regression
+     intent within each idea. Cover those distinctions in concise prose; do not
+     copy the checklist or enumerate incidental constants and implementation steps.
 3. **Trace any example.** If the body will include a concrete example, run it
    by hand through the old and the new code first. Record the lines you
    relied on in the map's `example.refs`. An example that doesn't match the
@@ -194,6 +198,15 @@ Use headings only when the description is long enough to need them.
 
 ## Evidence wording: don't upgrade a fact
 
+Read `evidence-notes.md` before drafting validation. It is available immediately
+after `digest`, including relevant historical successes, current receipts and
+stale or unavailable checks. Expand individual facts when needed; `digest-full.json`
+keeps their complete redacted text. Historical and compact facts have the same ids.
+For an already completed branch, reuse this evidence first. Fresh checks are for
+applicable repository requirements or material validation gaps, not a prerequisite
+to writing the description. State fresh checkout limitations separately from
+implementation-session results. Neither establishes hosted CI status.
+
 | What the trace shows | You can say | Don't say |
 |---|---|---|
 | A test file changed | "Adds a test for the empty case" (if the test does that) | "All tests pass" |
@@ -205,16 +218,23 @@ Use headings only when the description is long enough to need them.
 | Nothing recorded | (say nothing, or "no result was captured for X") | "not tested" (it may have been, outside the logs) |
 
 - `runs` (see `digest-schema.md`) list each test, build, lint and type check
-  with its outcome, how that's known, and how it relates to later edits. Word a
-  claim to match: "`bun test` passed (96 pass, 0 fail) after the last edits
-  captured" is supported by an `R#` with `outcome: passed` and
-  `revision: no later edits seen`. If `revision` is `before later edits`, say it
-  passed before the final changes. Skip runs marked `after later work`: they
+  with its outcome and how that's known. For historical R facts, say
+  "`bun test` passed during development (96 pass, 0 fail); tested content was
+  not verified." The legacy `revision: no later edits seen` tag is only a
+  heuristic over normalized edit records: shell writes can be missed even in
+  the same session. Never turn it into "no later edits" or "after the final
+  edits." If `revision` is `before later edits`, say it passed before those
+  changes. Current matching-content claims require a V receipt. Skip runs marked
+  `after later work`: they
   tested code that isn't in this PR. If `outcome` is `unknown`, don't claim a
   result. If `pr.dirty` is true, a run may have covered code that isn't in the
   PR.
 - If a run failed and a later one passed, you can say so when it helps the
   reviewer.
+- A later failure does not erase a real earlier pass. Say which command passed
+  during development and whether later edits followed; do not present an earlier
+  result as current. A pass for one test file or flag set does not establish a
+  different command, the whole suite, or a particular unnamed new regression.
 - Never invent a test count, a pass, or a measurement. Never turn missing
   evidence into a claim that something wasn't done.
 
@@ -236,6 +256,9 @@ Use headings only when the description is long enough to need them.
 - **Facts that only a commit message states** ("fixes the gap noted in #8",
   "found while dogfooding", a showcase result) can be used, attributed: "per
   the commit message" or "the commit notes…". Don't present them as observed.
+  Redacted `pr.commits[].body` carries these explanations; cite them locally as
+  `commit:<sha>`. Include a relevant issue, PR or documentation reference when
+  it explains the change. A reference alone does not establish a saga relationship.
 - **Decisions:** a recorded decision tells you what was *chosen*. An option that
   wasn't picked isn't automatically "rejected", and a plan sent back isn't proof
   its design was wrong. Give a reason only when the source gives one.

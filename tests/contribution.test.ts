@@ -421,22 +421,73 @@ describe('independent contribution reviews', () => {
     expect(f.loadReview(anotherTime).status).toBe('current');
   });
 
-  test.each(['title', 'body', 'diff', 'evidence', 'guidance', 'author', 'comic', 'head'])(
-    '%s changes make the old review stale',
-    (change) => {
-      const f = reviewed();
-      const next = structuredClone(f.inputArgs) as Parameters<typeof reviewInput>[0];
-      if (change === 'title') next.title += ' again';
-      if (change === 'body') next.body += 'Another fact.';
-      if (change === 'diff') next.diffSha256 = 'new diff';
-      if (change === 'evidence') next.digest.notes.push('Additional evidence');
-      if (change === 'guidance') next.guidance.sha256 = 'new guidance';
-      if (change === 'author') next.authorText = 'I checked it.';
-      if (change === 'comic') next.comicSha256 = 'new comic';
-      if (change === 'head') next.headSha = 'next commit';
-      expect(f.loadReview(reviewInput(next)).status).toBe('stale');
-    },
-  );
+  test('complete evidence can supply an expanded fact absent from the compact digest', () => {
+    const f = reviewed();
+    const full = structuredClone(f.evidence);
+    full.pr.commits.push({
+      sha: 'abc123456789',
+      subject: 'fix: greeting',
+      body: 'A blank output prompted this change.',
+      trailers: {},
+    });
+    writeFileSync(join(f.root, 'digest-full.json'), JSON.stringify(full));
+    const input = reviewInput({ ...f.inputArgs, fullDigest: full });
+    f.review.inputFingerprint = input.fingerprint;
+    f.review.bodyReview!.claims[0]!.evidence = ['commit:abc1234'];
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('current');
+    expect(input.artifacts).toContain('digest-full.json');
+    expect(
+      reviewInput({ ...f.inputArgs, fullDigest: { ...full, generatedAt: 'later' } })
+        .fingerprint,
+    ).toBe(input.fingerprint);
+  });
+
+  test.each([
+    'title',
+    'body',
+    'diff',
+    'evidence',
+    'guidance',
+    'author',
+    'comic',
+    'head',
+    'map',
+    'full evidence',
+  ])('%s changes make the old review stale', (change) => {
+    const f = reviewed();
+    const next = structuredClone(f.inputArgs) as Parameters<typeof reviewInput>[0];
+    if (change === 'title') next.title += ' again';
+    if (change === 'body') next.body += 'Another fact.';
+    if (change === 'diff') next.diffSha256 = 'new diff';
+    if (change === 'evidence') next.digest.notes.push('Additional evidence');
+    if (change === 'guidance') next.guidance.sha256 = 'new guidance';
+    if (change === 'author') next.authorText = 'I checked it.';
+    if (change === 'comic') next.comicSha256 = 'new comic';
+    if (change === 'head') next.headSha = 'next commit';
+    if (change === 'map') next.changeMapSha256 = textHash('new behavior checklist');
+    if (change === 'full evidence')
+      next.fullDigest = { ...f.evidence, notes: ['An expanded fact changed.'] };
+    expect(f.loadReview(reviewInput(next)).status).toBe('stale');
+  });
+
+  test('commit-only accounts can be cited, but nonexistent commits cannot', () => {
+    const f = reviewed();
+    f.evidence.pr.commits.push({
+      sha: 'abc123456789',
+      subject: 'fix: greeting',
+      body: 'The author reported blank output; see #42.',
+      trailers: {},
+    });
+    const input = reviewInput(f.inputArgs);
+    f.review.inputFingerprint = input.fingerprint;
+    f.review.bodyReview!.claims[0]!.evidence = ['commit:abc1234'];
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('current');
+    f.review.bodyReview!.claims[0]!.evidence = ['commit:fffffff'];
+    f.saveReview();
+    expect(f.loadReview(input).status).toBe('invalid');
+  });
 
   test('missing assessments and source gaps never appear complete', () => {
     const f = reviewed();

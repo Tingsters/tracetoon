@@ -366,6 +366,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     raw: changeMapRaw,
     files: digest.files,
     changedPaths: packet.request.changedPaths,
+    patch: packet.patch,
     exists: (path) =>
       !isAbsolute(path) &&
       !path.split(/[\\/]/).includes('..') &&
@@ -377,11 +378,13 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     body,
     guidance,
     digest,
+    fullDigest: readJson<TraceDigest>(run, 'digest-full.json'),
     diffSha256: packet.request.diffSha256,
     headSha: packet.request.headSha,
     authorText: readText(run, 'author.md'),
     comicSha256: comicSha,
     changeMap: changeMapRaw !== undefined,
+    ...(changeMapRaw !== undefined ? { changeMapSha256: objectHash(changeMapRaw) } : {}),
     ...(comic && script
       ? {
           comic: {
@@ -421,7 +424,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const writeYourself =
     ctx.aiPolicy.text === 'prohibited' ||
     ctx.aiPolicy.text === 'author-written-recommended';
-  const outline = evidenceNotes(digest);
+  const outline = evidenceNotes(readJson<TraceDigest>(run, 'digest-full.json') ?? digest);
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
   writeJson(run, 'approval.json', approval);
   for (const legacy of ['preview.html', 'review-state.json'])
