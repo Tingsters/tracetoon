@@ -217,6 +217,17 @@ implementation-session results. Neither establishes hosted CI status.
 | The user said they checked something | "Checked in Safari (reported by the author)" | "Verified" |
 | Nothing recorded | (say nothing, or "no result was captured for X") | "not tested" (it may have been, outside the logs) |
 
+State concrete validation: the exact command, its observed result, and a useful
+scope or revision limit. Receipt ids, fingerprints and internal verification
+status belong in the local evidence map. Do not add assurances such as "receipts
+match the submitted content and environment"; a content fingerprint or an
+environment hash is not a separate check of behavior or environment equivalence.
+When one shell invocation runs several commands, map each result to the command
+that produced it. A passing test suite and a separate summary evaluation are two
+results, even when their output is captured together. Expand the full command
+and output before naming the producer. If it is unclear, attribute the captured
+result to its source without guessing a command or dropping a material outcome.
+
 - `runs` (see `digest-schema.md`) list each test, build, lint and type check
   with its outcome and how that's known. For historical R facts, say
   "`bun test` passed during development (96 pass, 0 fail); tested content was

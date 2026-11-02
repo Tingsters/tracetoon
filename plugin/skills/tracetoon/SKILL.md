@@ -111,6 +111,9 @@ every role. Keep the researcher, drafter and independent reviewer separate.
      their sources and environments distinct, and never infer hosted CI status.
      Historical edit markers can miss shell writes; they do not establish that
      code stayed unchanged. Current matching-content claims need a V receipt.
+     In the public body, name the commands and observed results. Keep receipt
+     internals local; do not turn content or environment fingerprints into a
+     general validation assurance. Attribute each result to its actual command.
 3. **Context.** `tracetoon context --run <id> --json`. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).

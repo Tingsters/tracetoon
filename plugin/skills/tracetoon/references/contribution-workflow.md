@@ -117,6 +117,9 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > separately from the cause of each fix. Preserve material historical evaluation
 > outcomes with their source attribution and tested-content limits. A note that
 > an evaluation was not rerun should accompany its recorded outcome when known.
+> For combined shell invocations, expand the full command and output and map
+> each outcome to its producing command. Keep receipt metadata in the local map;
+> draft concrete commands and results without general verification assurances.
 
 ### change-map.json (local, never posted)
 
@@ -301,7 +304,10 @@ entry point where a reviewer should start, rather than just "the diff".
 For validation claims, compare exact commands, targets and flags. Distinguish
 historical R facts from current V receipts; a later failure does not contradict
 an explicitly historical pass. A whole-file or suite result does not prove a
-specific unnamed regression ran. Check failure claims and CI-status claims as
+specific unnamed regression ran. For combined invocations, verify which command
+produced each count or result. Remove public assurances about matching receipts,
+fingerprints or environments; retain the supported command outcome and its limits.
+Check failure claims and CI-status claims as
 carefully as passes. Consult `digest-full.json` or expand individual facts before
 declaring evidence absent. Commit-only explanations use `commit:<sha>` references
 and require attribution in the body. The review fingerprint includes full
