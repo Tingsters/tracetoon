@@ -597,7 +597,7 @@ function hostComic(
   const data = readFileSync(approval.comicFile);
   if (sha(data) !== approval.comicSha) {
     throw new UserError(
-      'The comic image changed after it was approved. Run `tracetoon render` again.',
+      'The comic image changed after it was rendered. Run `tracetoon render` again.',
     );
   }
   const canAttach = ghVersionAtLeast(truth.toplevel, [2, 99]);

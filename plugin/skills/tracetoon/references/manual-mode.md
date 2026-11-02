@@ -33,7 +33,9 @@ projects' content into the description.
 ## 3. Write, then post
 
 Write the description following [writing-guide.md](writing-guide.md), then
-create or update the PR (only when the user's request includes making one):
+create the requested PR, or update it when Tracetoon was explicitly requested.
+Preserve the requested target, draft status and metadata; report the result and
+continue the rest of the user's task. No routine approval step is required:
 
 ```sh
 gh pr create --title "<title>" --body-file <file>       # new PR

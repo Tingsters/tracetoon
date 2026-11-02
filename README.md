@@ -180,16 +180,18 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 When there's no comic, the second line says why (comics off in your settings,
 the repo's contributing rules forbid images in PRs, no image route set up, or
 drawing failed). The GitHub URL is returned without waiting for remote CI.
-Tracetoon never merges.
+The publishing command does not merge. Your agent can continue with CI monitoring,
+PR edits or merging when requested, using its normal tools and permissions.
 
-While working, the agent registers the task with `task begin` and records checks
-with `check`. Completed checks are tied to their tested content and environment,
-so a commit with unchanged content does not repeat tests. CI-only checks,
-failures and unavailable evidence stay visible. `task complete`, `task defer`
-and `task block` are optional bookkeeping.
+Hooks observe session/repository metadata locally without injecting startup rules
+or blocking the end of a turn. PR preparation initializes its run when needed;
+earlier coding does not require registration, branch changes or wrapped tests.
+`task begin`, `check`, `task complete`, `task defer` and `task block` remain optional
+for users who want explicit evidence receipts or bookkeeping. Existing PR edits,
+metadata changes, merges, pushes, help and dry runs are not intercepted.
 
 1. **`tracetoon doctor`** checks git and gh, whether you can push to the repo,
-   and whether a comic can be drawn, before any work starts.
+   and whether a comic can be drawn, when PR preparation starts.
 2. **`tracetoon digest`** reads the branch from git (base, commits, the exact
    lines added) and finds the agent sessions behind it. The evidence: edits
    whose lines are still in the diff, commits made during a session (including

@@ -8,10 +8,5 @@ export const BUILD_INFO = {
   buildId: manifest.buildId,
   revision: manifest.revision,
   protocol: 1,
-  capabilities: [
-    'task-lifecycle',
-    'completion-hook',
-    'check-receipts',
-    'publication-recovery',
-  ],
+  capabilities: ['task-lifecycle', 'check-receipts', 'pr-creation-routing'],
 };

@@ -41,6 +41,17 @@ export function shellSegments(cmd: string): ShellSegment[] {
       cur += ch + cmd[++i];
       continue;
     }
+    // PowerShell here-strings contain literal script/file text, including quotes.
+    // Their contents are not shell commands, even when piped to an interpreter.
+    const psHere = /^@(['"])\r?\n/.exec(cmd.slice(i));
+    if (psHere) {
+      const rest = cmd.slice(i + psHere[0].length);
+      const end = new RegExp(`(?:^|\\n)[\\t ]*${psHere[1]}@`).exec(rest);
+      const length = end ? psHere[0].length + end.index + end[0].length : cmd.length - i;
+      cur += cmd.slice(i, i + length);
+      i += length - 1;
+      continue;
+    }
     if (ch === '"' || ch === "'" || ch === '`') {
       quote = ch;
       cur += ch;

@@ -24,7 +24,7 @@ export interface Task {
   noChecksReason?: string;
   /**
    * When a PR write in this session was redirected to Tracetoon. The PR was
-   * asked for, so finishing the session without publishing it would orphan it.
+   * asked for. This is bookkeeping and never prevents the session from ending.
    */
   prRequestedAt?: string;
   /** The host session whose PR request is waiting on this task. */

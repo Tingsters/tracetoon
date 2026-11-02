@@ -3,7 +3,7 @@ import { findRun } from '../run.ts';
 import { beginTask, readTask, repository, saveTask } from '../workflow/state.ts';
 import { executeCheck, receipts } from '../workflow/checks.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
-import { rememberRepository } from '../workflow/hostSession.ts';
+import { readHost, rememberRepository } from '../workflow/hostSession.ts';
 
 interface TaskOpts extends OutOpts {
   run?: string;
@@ -19,14 +19,17 @@ export function taskCmd(
   action: 'begin' | 'complete' | 'defer' | 'block',
   opts: TaskOpts,
 ) {
+  const session =
+    opts.session ??
+    (process.env.CODEX_THREAD_ID ||
+      process.env.CLAUDE_CODE_SESSION_ID ||
+      process.env.CLAUDE_SESSION_ID ||
+      undefined);
+  const observed = session ? readHost(session) : undefined;
   const info = beginTask(cwd, {
     ...opts,
-    session:
-      opts.session ??
-      (process.env.CODEX_THREAD_ID ||
-        process.env.CLAUDE_CODE_SESSION_ID ||
-        process.env.CLAUDE_SESSION_ID ||
-        undefined),
+    session,
+    transcript: opts.transcript ?? observed?.transcript,
     // complete/defer/block keep the task's branch; only begin adopts another one.
     adopt: action === 'begin',
   });
@@ -61,8 +64,8 @@ export function taskCmd(
   }
   const next =
     task.state === 'preparing'
-      ? `${info.branch === task.base ? `Create a local feature branch first (PR head and base cannot both be ${task.base}), then adopt it with task begin --run ${run.id}. ` : ''}When the user wants a PR, use the tracetoon skill with digest --run ${run.id}, context, research, drafting, comic and independent review, then tracetoon publish --run ${run.id}.`
-      : `Resume this task with --run ${run.id}; complete it when the cohesive change is finished.`;
+      ? `${task.prRequestedAt && info.branch === task.base ? `Create a local feature branch first (PR head and base cannot both be ${task.base}), then adopt it with task begin --run ${run.id}. ` : ''}When the user wants a PR, use the tracetoon skill with digest --run ${run.id}, context, research, drafting, comic and independent review, then tracetoon publish --run ${run.id}.`
+      : `Reuse this run with --run ${run.id}. Task bookkeeping and check receipts are optional.`;
   emit(
     opts,
     { run: run.id, runDir: run.dir, state: task.state, nextAction: next },

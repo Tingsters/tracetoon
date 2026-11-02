@@ -122,272 +122,167 @@ describe('finished task completion contract', () => {
     });
   }
 
-  test('finished edits without a PR request end normally', () => {
-    const repo = makeRepo();
-    const p = {
-      cwd: repo.root,
-      session_id: 'finished-edit',
-      tool_input: { command: 'git status' },
-    };
-    const start = lifecycle('codex', 'SessionStart', p, env())!;
-    expect(start).toContain('only acts when a pull request is being made');
-    expect(start).toContain('Do not open a PR the user did not ask for');
-    lifecycle('codex', 'PreToolUse', p, env());
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    repo.commit('fix.ts', 'export const fixed = true;\n', 'Fix behavior');
-    writeFileSync(join(repo.root, 'uncommitted.ts'), 'more');
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    expect(tasks(repository(repo.root).gitDir)).toHaveLength(0);
-    // Even a registered, finished task does not start a PR on its own.
-    const { run, task } = beginTask(repo.root, { session: 'finished-edit' });
-    task.state = 'preparing';
-    saveTask(run, task);
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    expect(readTask(run)?.state).toBe('preparing');
-  });
-
-  test('a PR prepared without a redirected gh command still keeps its session open', () => {
-    const repo = makeRepo();
-    git(repo.root, ['switch', '-q', '-c', 'feature']);
-    repo.commit('fix.ts', 'export const fixed = true;\n', 'Fix behavior');
-    const p = { cwd: repo.root, session_id: 'skill-direct' };
-    const { run } = beginTask(repo.root, { session: 'skill-direct' });
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    // The agent went straight to the skill: the digest records the request.
-    // With no host session variable, the task owner is credited.
-    const noHost = {
-      CODEX_THREAD_ID: '',
-      CLAUDE_CODE_SESSION_ID: '',
-      CLAUDE_SESSION_ID: '',
-    };
-    const digest = (extra: NodeJS.ProcessEnv) =>
-      cli(repo.root, ['digest', '--run', run.id, '--offline'], extra);
-    expect(digest(noHost).code).toBe(0);
-    let task = readTask(run)!;
-    expect(task.prRequestedAt).toBeTruthy();
-    expect(task.prRequestedBy).toBe('skill-direct');
-    // The session running the digest is the one asking (Claude Code's variable here).
-    expect(digest({ ...noHost, CLAUDE_CODE_SESSION_ID: 'requester-b' }).code).toBe(0);
-    expect(readTask(run)!.prRequestedBy).toBe('requester-b');
-    expect(digest(noHost).code).toBe(0);
-    task = readTask(run)!;
-    expect(task.prRequestedBy).toBe('skill-direct');
-    expect(task.state).toBe('preparing');
-    expect(lifecycle('codex', 'Stop', p, env())).toContain('has not been created');
-    // Another session's stop is not held by it.
-    expect(
-      lifecycle('codex', 'Stop', { ...p, session_id: 'someone-else' }, env()),
-    ).toBeUndefined();
-    task.state = 'published';
-    saveTask(run, task);
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-  });
-
-  test('a requested PR stopped by the leak scan is reported once, prominently, not retried', () => {
-    const repo = makeRepo();
-    git(repo.root, ['switch', '-q', '-c', 'feature']);
-    const p = { cwd: repo.root, session_id: 'pr-secret' };
-    lifecycle(
-      'claude',
-      'PreToolUse',
-      { ...p, tool_input: { command: 'gh pr create --fill' } },
-      env(),
-    );
-    const [active] = tasks(repository(repo.root).gitDir);
-    writeLocal(join(active!.run.dir, 'approval.json'), {
-      findings: [{ kind: 'api-key', count: 1 }],
-      findingAt: ['final-body.md:3'],
-      allowFindings: false,
+  for (const agent of ['claude', 'codex', 'antigravity'] as const) {
+    test(`${agent}: passive events and ordinary work never inject workflow instructions`, () => {
+      const repo = makeRepo();
+      const p = { cwd: repo.root, session_id: `passive-${agent}` };
+      for (const event of ['SessionStart', 'Stop'] as const)
+        expect(lifecycle(agent, event, p, env())).toBeUndefined();
+      for (const command of [
+        'git status',
+        'bun test',
+        'git switch main',
+        'git push --force-with-lease',
+        'gh pr edit 3 --body new',
+        'gh pr checks 3 --watch',
+        'gh pr merge 3 --merge',
+        'gh pr create --help',
+        'gh pr create --dry-run',
+      ]) {
+        for (const event of ['PreToolUse', 'PostToolUse'] as const)
+          expect(
+            lifecycle(agent, event, { ...p, tool_input: { command } }, env()),
+          ).toBeUndefined();
+      }
+      expect(tasks(repository(repo.root).gitDir)).toHaveLength(0);
+      expect(
+        readLocal<any>(
+          join(
+            dirname(config),
+            'host-sessions',
+            createHash('sha256').update(p.session_id).digest('hex') + '.json',
+          ),
+        )?.repos,
+      ).toHaveLength(1);
     });
-    const told = JSON.parse(lifecycle('claude', 'Stop', p, env())!);
-    expect(told.decision).toBe('block');
-    expect(told.reason).toStartWith(
-      'PR NOT CREATED: the leak scan found a possible secret',
-    );
-    expect(told.reason).toContain('api-key x1 at final-body.md:3');
-    expect(told.reason).toContain('Start your response with that');
-    expect(readTask(active!.run)?.state).toBe('blocked');
-    // Told once; the user decides what happens next.
-    expect(lifecycle('claude', 'Stop', p, env())).toBeUndefined();
 
-    // Once body.md is fixed, the old render no longer counts as leak-blocked:
-    // a new request asks for a render and publish, not the old notice.
-    const fixedRepo = makeRepo();
-    git(fixedRepo.root, ['switch', '-q', '-c', 'feature']);
-    const q = { cwd: fixedRepo.root, session_id: 'pr-secret-fixed' };
-    lifecycle(
-      'claude',
-      'PreToolUse',
-      { ...q, tool_input: { command: 'gh pr create --fill' } },
-      env(),
-    );
-    const [fixedTask] = tasks(repository(fixedRepo.root).gitDir);
-    const leaked = 'Config: api_key = sk-live-abc\n';
-    writeFileSync(join(fixedTask!.run.dir, 'body.md'), leaked);
-    writeLocal(join(fixedTask!.run.dir, 'approval.json'), {
-      findings: [{ kind: 'api-key', count: 1 }],
-      findingAt: ['final-body.md:1'],
-      allowFindings: false,
-      sourceSha: createHash('sha256').update(leaked).digest('hex'),
-    });
-    writeFileSync(
-      join(fixedTask!.run.dir, 'body.md'),
-      'Config: read the key from the env.\n',
-    );
-    const after = lifecycle('claude', 'Stop', q, env())!;
-    expect(after).toContain('has not been created');
-    expect(after).not.toContain('PR NOT CREATED');
-  });
-
-  test('an intercepted PR write keeps the session open until the PR is published', () => {
-    const repo = makeRepo();
-    git(repo.root, ['switch', '-q', '-c', 'feature']);
-    repo.commit('fix.ts', 'export const fixed = true;\n', 'Fix behavior');
-    const p = { cwd: repo.root, session_id: 'pr-requested' };
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    const deny = JSON.parse(
+    test(`${agent}: unfinished and legacy tasks never hold the session open`, () => {
+      const repo = makeRepo();
+      const p = { cwd: repo.root, session_id: `unfinished-${agent}` };
       lifecycle(
-        'codex',
+        agent,
         'PreToolUse',
-        { ...p, tool_input: { command: 'gh pr create --fill' } },
-        env(),
-      )!,
-    );
-    const [active] = tasks(repository(repo.root).gitDir);
-    expect(active).toBeDefined();
-    const reason = deny.hookSpecificOutput.permissionDecisionReason;
-    expect(reason).toContain(
-      `Task ${active!.run.id}: make this PR with the tracetoon skill`,
-    );
-    expect(reason).toContain(`tracetoon publish --run ${active!.run.id}`);
-    const requestedAt = readTask(active!.run)?.prRequestedAt;
-    expect(requestedAt).toBeTruthy();
-    // Another redirected write keeps the original request.
-    expect(
-      lifecycle(
-        'codex',
-        'PreToolUse',
-        { ...p, tool_name: 'mcp__github__create_pull_request', tool_input: {} },
-        env(),
-      ),
-    ).toContain('deny');
-    expect(readTask(active!.run)?.prRequestedAt).toBe(requestedAt);
-    const blocked = JSON.parse(lifecycle('codex', 'Stop', p, env())!);
-    expect(blocked.decision).toBe('block');
-    expect(blocked.reason).toContain('has not been created');
-    expect(blocked.reason).toContain(`tracetoon publish --run ${active!.run.id}`);
-    // Once Tracetoon has published it, the session ends normally.
-    const task = readTask(active!.run)!;
-    task.state = 'published';
-    saveTask(active!.run, task);
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-
-    // A PR that can't be made: recovery is bounded, then the task is blocked.
-    const other = makeRepo();
-    git(other.root, ['switch', '-q', '-c', 'feature']);
-    const q = { cwd: other.root, session_id: 'pr-stuck' };
-    expect(
-      lifecycle(
-        'claude',
-        'PreToolUse',
-        { ...q, tool_input: { command: 'gh pr create --fill' } },
-        env(),
-      ),
-    ).toContain('deny');
-    const stuck = tasks(repository(other.root).gitDir)[0]!;
-    expect(lifecycle('claude', 'Stop', q, env())).toContain('has not been created');
-    expect(lifecycle('claude', 'Stop', q, env())).toContain('has not been created');
-    expect(lifecycle('claude', 'Stop', q, env())).toContain('exhausted');
-    expect(lifecycle('claude', 'Stop', q, env())).toBeUndefined();
-    expect(readTask(stuck.run)?.state).toBe('blocked');
-
-    // Deferring the requested PR is explicit and also lets the session end.
-    const deferred = makeRepo();
-    git(deferred.root, ['switch', '-q', '-c', 'feature']);
-    const d = { cwd: deferred.root, session_id: 'pr-deferred' };
-    lifecycle(
-      'codex',
-      'PreToolUse',
-      { ...d, tool_input: { command: 'gh pr create --fill' } },
-      env(),
-    );
-    const later = tasks(repository(deferred.root).gitDir)[0]!;
-    expect(lifecycle('codex', 'Stop', d, env())).toContain('block');
-    later.task.state = 'deferred';
-    later.task.reason = 'User asked to open the PR later.';
-    saveTask(later.run, later.task);
-    expect(lifecycle('codex', 'Stop', d, env())).toBeUndefined();
-  });
-
-  test('a PR requested in another session keeps that session open, not the task owner', () => {
-    const repo = makeRepo();
-    git(repo.root, ['switch', '-q', '-c', 'feature']);
-    const { run } = beginTask(repo.root, { session: 'owner-a' });
-    repo.commit('fix.ts', 'export const fixed = true;\n', 'Fix behavior');
-    const a = { cwd: repo.root, session_id: 'owner-a' };
-    const b = { cwd: repo.root, session_id: 'requester-b' };
-    expect(
-      lifecycle(
-        'codex',
-        'PreToolUse',
-        { ...b, tool_input: { command: 'gh pr create --fill' } },
-        env(),
-      ),
-    ).toContain(`Task ${run.id}: make this PR with the tracetoon skill`);
-    // Same task, now owned by the request from B.
-    expect(tasks(repository(repo.root).gitDir)).toHaveLength(1);
-    const task = readTask(run)!;
-    expect(task.session).toBe('owner-a');
-    expect(task.prRequestedBy).toBe('requester-b');
-    expect(task.prRequestedAt).toBeTruthy();
-    expect(lifecycle('codex', 'Stop', b, env())).toContain('has not been created');
-    expect(lifecycle('codex', 'Stop', a, env())).toBeUndefined();
-  });
-
-  test('a fresh PR request revives a task whose recovery gave up', () => {
-    const repo = makeRepo();
-    git(repo.root, ['switch', '-q', '-c', 'feature']);
-    const p = { cwd: repo.root, session_id: 'revive' };
-    const prWrite = () =>
-      lifecycle(
-        'claude',
-        'PreToolUse',
-        { ...p, tool_input: { command: 'gh pr create --fill' } },
+        { ...p, tool_input: { command: 'gh pr create' } },
         env(),
       );
-    expect(prWrite()).toContain('deny');
-    const { run } = tasks(repository(repo.root).gitDir)[0]!;
-    const requestedAt = readTask(run)!.prRequestedAt;
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('has not been created');
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('has not been created');
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('exhausted');
-    expect(lifecycle('claude', 'Stop', p, env())).toBeUndefined();
-    const blocked = readTask(run)!;
-    expect(blocked.state).toBe('blocked');
-    expect(blocked.reason).toContain('recovery exhausted');
-    const generation = blocked.recoveryGeneration ?? 0;
+      const active = tasks(repository(repo.root).gitDir)[0]!;
+      writeLocal(join(active.run.dir, 'approval.json'), {
+        findings: [{ kind: 'secret', count: 1 }],
+        allowFindings: false,
+      });
+      for (const state of [
+        'working',
+        'preparing',
+        'blocked',
+        'deferred',
+        'published',
+      ] as const) {
+        active.task.state = state;
+        active.task.recoveryGeneration = 12;
+        saveTask(active.run, active.task);
+        const before = readFileSync(join(active.run.dir, 'task.json'), 'utf8');
+        for (let i = 0; i < 4; i++)
+          expect(lifecycle(agent, 'Stop', p, env())).toBeUndefined();
+        expect(readFileSync(join(active.run.dir, 'task.json'), 'utf8')).toBe(before);
+      }
+    });
+  }
 
-    // The user asks again: the task is back in preparation with a fresh recovery budget.
-    expect(prWrite()).toContain(`tracetoon publish --run ${run.id}`);
-    const revived = readTask(run)!;
-    expect(revived.state).toBe('preparing');
-    expect(revived.reason).toBeUndefined();
-    expect(revived.recoveryGeneration).toBe(generation + 1);
-    expect(revived.prRequestedAt).toBe(requestedAt);
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('has not been created');
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('has not been created');
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('exhausted');
+  for (const agent of ['claude', 'codex', 'antigravity'] as const) {
+    test(`${agent}: connector updates, reads and generic operations pass through; only explicit creation redirects`, () => {
+      const repo = makeRepo();
+      git(repo.root, ['remote', 'add', 'origin', 'https://github.com/acme/demo.git']);
+      const p = { cwd: repo.root, session_id: `connector-${agent}` };
+      const target = { owner: 'acme', repo: 'demo' };
+      const cases: [string, object, boolean][] = [
+        ['update_pull_request', target, false],
+        ['edit_pull_request', target, false],
+        ['merge_pull_request', target, false],
+        ['pull_request_write', { ...target, method: 'update' }, false],
+        ['pull_request_write', target, false],
+        [
+          'request',
+          { method: 'PATCH', path: '/repos/acme/demo/pulls/3', body: { title: 'new' } },
+          false,
+        ],
+        ['request', { method: 'GET', path: '/repos/acme/demo/pulls' }, false],
+        ['request', { method: 'POST', path: '/repos/acme/demo/pulls/3/reviews' }, false],
+        ['create_pull_request', target, true],
+        ['pull_request_write', { ...target, method: 'create' }, true],
+        [
+          'request',
+          { method: 'POST', path: '/repos/acme/demo/pulls', body: { title: 'new' } },
+          true,
+        ],
+        [
+          'request',
+          {
+            method: 'POST',
+            path: '/graphql',
+            query: 'mutation { createPullRequest(input: {}) { id } }',
+          },
+          true,
+        ],
+      ];
+      for (const [tool, input, creates] of cases) {
+        const result = lifecycle(
+          agent,
+          'PreToolUse',
+          { ...p, tool_name: `mcp__github__${tool}`, tool_input: input },
+          env(),
+        );
+        if (creates) expect(result).toContain('deny');
+        else expect(result).toBeUndefined();
+      }
+      expect(tasks(repository(repo.root).gitDir)).toHaveLength(1);
+    });
+  }
 
-    // A deferred PR is revived the same way.
-    const later = readTask(run)!;
-    later.state = 'deferred';
-    later.reason = 'User asked to open the PR later.';
-    saveTask(run, later);
-    expect(lifecycle('claude', 'Stop', p, env())).toBeUndefined();
-    prWrite();
-    expect(readTask(run)?.state).toBe('preparing');
-    expect(readTask(run)?.reason).toBeUndefined();
-    expect(lifecycle('claude', 'Stop', p, env())).toContain('has not been created');
+  test('creation initializes one reusable run without earlier registration', () => {
+    const repo = makeRepo();
+    const transcript = join(dirname(config), 'session.jsonl');
+    writeFileSync(transcript, '');
+    const p = { cwd: repo.root, session_id: 'pr-requested', transcript_path: transcript };
+    expect(lifecycle('codex', 'SessionStart', p, env())).toBeUndefined();
+    expect(tasks(repository(repo.root).gitDir)).toHaveLength(0);
+    const request = { ...p, tool_input: { command: 'gh pr create --draft --base main' } };
+    expect(lifecycle('codex', 'PreToolUse', request, env())).toContain(
+      'make this PR with the tracetoon skill',
+    );
+    const [active] = tasks(repository(repo.root).gitDir);
+    expect(active!.task.transcript).toBe(transcript);
+    expect(active!.task.prRequestedBy).toBe(p.session_id);
+    const requestedAt = active!.task.prRequestedAt;
+    lifecycle('codex', 'PreToolUse', request, env());
+    expect(tasks(repository(repo.root).gitDir)).toHaveLength(1);
+    expect(readTask(active!.run)?.prRequestedAt).toBe(requestedAt);
+    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
+    const updated = readTask(active!.run)!;
+    updated.state = 'blocked';
+    updated.reason = 'An earlier attempt failed.';
+    saveTask(active!.run, updated);
+    lifecycle('codex', 'PreToolUse', request, env());
+    expect(readTask(active!.run)?.state).toBe('preparing');
+    expect(readTask(active!.run)?.reason).toBeUndefined();
+  });
+
+  test('PR preparation recovers passive transcript metadata without pre-coding registration', () => {
+    const repo = makeRepo();
+    const transcript = join(dirname(config), 'passive.jsonl');
+    writeFileSync(transcript, '');
+    lifecycle(
+      'claude',
+      'SessionStart',
+      { cwd: repo.root, session_id: 'observed', transcript_path: transcript },
+      env(),
+    );
+    const begun = cli(repo.root, ['task', 'begin'], {
+      CLAUDE_CODE_SESSION_ID: 'observed',
+    });
+    expect(begun.code).toBe(0);
+    const task = tasks(repository(repo.root).gitDir)[0]!.task;
+    expect(task.transcript).toBe(transcript);
+    expect(task.session).toBe('observed');
   });
 
   test('parent workspace resolves the command workdir and preserves unfinished tasks beyond pruning', () => {
@@ -408,9 +303,7 @@ describe('finished task completion contract', () => {
         env(),
       ),
     ).toContain('deny');
-    expect(lifecycle('claude', 'Stop', { ...p, tool_input: {} }, env())).toContain(
-      'has not been created',
-    );
+    expect(lifecycle('claude', 'Stop', { ...p, tool_input: {} }, env())).toBeUndefined();
     const { gitDir } = repository(repo.root);
     const active = tasks(gitDir)[0]!;
     pruneRuns(gitDir);
@@ -425,26 +318,6 @@ describe('finished task completion contract', () => {
       lifecycle('antigravity', 'Stop', { ...p, fullyIdle: false }, env()),
     ).toBeUndefined();
     expect(lifecycle('codex', 'Stop', p, { ...env(), TRACETOON: '0' })).toBeUndefined();
-  });
-
-  test('recovery is bounded; preparation failure remains visible', () => {
-    const repo = makeRepo();
-    const { run, task } = beginTask(repo.root, { session: 'bounded' });
-    task.state = 'preparing';
-    saveTask(run, task);
-    const p = { cwd: repo.root, session_id: 'bounded' };
-    // Preparation without a PR request is bookkeeping, not a promise of a PR.
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    task.prRequestedAt = new Date().toISOString();
-    saveTask(run, task);
-    expect(lifecycle('codex', 'Stop', p, env())).toContain('block');
-    expect(lifecycle('codex', 'Stop', { ...p, stop_hook_active: true }, env())).toContain(
-      'block',
-    );
-    expect(lifecycle('codex', 'Stop', p, env())).toContain('exhausted');
-    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
-    expect(readTask(run)?.state).toBe('blocked');
-    expect(readTask(run)?.reason).toContain('recovery exhausted');
   });
 
   test('connector publication is guarded while read-only GitHub requests are allowed', () => {
@@ -559,7 +432,7 @@ describe('finished task completion contract', () => {
       {
         cwd: a.root,
         session_id: 'scope',
-        tool_name: 'mcp__github__update_pull_request',
+        tool_name: 'mcp__github__create_pull_request',
         tool_input: { owner: 'acme', repo: 'b' },
       },
       env(),
@@ -579,7 +452,7 @@ describe('finished task completion contract', () => {
     const connector = {
       cwd: a.root,
       session_id: 'scope',
-      tool_name: 'mcp__github__update_pull_request',
+      tool_name: 'mcp__github__create_pull_request',
       tool_input: { owner: 'acme', repo: 'b' },
     };
     expect(lifecycle('codex', 'PreToolUse', connector, env())).toBeUndefined();
@@ -634,7 +507,7 @@ describe('finished task completion contract', () => {
         env(),
       ),
     ).toContain('make this PR with the tracetoon skill');
-    expect(lifecycle('claude', 'Stop', stop, env())).toContain('has not been created');
+    expect(lifecycle('claude', 'Stop', stop, env())).toBeUndefined();
   });
 });
 
@@ -783,7 +656,7 @@ describe('requested PR to publication rehearsal', () => {
       ),
     ).toContain(`tracetoon publish --run ${run.id}`);
     expect(readTask(run)?.prRequestedAt).toBeTruthy();
-    expect(lifecycle('codex', 'Stop', p, env())).toContain('has not been created');
+    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
     ok(repo.root, 'task', 'complete', '--run', run.id, '--checks', 'tests');
     ok(repo.root, 'digest', '--run', run.id, '--offline');
     ok(repo.root, 'context', '--run', run.id, '--offline');
@@ -906,9 +779,14 @@ describe('requested PR to publication rehearsal', () => {
 });
 
 describe('ordinary git and task identity', () => {
-  function prepared(repo: ReturnType<typeof makeRepo>, runId: string) {
+  function prepared(
+    repo: ReturnType<typeof makeRepo>,
+    runId: string,
+    recordChecks = true,
+  ) {
     const run = findRun(repository(repo.root).gitDir, runId);
-    ok(repo.root, 'task', 'complete', '--run', run.id, '--checks', 'tests');
+    if (recordChecks)
+      ok(repo.root, 'task', 'complete', '--run', run.id, '--checks', 'tests');
     ok(repo.root, 'digest', '--run', run.id, '--offline');
     ok(repo.root, 'context', '--run', run.id, '--offline');
     const request = readLocal<{ fingerprint: string }>(
@@ -941,6 +819,55 @@ describe('ordinary git and task identity', () => {
     ok(root, 'check', '--run', run, '--name', 'tests', '--', process.execPath, '-e', '1');
   const prCreate = ['gh', 'pr', 'create', '--fill'].join(' ');
 
+  test('creation publishes without pre-coding registration or wrapped checks', () => {
+    const repo = makeRepo();
+    const remote = tempDir('tracetoon-passive-remote-');
+    expect(git(remote, ['init', '-q', '--bare']).ok).toBe(true);
+    expect(git(repo.root, ['remote', 'add', 'origin', remote]).ok).toBe(true);
+    expect(git(repo.root, ['push', '-q', 'origin', 'main']).ok).toBe(true);
+    const p = { cwd: repo.root, session_id: 'passive-publication' };
+    expect(lifecycle('codex', 'SessionStart', p, env())).toBeUndefined();
+    repo.commit('greet.ts', 'export const greet = () => "hello";\n', 'Add greeting');
+    expect(tasks(repository(repo.root).gitDir)).toHaveLength(0);
+    expect(
+      lifecycle(
+        'codex',
+        'PreToolUse',
+        { ...p, tool_input: { command: prCreate } },
+        env(),
+      ),
+    ).toContain('deny');
+    const active = tasks(repository(repo.root).gitDir)[0]!;
+    const run = prepared(repo, active.run.id, false);
+    const log = join(dirname(config), 'passive-gh.log');
+    const result = cli(repo.root, ['publish', '--run', run.id, '--draft'], {
+      FAKE_GH_LOG: log,
+    });
+    expect(result.code).toBe(0);
+    expect(result.json.error).toBeUndefined();
+    expect(result.json.url).toBe('https://github.com/acme/demo/pull/7');
+    expect(existsSync(join(run.dir, 'checks.json'))).toBe(false);
+    expect(existsSync(join(run.dir, 'preview.html'))).toBe(false);
+    const calls = readFileSync(log, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    const creates = calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create');
+    expect(creates).toHaveLength(1);
+    expect(creates[0].args).toContain('--draft');
+    expect(creates[0].args).toContain('feature');
+    expect(creates[0].args).toContain('main');
+    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
+    for (const command of [
+      'gh pr checks 7 --watch',
+      'gh pr edit 7 --body revised',
+      'gh pr merge 7 --merge',
+    ])
+      expect(
+        lifecycle('codex', 'PreToolUse', { ...p, tool_input: { command } }, env()),
+      ).toBeUndefined();
+  });
+
   test('PR writes stay intercepted, including inside a compound push command', () => {
     const repo = makeRepo();
     git(repo.root, ['switch', '-q', '-c', 'feature']);
@@ -953,10 +880,10 @@ describe('ordinary git and task identity', () => {
     );
     expect(
       run({ command: ['gh', 'pr', 'edit', '3', '--body', '"new"'].join(' ') }),
-    ).toContain('deny');
+    ).toBeUndefined();
     expect(
       run({ command: 'gh api -X PATCH repos/acme/demo/pulls/3 -f body=new' }),
-    ).toContain('deny');
+    ).toBeUndefined();
     // Other ways agents open PRs go through Tracetoon too.
     for (const command of [
       'hub pull-request -m "Fix"',
@@ -999,10 +926,10 @@ describe('ordinary git and task identity', () => {
     ).toContain('deny');
     const deny = JSON.parse(run({ command: prCreate })!);
     const reason = deny.hookSpecificOutput.permissionDecisionReason;
-    expect(reason).toContain('Pushing branches is fine');
+    expect(reason).toContain('Only PR creation is intercepted');
     expect(reason).toContain('make this PR with the tracetoon skill');
     expect(reason).toMatch(/tracetoon publish --run \S+;/);
-    expect(reason).not.toMatch(/approv|preview|ready/i);
+    expect(reason).not.toMatch(/\bask\b.*approv|\bwait\b.*approv|preview/i);
     // Every intercepted write lands on one task, now marked as requested.
     const all = tasks(repository(repo.root).gitDir);
     expect(all).toHaveLength(1);
@@ -1031,7 +958,7 @@ describe('ordinary git and task identity', () => {
     const run = prepared(repo, begun.run);
     expect(readTask(run)?.state).toBe('preparing');
     expect(existsSync(join(run.dir, 'preview.html'))).toBe(false);
-    expect(lifecycle('codex', 'Stop', p, env())).toContain('has not been created');
+    expect(lifecycle('codex', 'Stop', p, env())).toBeUndefined();
 
     // Same commit, different branch: bookkeeping commands never move the task.
     git(repo.root, ['switch', '-q', '-c', 'feat/b']);

@@ -22,7 +22,8 @@ public place (pull requests). Its defaults:
   rendered commit (publish pushes it).
 - Publishing reconciles an existing PR for the branch instead of opening a
   duplicate, and a lock stops two publications of the same run at once.
-  Tracetoon never merges or force-pushes.
+  The publishing command does not merge or force-push. Other requested
+  operations continue under the host agent's normal permissions.
 - Image services receive only comic scenes and character descriptions, and
   only after you consent per service.
 - Log content is treated as data. The skill instructs the agent never to follow

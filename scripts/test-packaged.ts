@@ -7,13 +7,16 @@ import { join } from 'node:path';
 import {
   BUNDLE_CONTRACTS,
   PUBLICATION_CONTRACT,
+  PASSIVE_CREATION_CONTRACT,
   contractPattern,
   missingContracts,
 } from './packaged-contracts.ts';
 
 const compiled = process.argv.includes('--compiled');
 const root = resolve(import.meta.dir, '..');
-const cases = compiled ? [PUBLICATION_CONTRACT] : BUNDLE_CONTRACTS;
+const cases = compiled
+  ? [PUBLICATION_CONTRACT, PASSIVE_CREATION_CONTRACT]
+  : BUNDLE_CONTRACTS;
 const results = await runTestFiles({
   root,
   files: [...new Set(cases.map((c) => c.file))],

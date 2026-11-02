@@ -127,9 +127,7 @@ export function digestCmd(cwd: string, opts: DigestOpts): void {
     throw new UserError(
       `This run belongs to branch ${previous.head}. Switch to that branch before refreshing it.`,
     );
-  // A digest is only built to make a PR. Record the request, so the session
-  // that asked for it can't end with the PR unmade, even without a redirected
-  // `gh pr create`.
+  // Retain preparation ownership for existing run records; this never holds the session open.
   const task = readTask(run);
   if (task && task.state !== 'published') {
     // The session running the digest is the one asking; the task owner is a fallback.

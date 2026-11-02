@@ -1,8 +1,8 @@
 /**
- * Ways an agent can open or rewrite a GitHub PR besides `gh pr create/edit`:
+ * Ways an agent can create a GitHub PR besides `gh pr create`:
  * other PR CLIs (hub, git-extras, Git Town), direct calls to the GitHub API
  * (gh/hub api, curl, wget, HTTPie, PowerShell), and gh aliases that expand to
- * a PR write. Stacking tools (Graphite, git-spice) are deliberately not
+ * PR creation. Stacking tools (Graphite, git-spice) are deliberately not
  * matched: they manage whole stacks of PRs, which Tracetoon doesn't replace.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -32,9 +32,46 @@ export function commandWords(segment: string): { program: string; args: string[]
   return { program, args };
 }
 
-/** A REST path or URL that creates or edits a PR, and the repo it names. */
-const PULLS_PATH = /(?:^|\/)repos\/([^/\s]+\/[^/\s?#]+)\/pulls(?:\/\d+)?\/?(?:[?#]|$)/;
-const PR_MUTATION = /\b(?:createPullRequest|updatePullRequest)\b/;
+/** Only the collection endpoint creates a PR; numbered PRs and subresources do not. */
+const PULLS_PATH = /(?:^|\/)repos\/([^/\s]+\/[^/\s?#]+)\/pulls\/?(?:[?#]|$)/;
+/** Ignore GraphQL strings/comments, including descriptions that merely name a mutation. */
+export function createsPullRequest(text: string): boolean {
+  const jsonQuery = /"query"\s*:\s*("(?:\\.|[^"\\])*")/.exec(text);
+  const shellQuery = /\bquery=(['"])((?:\\.|(?!\1)[\s\S])*)\1/.exec(text);
+  if (jsonQuery) {
+    try {
+      text = JSON.parse(jsonQuery[1]!);
+    } catch {
+      return false;
+    }
+  } else if (shellQuery) {
+    text =
+      shellQuery[1] === '"' ? shellQuery[2]!.replace(/\\(["\\])/g, '$1') : shellQuery[2]!;
+  }
+  const query = text.replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|#[^\r\n]*/g, '');
+  return /\bmutation\b[\s\S]*\bcreatePullRequest\s*\(/.test(query);
+}
+
+// Skip option values so a title/body containing "--help" is still a creation.
+const VALUE_FLAG =
+  /^(--title|-t|--body|-b|--body-file|-F|--head|-H|--base|-B|--repo|-R|--reviewer|-r|--assignee|-a|--label|-l|--milestone|-m|--project|-p|--template|-T|--recover|--field|-f|--raw-field|--input|--data|-d|--json|--raw|--request|-X|--method|--header|-h|--headers|--auth|--auth-type|--proxy|--output|-o|--uri|-Uri|-Body|-Method|-Headers|-C|-c)$/;
+export function previewOnly(args: string[], shortHelp = false): boolean {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === '--') break;
+    if (['--help', '--version', '--dry-run'].includes(arg) || (shortHelp && arg === '-h'))
+      return true;
+    if (VALUE_FLAG.test(arg)) i++;
+  }
+  return false;
+}
+export function ghCreatesPr(args: string[]): boolean {
+  return (
+    args[0] === 'pr' &&
+    ['create', 'new'].includes(args[1] ?? '') &&
+    !previewOnly(args.slice(2), true)
+  );
+}
 
 export function pullsRepo(text: string): string | undefined {
   return PULLS_PATH.exec(text)?.[1]?.toLowerCase();
@@ -47,117 +84,20 @@ export interface PrWrite {
   dir?: string;
 }
 
-/**
- * A PATCH to one PR that only changes its state (closing or reopening it) is
- * not a description write; Tracetoon leaves it alone like `gh pr close`.
- */
-function stateOnly(url: string, args: string[]): boolean {
-  if (!/\/pulls\/\d+\/?(?:[?#]|$)/.test(url)) return false;
-  // Judge the payload only, never the URL (a repo can be named "state").
-  const target = (a: string) => a === url || !!pullsRepo(a) || /^https?:\/\//i.test(a);
-  // A payload read from a file can't be seen from here; count it as a write.
-  if (args.some((a) => !target(a) && fromFile(a))) return false;
-  // State-only means every field sent is `state`; anything unparsed is a write.
-  const fields = sentFields(args, target);
-  if (fields.includes(null)) return false;
-  return fields.length > 0 && fields.every((f) => f === 'state');
-}
-
-/** `-d @f`, `-d@f`, `field=@f`, `--input f`, `--input=f`, `-InFile f`, `-T f`. */
-function fromFile(arg: string): boolean {
-  return (
-    /(^|[=:])@(?!\{)/.test(arg) ||
-    /^-[A-Za-z]@/.test(arg) ||
-    /^--?(input|body-file|infile|upload-file)(?:[=:]|$)/i.test(arg) ||
-    arg === '-T'
-  );
-}
-
-// Flags whose value is the request payload, and flags whose value is not.
-const PAYLOAD_FLAG =
-  /^(f|field|raw-field|d|data|data-raw|data-ascii|data-urlencode|json|body|form|raw)$/i;
-const OTHER_FLAG =
-  /^(x|method|request|h|header|headers|hostname|jq|q|template|t|cache|preview|p|uri|contenttype|content-type|useragent|user-agent|a|auth|auth-type|user|u|o|output|w|write-out)$/i;
-
-/**
- * The field names a call sends, reading each flag in context: `-f k=v`,
- * `-fk=v`, `--field=k=v`, `-d 'a=1&b=2'`, `-Body:'{"k":1}'`, `-Body @{k=1}`,
- * httpie's `k=v` / `k:=json`. A value that can't be read is null (unknown).
- */
-function sentFields(args: string[], target: (arg: string) => boolean): (string | null)[] {
-  const out: (string | null)[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-    if (target(arg)) continue;
-    if (!arg.startsWith('-')) {
-      out.push(...fieldsIn(arg, false));
-      continue;
-    }
-    // A short payload flag joined to its value: -fbase=main, -dstate=closed.
-    const joined = /^-([fFd])([A-Za-z_].*)$/.exec(arg);
-    if (joined && /[=&]/.test(joined[2]!)) {
-      out.push(...fieldsIn(joined[2]!, true));
-      continue;
-    }
-    const flag = /^--?([A-Za-z][\w-]*)(?:[=:]([\s\S]*))?$/.exec(arg);
-    if (!flag) {
-      out.push(null);
-      continue;
-    }
-    const [, name, inline] = flag;
-    const next = inline === undefined ? args[i + 1] : undefined;
-    if (PAYLOAD_FLAG.test(name!)) {
-      const value = inline ?? next;
-      if (inline === undefined) i++;
-      out.push(...(value === undefined ? [null] : fieldsIn(value, true)));
-    } else if (OTHER_FLAG.test(name!)) {
-      if (inline === undefined) i++; // its value is not payload
-    } else if (inline !== undefined) {
-      out.push(null); // an unknown flag with a value might carry payload
-    }
-  }
-  return out;
-}
-
-/** Field names in one payload value; `payload` means it can't be a bare word. */
-function fieldsIn(value: string, payload: boolean): (string | null)[] {
-  // The tokenizer can leave a quote on an inline value (-Body:'{...}).
-  const v = value.trim().replace(/^['"]|['"]$/g, '');
-  if (/^[{[]/.test(v)) {
-    // Escapes could hide a key; only plain keys can be read.
-    if (v.includes('\\')) return [null];
-    const keys = [...v.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]!);
-    return keys.length ? keys : [null];
-  }
-  if (v.startsWith('@{')) {
-    // A `;` inside the hashtable splits the command, so a cut-off one is unknown.
-    if (!v.endsWith('}')) return [null];
-    const keys = [...v.matchAll(/(?:^@\{|;)\s*['"]?([\w-]+)['"]?\s*=/g)].map(
-      (m) => m[1]!,
-    );
-    return keys.length ? keys : [null];
-  }
-  if (!v.includes('=')) return payload ? [null] : [];
-  return v.split('&').map((pair) => /^([\w.[\]-]+)(?::=|==|=)/.exec(pair)?.[1] ?? null);
-}
-
-/** `gh api` / `hub api`: a non-GET call to the pulls endpoint or a PR mutation. */
-function apiWrite(args: string[]): PrWrite | undefined {
+/** `gh api` / `hub api`: POST to the collection or a creation mutation. */
+function apiWrite(args: string[], raw: string): PrWrite | undefined {
   const methodAt = args.findIndex((a) => a === '-X' || a === '--method');
   const joined = args.map((a) => /^(?:-X|--method=)(.+)$/.exec(a)?.[1]).find(Boolean);
   const method = (
     (methodAt >= 0 ? args[methodAt + 1] : joined) ??
-    (args.some((a) => ['-f', '-F', '--field', '--raw-field', '--input'].includes(a))
+    (args.some((a) => /^(?:-[fF].*|--(?:field|raw-field|input)(?:=.*)?)$/.test(a))
       ? 'POST'
       : 'GET')
   ).toUpperCase();
-  if (method === 'GET' || method === 'HEAD') return;
+  if (method !== 'POST') return;
   const path = args.find((a) => pullsRepo(a));
-  if (path)
-    return method === 'PATCH' && stateOnly(path, args)
-      ? undefined
-      : { repo: pullsRepo(path) };
-  if (args.some((a) => PR_MUTATION.test(a))) return {};
+  if (path) return { repo: pullsRepo(path) };
+  if (args.includes('graphql') && createsPullRequest(raw)) return {};
 }
 
 /** GitHub's REST and GraphQL APIs, on github.com or GitHub Enterprise; not other forges. */
@@ -179,13 +119,12 @@ function flagValue(
 }
 
 /** curl, wget, HTTPie and PowerShell web calls that write a PR. */
-function httpWrite(program: string, rawArgs: string[]): PrWrite | undefined {
+function httpWrite(program: string, rawArgs: string[], raw: string): PrWrite | undefined {
   // PowerShell also takes `-Uri:https://...`; read the value after the colon.
   const args = rawArgs.map((a) => a.replace(/^-[a-z]+:(?=https?:\/\/)/i, ''));
   const urls = args.filter((a) => GITHUB_API.test(a));
   const url = urls.find((u) => pullsRepo(u));
-  const graphql =
-    urls.some((u) => /\/graphql\b/i.test(u)) && args.some((a) => PR_MUTATION.test(a));
+  const graphql = urls.some((u) => /\/graphql\b/i.test(u)) && createsPullRequest(raw);
   if (!url && !graphql) return;
   let method: string | undefined;
   if (program === 'curl') {
@@ -214,8 +153,7 @@ function httpWrite(program: string, rawArgs: string[]): PrWrite | undefined {
     // otherwise. PowerShell accepts any unambiguous prefix and `-Method:Post`.
     method = flagValue(args, /^-me(t(h(o(d)?)?)?)?$/i) ?? 'GET';
   }
-  if (!method || method === 'GET' || method === 'HEAD') return;
-  if (url && method === 'PATCH' && stateOnly(url, args)) return;
+  if (method !== 'POST') return;
   const repo = url ? pullsRepo(url) : undefined;
   return repo ? { repo } : {};
 }
@@ -265,18 +203,21 @@ const HTTP_PROGRAMS = [
 ];
 
 /**
- * A PR write by any recognized means other than `gh pr create/edit` itself
+ * PR creation by any recognized means other than `gh pr create` itself
  * (which the caller checks). Undefined when the segment writes no PR.
  */
 export function otherPrWrite(segment: string, depth = 0): PrWrite | undefined {
   const { program, args } = commandWords(segment);
+  // A shell alias appends arguments to its last command, which may not be
+  // the command that creates the PR. Classify the expansion before its flags.
+  if (program === 'gh') {
+    const expansion = ghAlias(args[0]);
+    if (expansion && depth < 3) return aliasWrite(expansion, args.slice(1), depth + 1);
+  }
+  if (previewOnly(args, program === 'gh')) return;
   if (program === 'gh' || program === 'hub') {
-    if (args[0] === 'api') return apiWrite(args.slice(1));
+    if (args[0] === 'api') return apiWrite(args.slice(1), segment);
     if (program === 'hub' && args[0] === 'pull-request') return {};
-    if (program === 'gh') {
-      const expansion = ghAlias(args[0]);
-      if (expansion && depth < 3) return aliasWrite(expansion, args.slice(1), depth + 1);
-    }
     return;
   }
   if (program === 'git' || program === 'git-town') {
@@ -297,7 +238,7 @@ export function otherPrWrite(segment: string, depth = 0): PrWrite | undefined {
       return dir ? { dir } : {};
     return;
   }
-  if (HTTP_PROGRAMS.includes(program)) return httpWrite(program, args);
+  if (HTTP_PROGRAMS.includes(program)) return httpWrite(program, args, segment);
 }
 
 /** The PR-writing check for an expanded gh alias, with the user's extra arguments. */
@@ -312,13 +253,12 @@ function aliasWrite(
     : `gh ${expansion} ${extra.join(' ')}`;
   for (const segment of splitCommands(command)) {
     const seg = segment.trim();
-    if (GH_PR_WRITE.test(seg)) return {};
+    const { program, args } = commandWords(seg);
+    if (program === 'gh' && ghCreatesPr(args)) return {};
     const other = otherPrWrite(seg, depth);
     if (other) return other;
   }
 }
-const GH_PR_WRITE =
-  /^gh\s+pr\s+(?:create|new)\b|^gh\s+pr\s+edit\b(?:(?!\s-).)*$|^gh\s+pr\s+edit\b.*\s(?:--title|-t|--body|-b|--body-file|-F)(?:\s|=|$)/;
 
 let aliasCache:
   { path: string; mtime: number; aliases: Record<string, string> } | undefined;

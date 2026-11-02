@@ -1,7 +1,6 @@
 /**
  * The PR hook. Each agent calls `tracetoon hook pre-pr --agent <id>` before it
- * runs a shell command. If the command creates a PR (or rewrites a PR's title or
- * body) with `gh`, the hook stops it and tells the agent to use the Tracetoon
+ * runs a shell command. If the command creates a PR, the hook stops it and tells the agent to use the Tracetoon
  * skill instead, which writes the description and comic and then creates the
  * PR. Any error lets the command through: the hook must never get in the way of
  * normal work.
@@ -9,48 +8,24 @@
 import { switchState } from './switches.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
 import { splitCommands } from '../util/shell.ts';
-import { otherPrWrite } from './prCommands.ts';
+import { otherPrWrite, commandWords, ghCreatesPr } from './prCommands.ts';
 
 export type HookAgent = 'claude' | 'codex' | 'antigravity';
 
 export const BYPASS_RE =
   /(^|[\s;&|(])TRACETOON=0\b|\$env:TRACETOON\s*=\s*['"]?0\b|\bset\s+"?TRACETOON=0\b/i;
 
-// gh, gh.exe, a path to it, or a quoted path with spaces ("C:/Program Files/GitHub CLI/gh.exe").
-const GH_PR_RE =
-  /^(?:&\s*)?(?:"[^"]*[\\/]gh(?:\.exe)?"|'[^']*[\\/]gh(?:\.exe)?'|["']?(?:[^\s"']*[\\/])?gh(?:\.exe)?["']?)\s+pr\s+(create|new|edit)\b(.*)$/i;
-const EDITS_TEXT_RE = /(^|\s)(--title|-t|--body|-b|--body-file|-F)(\s|=|$)/;
-
-/**
- * Whether a shell command creates a PR or rewrites its title/body with gh.
- * Quoted strings and heredoc bodies are text (a file being written, a test
- * fixture), not commands, so they never trigger the hook.
- */
+/** Only actual PR creation is intercepted. Quoted examples are not commands. */
 export function writesPr(command: string): boolean {
-  for (const raw of splitCommands(command)) {
-    const seg = raw
-      .trim()
-      .replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, '') // VAR=value prefixes
-      .replace(/^(?:sudo|command|exec|time)\s+/, '');
-    const m = GH_PR_RE.exec(seg);
-    if (!m) {
-      // hub, git-extras, Git Town, API calls and gh aliases.
-      if (otherPrWrite(raw)) return true;
-      continue;
-    }
-    const verb = m[1]!.toLowerCase();
-    const rest = m[2] ?? '';
-    if (verb === 'create' || verb === 'new') return true;
-    // gh pr edit: only title/body changes, or a bare interactive edit.
-    if (EDITS_TEXT_RE.test(rest)) return true;
-    if (!/(^|\s)-/.test(rest)) return true;
-  }
-  return false;
+  return splitCommands(command).some((segment) => {
+    const { program, args } = commandWords(segment);
+    return (program === 'gh' && ghCreatesPr(args)) || !!otherPrWrite(segment);
+  });
 }
 
 export const DENY_REASON =
-  'Tracetoon handles pull requests on this machine: it writes the description from your session logs (and a comic, when enabled), then creates the PR. ' +
-  'Instead of creating or editing the PR directly (gh, hub, git pull-request, Git Town or the GitHub API), use the tracetoon skill and finish with tracetoon publish. ' +
+  'Tracetoon handles PR creation on this machine: it writes the description from your session logs (and a comic, when enabled), then creates the PR. ' +
+  "Instead of creating the PR directly (gh, hub, git pull-request, Git Town or the GitHub API), use the tracetoon skill and publish with tracetoon publish. Preserve the requested PR options, report the result, then continue the user's task. " +
   'Only if the user explicitly asked for a plain PR without Tracetoon, re-run the command with TRACETOON=0 in front ' +
   "(PowerShell: $env:TRACETOON='0'; ...).";
 

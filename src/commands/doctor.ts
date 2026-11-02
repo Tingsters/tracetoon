@@ -247,12 +247,6 @@ export function doctor(
           (h) =>
             `  ${h.agent} hook runtime differs or predates build identity; update it.`,
         ),
-      ...hooks
-        .filter((h) => h.installed && !h.completionInstalled)
-        .map(
-          (h) =>
-            `  ${h.label}: completion hooks are missing; reinstall hooks and reload/trust them.`,
-        ),
     );
     const found = report.imageProviders.filter((p) => p.available);
     lines.push(

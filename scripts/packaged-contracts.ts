@@ -6,9 +6,15 @@ export interface PackagedContract {
   minimum: number;
 }
 export const PUBLICATION_CONTRACT: PackagedContract = {
-  id: 'publication-recovery',
+  id: 'pr-creation-publication',
   file: 'tests/workflow.test.ts',
   pattern: 'requested PR to publication rehearsal',
+  minimum: 1,
+};
+export const PASSIVE_CREATION_CONTRACT: PackagedContract = {
+  id: 'passive-pr-creation',
+  file: 'tests/workflow.test.ts',
+  pattern: 'creation publishes without pre-coding registration or wrapped checks',
   minimum: 1,
 };
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
@@ -71,6 +77,7 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
     minimum: 2,
   },
   PUBLICATION_CONTRACT,
+  PASSIVE_CREATION_CONTRACT,
 ];
 export const contractPattern = (cases: PackagedContract[]) =>
   cases.map((c) => `(?:${c.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`).join('|');

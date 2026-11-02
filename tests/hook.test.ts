@@ -45,7 +45,7 @@ const env = (extra: Record<string, string> = {}) => ({
   ...extra,
 });
 
-describe('which commands are PR writes', () => {
+describe('which commands create PRs', () => {
   test.each([
     ['gh pr create --title x --body y', true],
     ['cd repo && gh pr create --fill', true],
@@ -53,12 +53,28 @@ describe('which commands are PR writes', () => {
     ['GH_TOKEN=abc gh pr create', true],
     ['"C:/Program Files/GitHub CLI/gh.exe" pr create', true],
     ['& gh pr new', true],
-    ['gh pr edit 5 --body-file b.md', true],
-    ['gh pr edit 5 -t "New title"', true],
-    ['gh pr edit 5', true],
+    ['gh pr edit 5 --body-file b.md', false],
+    ['gh pr edit 5 -t "New title"', false],
+    ['gh pr edit 5', false],
     ['gh pr edit 5 --add-label bug', false],
     ['gh pr view 5', false],
     ['gh pr list', false],
+    ['gh pr create --help', false],
+    ['gh pr create -h', false],
+    ['gh pr create --dry-run', false],
+    ['gh pr create --body "--help"', true],
+    ["@'\nprint('example')\ngh pr create --fill\n'@ | python -", false],
+    ["@'\ngh pr create\n'@ | Set-Content notes.txt\ngh pr create --fill", true],
+    ['hub pull-request --help', false],
+    ['git town propose --dry-run', false],
+    ['gh api -X PUT repos/acme/demo/pulls -f title=x', false],
+    ['gh api -X PATCH repos/acme/demo/pulls -f title=x', false],
+    ['gh api graphql -f query="mutation { updatePullRequest(input: {}) { id } }"', false],
+    ['gh api graphql -f query="query { createPullRequest }"', false],
+    [
+      `gh api graphql -f query='mutation { updatePullRequest(input: {title: "createPullRequest(input: {})"}) { id } }'`,
+      false,
+    ],
     ['gh pr merge 5 --merge', false],
     ['echo "gh pr create"', false],
     ['git commit -m "use gh pr create later"', false],
@@ -83,7 +99,7 @@ describe('which commands are PR writes', () => {
     ['git-spice branch submit', false],
     // The API, through gh/hub or any HTTP client.
     ['gh api repos/acme/demo/pulls -f title=x -f head=f -f base=main', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -f body=new', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f body=new', false],
     ['gh api repos/acme/demo/pulls', false],
     [
       "gh api graphql -f query='mutation { createPullRequest(input: {}) { clientMutationId } }'",
@@ -119,52 +135,58 @@ describe('which commands are PR writes', () => {
     ],
     [
       'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"title":"x"}\'',
-      true,
+      false,
     ],
     // The state-only check reads the payload, never the URL, and can't see into files.
     [
       'curl -X PATCH https://api.github.com/repos/acme/state/pulls/3 -d \'{"title":"x"}\'',
-      true,
+      false,
     ],
     // A repo named "state" with a payload that never mentions state (passed on main).
-    ['gh api -X PATCH repos/acme/state/pulls/3 -f base=main', true],
-    // Only PATCH can be a state-only change.
-    ['gh api -X PUT repos/acme/demo/pulls/3 -f state=closed', true],
-    ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d @state.json', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 --input state.json', true],
-    // Every spelling of a file payload is a write.
-    ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d@state.json', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 --input=state.json', true],
+    ['gh api -X PATCH repos/acme/state/pulls/3 -f base=main', false],
+    // Existing PR operations pass through for every HTTP method.
+    ['gh api -X PUT repos/acme/demo/pulls/3 -f state=closed', false],
+    [
+      'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d @state.json',
+      false,
+    ],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 --input state.json', false],
+    // Updates read from files also pass through.
+    ['curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d@state.json', false],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 --input=state.json', false],
     [
       'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -InFile state.json',
-      true,
+      false,
     ],
     // State-only means state is the only field sent.
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open -f base=main', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -f base=state', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open -f base=main', false],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f base=state', false],
     [
       'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"state":"open","base":"main"}\'',
-      true,
+      false,
     ],
     [
       'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d state=open&base=main',
-      true,
+      false,
     ],
     [
       'Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Body \'{"state":"closed"}\'',
       false,
     ],
     // Joined and long field flags are read too.
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open --field=base=main', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open --raw-field=base=main', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open -fbase=main', true],
-    ['gh api -X PATCH repos/acme/demo/pulls/3 -F state=open -Fbase=main', true],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open --field=base=main', false],
+    [
+      'gh api -X PATCH repos/acme/demo/pulls/3 -f state=open --raw-field=base=main',
+      false,
+    ],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -f state=open -fbase=main', false],
+    ['gh api -X PATCH repos/acme/demo/pulls/3 -F state=open -Fbase=main', false],
     ['gh api -X PATCH repos/acme/demo/pulls/3 --field=state=closed', false],
     ['gh api -X PATCH repos/acme/demo/pulls/3 -fstate=closed', false],
     // A JSON key with an escape can't be read, so it is a write.
     [
       'curl -X PATCH https://api.github.com/repos/acme/demo/pulls/3 -d \'{"state":"closed","ba\\u0073e":"main"}\'',
-      true,
+      false,
     ],
     // PowerShell: inline values, hashtable bodies, and headers that aren't payload.
     [
@@ -177,7 +199,7 @@ describe('which commands are PR writes', () => {
     ],
     [
       "Invoke-RestMethod -Method Patch -Uri https://api.github.com/repos/acme/demo/pulls/3 -Body @{state='closed'; base='main'}",
-      true,
+      false,
     ],
     ['gh api -X POST repos/acme/demo/pulls -f state=open -f head=f -f base=main', true],
     // HEAD is a read, for gh/hub api as for the HTTP clients.
@@ -193,12 +215,12 @@ describe('which commands are PR writes', () => {
       false,
     ],
     [
-      'curl -X POST https://ghe.example.com/api/graphql -d \'{"query":"mutation{createPullRequest}"}\'',
+      'curl -X POST https://ghe.example.com/api/graphql -d \'{"query":"mutation{createPullRequest(input:{}){id}}"}\'',
       true,
     ],
     [
       'curl --request PATCH https://ghe.example.com/api/v3/repos/acme/demo/pulls/4 --data-raw "{}"',
-      true,
+      false,
     ],
     [
       'curl -H "Authorization: x" --json @pr.json https://api.github.com/repos/acme/demo/pulls',
@@ -206,28 +228,28 @@ describe('which commands are PR writes', () => {
     ],
     ['curl https://api.github.com/repos/acme/demo/pulls/4/comments -d "{}"', false],
     [
-      'curl -X POST https://api.github.com/graphql -d \'{"query":"mutation{createPullRequest}"}\'',
+      'curl -X POST https://api.github.com/graphql -d \'{"query":"mutation{createPullRequest(input:{}){id}}"}\'',
       true,
     ],
     ['wget --post-data "{}" https://api.github.com/repos/acme/demo/pulls', true],
     ['http POST https://api.github.com/repos/acme/demo/pulls title=x', true],
     [
       `http --raw '{"title":"new"}' PATCH https://api.github.com/repos/acme/demo/pulls/3`,
-      true,
+      false,
     ],
     [`http --raw='{"title":"new"}' https://api.github.com/repos/acme/demo/pulls`, true],
     ['http https://api.github.com/repos/acme/demo/pulls @pr.json', true],
     [
       'https -A bearer -a TOKEN PATCH https://api.github.com/repos/acme/demo/pulls/3 title=new',
-      true,
+      false,
     ],
     [
       'xh --auth-type bearer --auth TOKEN PATCH https://api.github.com/repos/acme/demo/pulls/3 title=new',
-      true,
+      false,
     ],
     [
       'xhs --timeout 30 PATCH https://api.github.com/repos/acme/demo/pulls/3 title=new',
-      true,
+      false,
     ],
     [
       `http --raw '{"title":"new"}' GET https://api.github.com/repos/acme/demo/pulls/3`,
@@ -291,7 +313,10 @@ describe('which commands are PR writes', () => {
       });
       expect(writesPr('gh prc')).toBe(true);
       expect(writesPr('gh ship')).toBe(true);
-      expect(writesPr('gh setbody 5 b.md')).toBe(true);
+      expect(writesPr('gh setbody 5 b.md')).toBe(false);
+      expect(writesPr('gh prc --help')).toBe(false);
+      expect(writesPr('gh ship --dry-run')).toBe(true);
+      expect(writesPr('gh ship --help')).toBe(true);
       // A shell alias writes the PR wherever the write sits in its command line.
       expect(writesPr('gh pushpr')).toBe(true);
       expect(writesPr('gh co 5')).toBe(false);
@@ -310,10 +335,12 @@ describe('hook decisions', () => {
     const reason: string = c.hookSpecificOutput.permissionDecisionReason;
     expect(reason).toBe(DENY_REASON);
     expect(reason).toContain(
-      'Tracetoon handles pull requests on this machine: it writes the description',
+      'Tracetoon handles PR creation on this machine: it writes the description',
     );
     expect(reason).toContain('then creates the PR');
-    expect(reason).toContain('use the tracetoon skill and finish with tracetoon publish');
+    expect(reason).toContain(
+      'use the tracetoon skill and publish with tracetoon publish',
+    );
     expect(reason).toContain('TRACETOON=0');
     // The PR is created directly; nothing waits for a local preview or approval.
     expect(reason).not.toMatch(/preview|approv/i);
@@ -446,9 +473,7 @@ describe('installing the hook', () => {
     );
     expect(settings.model).toBe('opus');
     expect(settings.hooks.Stop[0]).toEqual(existingClaude.hooks.Stop[0]);
-    expect(settings.hooks.Stop[1].hooks[0].command).toContain(
-      'hook lifecycle --agent claude --event Stop',
-    );
+    expect(settings.hooks.Stop).toEqual(existingClaude.hooks.Stop);
     expect(settings.hooks.PreToolUse).toHaveLength(3);
     expect(settings.hooks.PreToolUse[1]).toMatchObject({
       matcher: 'Bash|PowerShell',
@@ -474,6 +499,60 @@ describe('installing the hook', () => {
     expect(
       JSON.parse(readFileSync(join(h, '.gemini', 'config', 'hooks.json'), 'utf8')),
     ).toEqual({ 'showtail-cli': { enabled: true } });
+  });
+
+  test('upgrades remove only Tracetoon Stop hooks and preserve other settings', () => {
+    const targets = hookTargets(home(), {});
+    const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
+    for (const target of targets) {
+      const old = {
+        hooks: [
+          {
+            type: 'command',
+            command: `tracetoon hook lifecycle --agent ${target.agent} --event Stop`,
+          },
+        ],
+      };
+      if (target.agent !== 'antigravity')
+        old.hooks.unshift({ type: 'command', command: 'other-tool mixed-stop' });
+      mkdirSync(join(target.file, '..'), { recursive: true });
+      writeFileSync(
+        target.file,
+        JSON.stringify(
+          target.agent === 'antigravity'
+            ? {
+                other: {
+                  enabled: true,
+                  Stop: [{ type: 'command', command: 'other-tool stop' }],
+                },
+                tracetoon: { enabled: true, Stop: old.hooks },
+              }
+            : { model: 'chosen-model', hooks: { Stop: [other, old] } },
+        ),
+      );
+    }
+    expect(
+      installHooks('/opt/tracetoon/bin', targets).every((r) => r.result === 'installed'),
+    ).toBe(true);
+    expect(hookStatus(targets).every((r) => !r.completionInstalled && r.installed)).toBe(
+      true,
+    );
+    for (const target of targets) {
+      const data = JSON.parse(readFileSync(target.file, 'utf8'));
+      if (target.agent === 'antigravity') {
+        expect(data.tracetoon.Stop).toBeUndefined();
+        expect(data.other.Stop).toHaveLength(1);
+      } else {
+        expect(data.model).toBe('chosen-model');
+        expect(data.hooks.Stop).toEqual([
+          other,
+          { hooks: [{ type: 'command', command: 'other-tool mixed-stop' }] },
+        ]);
+      }
+    }
+    expect(
+      installHooks('/opt/tracetoon/bin', targets).every((r) => r.result === 'unchanged'),
+    ).toBe(true);
   });
 
   test('never touches a file it cannot parse, and skips missing agents', () => {
@@ -507,21 +586,65 @@ describe('installing the hook', () => {
 
 describe('hook end to end', () => {
   test('the CLI reads stdin and answers like an agent hook', () => {
+    const command = process.env.TRACETOON_TEST_BINARY
+      ? [process.env.TRACETOON_TEST_BINARY]
+      : [process.execPath, CLI];
     const run = (payload: unknown, extra: Record<string, string> = {}) =>
-      spawnSync(process.execPath, [CLI, 'hook', 'pre-pr', '--agent', 'claude'], {
-        input: JSON.stringify(payload),
-        encoding: 'utf8',
-        env: env(extra),
-      });
+      spawnSync(
+        command[0]!,
+        [...command.slice(1), 'hook', 'pre-pr', '--agent', 'claude'],
+        {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          env: env(extra),
+        },
+      );
     const denied = run(claude('gh pr create --fill'));
     expect(denied.status).toBe(0);
     expect(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
     const allowed = run(claude('git status'));
     expect(allowed.status).toBe(0);
     expect(allowed.stdout).toBe('');
+    const aliases = tempDir('tracetoon-aliases-');
+    writeFileSync(
+      join(aliases, 'config.yml'),
+      "aliases:\n  prc: pr create --fill\n  ship: '!gh pr create --fill && gh pr view --web'\n",
+    );
+    for (const [shell, creates] of [
+      ['gh pr create --help', false],
+      ['gh pr create -h', false],
+      ['gh pr edit 3 --body revised', false],
+      ['gh prc --dry-run', false],
+      ['gh ship --dry-run', true],
+      ['gh ship --help', true],
+    ] as const) {
+      const result = run(claude(shell), { GH_CONFIG_DIR: aliases });
+      expect(result.status).toBe(0);
+      if (creates)
+        expect(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision).toBe(
+          'deny',
+        );
+      else expect(result.stdout).toBe('');
+    }
+    for (const agent of ['claude', 'codex', 'antigravity']) {
+      for (const event of ['SessionStart', 'Stop']) {
+        const result = spawnSync(
+          command[0]!,
+          [...command.slice(1), 'hook', 'lifecycle', '--agent', agent, '--event', event],
+          {
+            input: JSON.stringify({ cwd: tempDir(), session_id: 'passive-hook' }),
+            encoding: 'utf8',
+            env: env(),
+            windowsHide: true,
+          },
+        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe('');
+      }
+    }
     const garbage = spawnSync(
-      process.execPath,
-      [CLI, 'hook', 'pre-pr', '--agent', 'claude'],
+      command[0]!,
+      [...command.slice(1), 'hook', 'pre-pr', '--agent', 'claude'],
       { input: 'not json', encoding: 'utf8', env: env() },
     );
     expect(garbage.status).toBe(0);

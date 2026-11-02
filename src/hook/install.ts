@@ -1,5 +1,5 @@
 /**
- * Registers PR routing plus session, observation and completion hooks per host.
+ * Registers PR routing plus passive session and observation hooks per host.
  *
  *   Claude Code  ~/.claude/settings.json        PreToolUse, matcher Bash|PowerShell
  *   Codex        ~/.codex/hooks.json            PreToolUse, matcher Bash
@@ -101,10 +101,12 @@ function write(file: string, data: Json): void {
 
 function withoutOurGroups(groups: unknown): Json[] {
   if (!Array.isArray(groups)) return [];
-  return groups.filter(
-    (g) =>
-      !(g && Array.isArray(g.hooks) && g.hooks.some((h: Json) => isOurs(h?.command))),
-  );
+  return groups.flatMap((g) => {
+    if (!g || !Array.isArray(g.hooks)) return [g];
+    const kept = g.hooks.filter((h: Json) => !isOurs(h?.command));
+    if (kept.length === g.hooks.length) return [g];
+    return kept.length ? [{ ...g, hooks: kept }] : [];
+  });
 }
 
 function setPreToolUse(data: Json, group: Json | undefined): Json {
@@ -137,7 +139,6 @@ function apply(target: HookTarget, data: Json, command: string | undefined): Jso
         PreToolUse: [{ matcher: 'run_command', hooks: [{ type: 'command', command }] }],
         SessionStart: [handler('SessionStart')],
         PostToolUse: [{ matcher: '.*', hooks: [handler('PostToolUse')] }],
-        Stop: [handler('Stop')],
       };
       out.tracetoon.PreToolUse.push({ matcher: '.*', hooks: [handler('PreToolUse')] });
     }
@@ -151,7 +152,7 @@ function apply(target: HookTarget, data: Json, command: string | undefined): Jso
   const hooks = { ...(out.hooks ?? {}) };
   for (const event of ['SessionStart', 'PostToolUse', 'Stop']) {
     const kept = withoutOurGroups(hooks[event]);
-    if (command)
+    if (command && event !== 'Stop')
       kept.push(
         event === 'PostToolUse'
           ? { matcher: '.*', hooks: [handler(event)] }
@@ -312,6 +313,7 @@ export interface HookState {
   file: string;
   /** Something that stops the hook from running even though it's installed. */
   problem?: string;
+  /** @deprecated Legacy installation information; completion hooks are no longer required. */
   completionInstalled?: boolean;
   /** Configured command; installation is not proof the host trusted/reloaded it. */
   command?: string;
@@ -350,7 +352,7 @@ export function hookStatus(targets = hookTargets()): HookState[] {
           ?.command;
       })(),
       coverage:
-        'Recognized shell push/PR commands and GitHub connector mutations; arbitrary network scripts and host opt-out paths are not intercepted.',
+        'PR creation through recognized shell commands and GitHub connectors; existing PR operations, pushes and read-only commands are left alone. Arbitrary network scripts are not intercepted.',
     };
     if (unreadable) state.problem = `${t.file} is not valid JSON`;
     else if (installed && t.agent === 'antigravity') {

@@ -95,7 +95,7 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
           .filter((h) => h.present)
           .map(
             (h) =>
-              `  ${h.label.padEnd(12)} ${h.installed ? (h.problem ? 'installed, NOT ACTIVE' : 'configured') : 'not installed'}${h.installed && !h.completionInstalled ? '; completion hooks missing' : ''}${
+              `  ${h.label.padEnd(12)} ${h.installed ? (h.problem ? 'installed, NOT ACTIVE' : 'configured') : 'not installed'}${
                 h.problem ? `\n               ${h.problem}` : ''
               }`,
           ),

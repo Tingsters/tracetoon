@@ -286,7 +286,7 @@ hook
 hook
   .command('pre-pr')
   .description(
-    'called by agents before shell commands; blocks direct PR creation and edits',
+    'called by agents before shell commands; routes PR creation through Tracetoon',
   )
   .requiredOption('--agent <agent>', 'claude, codex or antigravity')
   .action(async (o) => runPrHook(o.agent as HookAgent));

@@ -1,7 +1,7 @@
 /** Resolve recognized publication commands without treating quoted examples as commands. */
-import { basename, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { commandFrom, writesPr } from './prHook.ts';
-import { otherPrWrite, words } from './prCommands.ts';
+import { otherPrWrite, commandWords, createsPullRequest } from './prCommands.ts';
 import { repoRoot } from './switches.ts';
 import { splitCommands } from '../util/shell.ts';
 import { git } from '../util/exec.ts';
@@ -40,18 +40,32 @@ export function publicationTargets(
   };
   if (!command) {
     const tool = String(p.tool_name ?? p.toolCall?.name ?? p.tool_call?.name ?? '');
-    const mutation =
-      /github.*(?:(?:create|update|edit)_(?:pull_request|pr)|pull_request_write|push_files|git_push|create_or_update_file)/i.test(
-        tool,
-      ) ||
-      (/github.*(?:request|fetch|api)/i.test(tool) &&
-        /^(POST|PATCH|PUT)$/i.test(input.method ?? '') &&
-        /\/pulls(?:\/\d+)?$/.test(input.url ?? input.path ?? ''));
-    if (!mutation) return;
+    if (!/github/i.test(tool)) return;
+    const operation = String(
+      input.operation ?? input.action ?? input.method ?? '',
+    ).toLowerCase();
+    const creates =
+      /(?:create_pull_request|create_pr)$/.test(tool) ||
+      (/pull_request_write$/.test(tool) && operation === 'create') ||
+      (/(?:request|fetch|api)$/.test(tool) &&
+        operation === 'post' &&
+        (/\/repos\/[^/]+\/[^/]+\/pulls\/?(?:[?#]|$)/.test(
+          input.url ?? input.path ?? '',
+        ) ||
+          (/\/graphql\b/.test(input.url ?? input.path ?? '') &&
+            createsPullRequest(
+              typeof input.query === 'string'
+                ? input.query
+                : typeof input.body === 'string'
+                  ? input.body
+                  : JSON.stringify(input.body ?? ''),
+            ))));
+    const pushes = /(?:push_files|git_push|create_or_update_file)$/.test(tool);
+    if (!creates && !pushes) return;
     const target = connectorRepo(input);
     return {
       roots: target ? forRepo(target) : cwd ? forDirectory(cwd) : known,
-      kind: /pull_request|_pr\b|(?:request|fetch|api)/i.test(tool) ? 'pr' : 'push',
+      kind: creates ? 'pr' : 'push',
     };
   }
   let folder = cwd ?? process.cwd();
@@ -59,16 +73,7 @@ export function publicationTargets(
   let prWrite = false;
   const targets = new Set<string>();
   for (const segment of splitCommands(command)) {
-    const args = words(segment);
-    if (args[0] === '&') args.shift();
-    while (
-      /^[\w_]+=/.test(args[0] ?? '') ||
-      /^(sudo|command|exec|time)$/.test(args[0] ?? '')
-    )
-      args.shift();
-    const program = basename((args.shift() ?? '').replace(/\\/g, '/'))
-      .replace(/\.exe$/i, '')
-      .toLowerCase();
+    const { program, args } = commandWords(segment);
     if (['cd', 'pushd', 'set-location', 'sl'].includes(program)) {
       if (/^(--|-Path|-LiteralPath)$/i.test(args[0] ?? '')) args.shift();
       if (args[0]) folder = resolve(folder, args[0]);
@@ -86,7 +91,7 @@ export function publicationTargets(
       continue;
     }
     // `gh api` and `hub api` are judged by the recognizer alone, so both hooks
-    // agree (a state-only PATCH, for one, is not a PR write).
+    // agree (updates to existing PRs are not creation).
     if ((program === 'gh' || program === 'hub') && args[0] === 'api') continue;
     let targetFolder = folder;
     if (program === 'git') {
@@ -104,34 +109,13 @@ export function publicationTargets(
       )
         continue;
     } else if (program === 'gh') {
-      const api = args[0] === 'api';
-      const methodAt = args.findIndex((a) => a === '-X' || a === '--method');
-      const method =
-        methodAt >= 0
-          ? args[methodAt + 1]?.toUpperCase()
-          : args.some((a) => ['-f', '-F', '--field', '--raw-field'].includes(a))
-            ? 'POST'
-            : 'GET';
-      const apiWrite =
-        api &&
-        method !== 'GET' &&
-        args.some(
-          (a) =>
-            /(?:^|\/)repos\/[^/]+\/[^/]+\/pulls(?:\/\d+)?$/.test(a) ||
-            /\b(?:createPullRequest|updatePullRequest)\b/.test(a),
-        );
-      if (!writesPr(segment) && !apiWrite) continue;
+      if (!writesPr(segment)) continue;
       prWrite = true;
       const repoAt = args.findIndex((a) => a === '-R' || a === '--repo');
       const named =
         repoAt >= 0
           ? args[repoAt + 1]
-          : (args.find((a) => a.startsWith('--repo='))?.slice(7) ??
-            (apiWrite
-              ? args
-                  .map((a) => /(?:^|\/)repos\/([^/]+\/[^/]+)\/pulls/.exec(a)?.[1])
-                  .find(Boolean)
-              : undefined));
+          : args.find((a) => a.startsWith('--repo='))?.slice(7);
       publication = true;
       if (named) {
         for (const root of forRepo(named)) targets.add(root);
