@@ -117,9 +117,17 @@ commit a reviewed `release-promotion.json` using the
 the immutable artifact identity, and the manifest, checksums, Windows executable
 and bundle hashes. Private cases and raw model outputs must remain outside Git.
 
+An explicit user request may authorize releasing a CI-tested candidate after an
+inconclusive admission screen. Record that separate decision using
+`tracetoon.release-promotion/v2`: include the request's reason and recording time,
+the actual calibration/admission experiment IDs and report hashes, and mark
+development and held-out confirmation as not run. This does not turn the
+benchmark into a pass or establish a score/performance gain. The release notes
+publish that limitation; artifact identity and byte verification still apply.
+
 Push the matching `vX.Y.Z` tag after merging the validated changes. The release
 workflow verifies the successful originating CI run, artifact identity, source
-build identity, both adoption records and every asset checksum, then publishes
+build identity, the recorded release basis and every asset checksum, then publishes
 those exact bytes. It does not build replacement release files. Install from
 that release and compare the installed runtime and skill against the retained
 inventory. `tracetoon doctor --json` reports actual runtime and hook identities,

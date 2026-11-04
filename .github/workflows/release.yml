@@ -39,12 +39,14 @@ jobs:
           github-token: ${{ github.token }}
           path: release
           merge-multiple: true
-      - name: Verify source identity, adoption evidence and exact evaluated bytes
+      - name: Verify source identity, release basis and exact evaluated bytes
         run: bun .github/scripts/release-assets.ts verify release release-promotion.json "$GITHUB_REF_NAME"
+      - name: Write the recorded release basis
+        run: bun .github/scripts/release-assets.ts notes release-promotion.json > release-notes.md
       - name: Publish the verified assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           flags=""
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease";; esac
-          gh release create "$GITHUB_REF_NAME" release/* --title "Tracetoon $GITHUB_REF_NAME" --generate-notes $flags
+          gh release create "$GITHUB_REF_NAME" release/* --title "Tracetoon $GITHUB_REF_NAME" --notes-file release-notes.md --generate-notes $flags

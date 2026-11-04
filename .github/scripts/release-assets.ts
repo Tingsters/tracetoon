@@ -31,8 +31,7 @@ export interface AssetManifest {
   files: { name: string; sha256: string }[];
   skillFiles: { name: string; sha256: string }[];
 }
-export interface Promotion {
-  schema: 'tracetoon.release-promotion/v1';
+interface PromotionIdentity {
   version: string;
   buildId: string;
   artifact: { runId: number; id: number; name: string; digest: string };
@@ -42,6 +41,9 @@ export interface Promotion {
     windowsSha256: string;
     bundleSha256: string;
   };
+}
+export interface AdoptionPromotion extends PromotionIdentity {
+  schema: 'tracetoon.release-promotion/v1';
   evaluations: {
     split: 'dev' | 'test';
     status: 'passed';
@@ -51,6 +53,32 @@ export interface Promotion {
     orders: number;
   }[];
 }
+export interface RequestedPromotion extends PromotionIdentity {
+  schema: 'tracetoon.release-promotion/v2';
+  decision: {
+    kind: 'explicit-user-request';
+    recordedAt: string;
+    reason: string;
+  };
+  evaluations: {
+    calibration: {
+      status: 'passed';
+      experiment: string;
+      reportSha256: string;
+      orders: 28;
+    };
+    admission: {
+      status: 'inconclusive';
+      experiment: string;
+      reportSha256: string;
+      writers: 4;
+      orders: 16;
+    };
+    development: { status: 'not-run' };
+    heldout: { status: 'not-run' };
+  };
+}
+export type Promotion = AdoptionPromotion | RequestedPromotion;
 export function skillInventory(
   dir: string,
   prefix = '',
@@ -232,7 +260,9 @@ export function verifyCandidateInputs(out: string, skill?: string, revision?: st
 }
 export function validatePromotion(p: Promotion) {
   if (
-    p.schema !== 'tracetoon.release-promotion/v1' ||
+    !['tracetoon.release-promotion/v1', 'tracetoon.release-promotion/v2'].includes(
+      p.schema,
+    ) ||
     !hash(p.buildId) ||
     !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(p.version) ||
     !Number.isSafeInteger(p.artifact?.runId) ||
@@ -243,8 +273,40 @@ export function validatePromotion(p: Promotion) {
     !/^sha256:[a-f0-9]{64}$/.test(p.artifact.digest)
   )
     throw Error('Release promotion identity is invalid.');
-  if (!p.expected || Object.values(p.expected).some((v) => !hash(v)))
+  if (
+    !['manifestSha256', 'checksumsSha256', 'windowsSha256', 'bundleSha256'].every((key) =>
+      hash(p.expected?.[key as keyof Promotion['expected']] ?? ''),
+    )
+  )
     throw Error('Release promotion hashes are invalid.');
+  if (p.schema === 'tracetoon.release-promotion/v2') {
+    if (
+      p.decision?.kind !== 'explicit-user-request' ||
+      typeof p.decision.reason !== 'string' ||
+      !p.decision.reason.trim() ||
+      typeof p.decision.recordedAt !== 'string' ||
+      !Number.isFinite(Date.parse(p.decision.recordedAt))
+    )
+      throw Error('An explicit release request with a recorded reason is required.');
+    const e = p.evaluations;
+    if (
+      e?.calibration?.status !== 'passed' ||
+      e.calibration.orders !== 28 ||
+      !hash(e.calibration.experiment) ||
+      !hash(e.calibration.reportSha256) ||
+      e?.admission?.status !== 'inconclusive' ||
+      e.admission.writers !== 4 ||
+      e.admission.orders !== 16 ||
+      !hash(e.admission.experiment) ||
+      !hash(e.admission.reportSha256) ||
+      e?.development?.status !== 'not-run' ||
+      e?.heldout?.status !== 'not-run'
+    )
+      throw Error(
+        'Requested release must preserve the inconclusive admission and unrun confirmation stages.',
+      );
+    return;
+  }
   if (p.evaluations?.length !== 2) throw Error('Both adoption evaluations are required.');
   for (const [split, writers, orders] of [
     ['dev', 90, 240],
@@ -261,6 +323,28 @@ export function validatePromotion(p: Promotion) {
     )
       throw Error(`Passing ${split} adoption evidence is required.`);
   }
+}
+export function promotionNotes(p: Promotion): string {
+  validatePromotion(p);
+  const lines = [
+    `Promotes the retained CI artifact \`${p.artifact.id}\` from [run ${p.artifact.runId}](https://github.com/Tingsters/tracetoon/actions/runs/${p.artifact.runId}).`,
+    '',
+  ];
+  if (p.schema === 'tracetoon.release-promotion/v2')
+    lines.push(
+      'Release basis: explicit user request after an inconclusive admission screen.',
+      p.decision.reason,
+      '',
+      'Calibration passed 28 orders. Admission completed 4 drafts and 16 judgments but remains inconclusive. Development and held-out confirmation were not run. A higher benchmark score or performance gain has not been established.',
+    );
+  else lines.push('Both full development and held-out adoption evaluations passed.');
+  lines.push(
+    '',
+    `Build: \`${p.buildId}\`.`,
+    `Windows executable SHA-256: \`${p.expected.windowsSha256}\`.`,
+    '',
+  );
+  return lines.join('\n');
 }
 export function verifyArtifactMetadata(metadata: any, p: Promotion) {
   validatePromotion(p);
@@ -336,6 +420,8 @@ if (import.meta.main) {
       JSON.parse(readFileSync(resolve(dir!), 'utf8')),
       JSON.parse(readFileSync(resolve(promotionPath!), 'utf8')),
     );
+  } else if (mode === 'notes') {
+    console.log(promotionNotes(JSON.parse(readFileSync(resolve(dir!), 'utf8'))));
   } else if (mode === 'metadata') {
     const p: Promotion = JSON.parse(readFileSync(resolve(dir!), 'utf8'));
     validatePromotion(p);
@@ -355,6 +441,6 @@ if (import.meta.main) {
     else console.log(JSON.stringify(values));
   } else
     throw Error(
-      'Use inventory <assets>, assets <assets> [skill], metadata <promotion>, or verify <assets> <promotion> <tag>.',
+      'Use inventory <assets>, assets <assets> [skill], metadata <promotion>, notes <promotion>, or verify <assets> <promotion> <tag>.',
     );
 }

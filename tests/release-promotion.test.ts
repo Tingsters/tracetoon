@@ -9,7 +9,10 @@ import {
   verifyCandidateInputs,
   verifyPromotion,
   writeInventory,
+  promotionNotes,
+  validatePromotion,
   type Promotion,
+  type RequestedPromotion,
 } from '../.github/scripts/release-assets.ts';
 import { tempDir } from './helpers.ts';
 function fixture() {
@@ -123,6 +126,70 @@ test('retained candidate inputs bind extracted skill bytes and the tested source
   );
   writeFileSync(join(skill, 'SKILL.md'), 'changed instructions');
   expect(() => verifyCandidateInputs(out, skill)).toThrow('retained inventory');
+});
+
+function requestedFixture() {
+  const f = fixture();
+  const promotion: RequestedPromotion = {
+    ...f.promotion,
+    schema: 'tracetoon.release-promotion/v2',
+    decision: {
+      kind: 'explicit-user-request',
+      recordedAt: '2026-11-04T06:20:00.000Z',
+      reason:
+        'Ship the tested candidate while retaining the inconclusive benchmark result.',
+    },
+    evaluations: {
+      calibration: {
+        status: 'passed',
+        experiment: '3'.repeat(64),
+        reportSha256: '4'.repeat(64),
+        orders: 28,
+      },
+      admission: {
+        status: 'inconclusive',
+        experiment: '5'.repeat(64),
+        reportSha256: '6'.repeat(64),
+        writers: 4,
+        orders: 16,
+      },
+      development: { status: 'not-run' },
+      heldout: { status: 'not-run' },
+    },
+  };
+  return { ...f, promotion };
+}
+test('explicit requested promotion preserves the actual benchmark status and exact asset guards', () => {
+  const { out, manifest, promotion } = requestedFixture();
+  expect(verifyPromotion(out, promotion, manifest, `v${manifest.version}`).buildId).toBe(
+    manifest.buildId,
+  );
+  const notes = promotionNotes(promotion);
+  expect(notes).toContain('inconclusive');
+  expect(notes).toContain('were not run');
+  expect(notes).toContain('has not been established');
+  const missing = structuredClone(promotion);
+  delete (missing as any).decision;
+  expect(() => validatePromotion(missing)).toThrow('explicit release request');
+  const changed = structuredClone(promotion);
+  changed.evaluations.admission.status = 'passed' as any;
+  expect(() => validatePromotion(changed)).toThrow('preserve the inconclusive');
+  writeFileSync(join(out, 'tracetoon-windows-x64.exe'), 'changed bytes');
+  expect(() => verifyPromotion(out, promotion, manifest, `v${manifest.version}`)).toThrow(
+    'checksum mismatch',
+  );
+});
+test('requested promotion rejects missing artifact hashes and invented confirmation results', () => {
+  const { promotion } = requestedFixture();
+  const missingHash = structuredClone(promotion);
+  delete (missingHash.expected as any).windowsSha256;
+  expect(() => validatePromotion(missingHash)).toThrow('hashes');
+  const invented = structuredClone(promotion);
+  invented.evaluations.development.status = 'passed' as any;
+  expect(() => validatePromotion(invented)).toThrow('unrun confirmation');
+  const noReason = structuredClone(promotion);
+  noReason.decision.reason = ' ';
+  expect(() => validatePromotion(noReason)).toThrow('explicit release request');
 });
 test('artifact API identity, inventory paths and receipt identities cannot drift at publication', () => {
   const { out, promotion } = fixture();
