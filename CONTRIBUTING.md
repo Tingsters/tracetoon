@@ -101,6 +101,10 @@ platform suites pass, CI builds the five native targets and six skill archives,
 checks reproducibility, and rehearses the exact candidate bundle and Windows
 executable. It retains an artifact named for the source commit and workflow
 attempt, with per-file checksums, output receipts and a complete skill inventory.
+CI uses Python 3.11's standard library to package ZIPs with explicit Unix file
+permissions. The archive tests also extract and execute the launcher on Linux
+and macOS. Run those focused checks with `python -B -m unittest discover -s
+.github/scripts -p test_package_candidate.py -v`.
 
 Freeze the artifact's ID, run ID, GitHub digest and local checksums before
 evaluation. Keep the originating source commit and runtime unchanged throughout
