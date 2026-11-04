@@ -17,8 +17,12 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@showtail/agent-traces": ["../Showtail/packages/agent-traces/src/index.ts"],
-      "@showtail/agent-traces/*": ["../Showtail/packages/agent-traces/src/*.ts"]
+      "@showtail/agent-traces": [
+        ".tracetoon-deps/Showtail/packages/agent-traces/src/index.ts"
+      ],
+      "@showtail/agent-traces/*": [
+        ".tracetoon-deps/Showtail/packages/agent-traces/src/*.ts"
+      ]
     }
   },
   "include": ["src", "tests", "packages/*/src"]

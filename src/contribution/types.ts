@@ -87,7 +87,7 @@ export interface Assessment {
 }
 
 export interface ContributionReview {
-  v: 1;
+  v: 1 | 2;
   inputFingerprint: string;
   drafter: AgentRole;
   reviewer: AgentRole;
@@ -105,6 +105,9 @@ export const CLAIM_VERDICTS = [
 ] as const;
 export type ClaimVerdict = (typeof CLAIM_VERDICTS)[number];
 export interface BodyClaim {
+  id?: string;
+  quote?: string;
+  kind?: 'behavior' | 'validation' | 'review-location' | 'context';
   /** Where the claim is in the reviewed body, as `body:<line[-line]>`. */
   at: string;
   claim: string;
@@ -130,6 +133,7 @@ export interface BodyReview {
   transfer: { state: 'satisfied' | 'needs-revision'; reason: string };
   claims: BodyClaim[];
   omissions: BodyOmission[];
+  coverage?: { checkpoint: string; claims: string[]; omission?: string }[];
 }
 
 export const COMIC_REVIEW_CHECKS = [
@@ -182,6 +186,7 @@ export interface ReviewInput {
   /** Present when the complete redacted evidence or change map was supplied. */
   fullDigestSha256?: string;
   changeMapSha256?: string;
+  codeSourcesSha256?: string;
   /** Present on new comic renders; absent on legacy packets and comic-free PRs. */
   comic?: { imagePath: string; scriptPath: string; panelCount: number };
   /** Run-relative evidence paths for the reviewer. */

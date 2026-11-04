@@ -217,6 +217,17 @@ implementation-session results. Neither establishes hosted CI status.
 | The user said they checked something | "Checked in Safari (reported by the author)" | "Verified" |
 | Nothing recorded | (say nothing, or "no result was captured for X") | "not tested" (it may have been, outside the logs) |
 
+State concrete validation: the exact command, its observed result, and a useful
+scope or revision limit. Receipt ids, fingerprints and internal verification
+status belong in the local evidence map. Do not add assurances such as "receipts
+match the submitted content and environment"; a content fingerprint or an
+environment hash is not a separate check of behavior or environment equivalence.
+When one shell invocation runs several commands, map each result to the command
+that produced it. A passing test suite and a separate summary evaluation are two
+results, even when their output is captured together. Expand the full command
+and output before naming the producer. If it is unclear, attribute the captured
+result to its source without guessing a command or dropping a material outcome.
+
 - `runs` (see `digest-schema.md`) list each test, build, lint and type check
   with its outcome and how that's known. For historical R facts, say
   "`bun test` passed during development (96 pass, 0 fail); tested content was
@@ -237,6 +248,9 @@ implementation-session results. Neither establishes hosted CI status.
   different command, the whole suite, or a particular unnamed new regression.
 - Never invent a test count, a pass, or a measurement. Never turn missing
   evidence into a claim that something wasn't done.
+- Preserve a material recorded evaluation outcome with its source and revision
+  limits, including outcomes reported only by a commit. Pair any current
+  reproduction limitation with that attributed outcome when it is known.
 
 ## Voice and attribution
 
@@ -249,7 +263,11 @@ implementation-session results. Neither establishes hosted CI status.
 - **Where the change came from is context only the trace has.** The user's
   report or request ("a Codex test showed the PR link couldn't be
   clicked") tells a reviewer why the change exists; put it in a sentence,
-  paraphrased per `promptQuoting`. When the user asked for an outcome and no
+  paraphrased per `promptQuoting`. Expand and read that exact prompt first.
+  Use the specific reported problem, not a broad evaluation or setup request
+  from another part of the conversation. Retain a verified overall request for
+  this submission at the level it supports, and establish the cause of each
+  individual fix separately. When the user asked for an outcome and no
   plan or decision about *how* was recorded, a short neutral note helps the
   reviewer know which choices are open to push back on, e.g. "The approach (a
   quote-aware splitter) wasn't discussed in the session."

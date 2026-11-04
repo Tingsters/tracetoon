@@ -37,6 +37,8 @@ export interface ExistingPr {
 }
 
 export interface PrTruth {
+  /** Resolved once with repository identity, so repeated reads describe one commit. */
+  headSha?: string;
   toplevel: string;
   gitDir: string;
   /** The checkout plus every worktree of the same repo. */
@@ -86,20 +88,26 @@ function parseRemote(url: string): { owner: string; name: string } | undefined {
  */
 export function gitIdentity(
   cwd: string,
-): { toplevel: string; gitDir: string; branch: string; ok: boolean } | undefined {
+):
+  | { toplevel: string; gitDir: string; branch: string; headSha?: string; ok: boolean }
+  | undefined {
   const r = git(cwd, [
     'rev-parse',
     '--show-toplevel',
     '--absolute-git-dir',
+    'HEAD',
     '--abbrev-ref',
     'HEAD',
   ]);
-  const [toplevel, gitDir, branch] = r.stdout.split(/\r?\n/).map((l) => l.trim());
+  const [toplevel, gitDir, headSha, branch] = r.stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim());
   if (!toplevel || !gitDir) return undefined;
   return {
     toplevel: resolve(toplevel),
     gitDir: resolve(gitDir),
-    branch: branch ?? '',
+    branch: branch || 'HEAD',
+    ...(/^[a-f0-9]{40,64}$/.test(headSha ?? '') ? { headSha } : {}),
     ok: r.ok,
   };
 }
@@ -287,7 +295,9 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
   const id = gitIdentity(cwd);
   if (!id) must(cwd, ['rev-parse', '--show-toplevel']); // throws the git error
   const { toplevel, gitDir } = id!;
-  const headRef = opts.head ?? 'HEAD';
+  const headRef = opts.head
+    ? must(toplevel, ['rev-parse', opts.head])
+    : (id!.headSha ?? 'HEAD');
   if (!opts.head && !id!.ok) must(toplevel, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const head = opts.head ?? id!.branch;
   const pr = opts.noGh ? undefined : existingPr(toplevel, head);
@@ -334,6 +344,7 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     gitDir,
     roots,
     head,
+    headSha: headRef,
     base,
     mergeBase,
     mergeBaseTime,

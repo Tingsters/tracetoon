@@ -657,7 +657,7 @@ export interface BuildOptions {
   interop?: Interop;
 }
 
-export function buildDigest(
+function buildFullDigest(
   truth: PrTruth,
   matches: SessionMatch[],
   opts: BuildOptions = {},
@@ -833,4 +833,58 @@ export function buildDigest(
   if (!full) fitBudget(digest, opts.budgetTokens ?? 12000);
   digest.privacy.redactions = scrub.redactions;
   return digest;
+}
+
+/** Project from independent redacted data; budgeting must never trim expansion evidence. */
+export function compactDigest(full: TraceDigest, budgetTokens = 12000): TraceDigest {
+  const digest = structuredClone(full);
+  for (const s of digest.sessions) {
+    s.prompts.forEach((p) => (p.text = clip(p.text, 400)));
+    s.plans.forEach((p) => (p.excerpt = clip(p.excerpt, 1500)));
+    s.decisions.forEach((d) => {
+      d.text = clip(d.text, 300);
+      d.questions?.forEach((q) => {
+        q.question = clip(q.question, 200);
+        q.options = q.options.map((o) => clip(o, 80));
+        if (q.answer !== undefined) q.answer = clip(q.answer, 400);
+      });
+    });
+    s.runs = s.runs.slice(-25);
+  }
+  digest.pr.commits = digest.pr.commits.map((c) => ({
+    ...c,
+    sha: c.sha.slice(0, 12),
+    ...(c.body ? { body: clip(c.body, 1200) } : {}),
+  }));
+  fitBudget(digest, budgetTokens);
+  return digest;
+}
+
+export function buildDigestPair(
+  truth: PrTruth,
+  matches: SessionMatch[],
+  opts: BuildOptions = {},
+) {
+  const start = performance.now();
+  const full = buildFullDigest(truth, matches, { ...opts, full: true });
+  const extractionMs = performance.now() - start;
+  const projectionStart = performance.now();
+  const digest = compactDigest(full, opts.budgetTokens);
+  return {
+    digest,
+    full,
+    extractionMs,
+    projectionMs: performance.now() - projectionStart,
+  };
+}
+
+export function buildDigest(
+  truth: PrTruth,
+  matches: SessionMatch[],
+  opts: BuildOptions = {},
+): TraceDigest {
+  const full = buildFullDigest(truth, matches, { ...opts, full: true });
+  return opts.full || opts.budgetTokens === Number.MAX_SAFE_INTEGER
+    ? full
+    : compactDigest(full, opts.budgetTokens);
 }

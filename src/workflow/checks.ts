@@ -1,5 +1,5 @@
 /** Explicit verification receipts; raw output and environment values are never persisted. */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -10,6 +10,8 @@ import type { Run as EvidenceRun } from '../digest/build.ts';
 import { makeScrubber } from '../digest/sanitize.ts';
 import { publicationLock } from './publication.ts';
 import { readSubmittedFile, repoPath } from '../util/repoFiles.ts';
+import { dependencyFingerprint } from './validationInputs.ts';
+import { count } from '../util/profile.ts';
 
 export interface CheckReceipt {
   v: 1;
@@ -27,6 +29,7 @@ export interface CheckReceipt {
   durationMs: number;
   commandSha256?: string;
   inputs?: string[];
+  reuse?: { state: 'executed' | 'reused'; reason: string; matchedName?: string };
 }
 export const receipts = (run: Run): CheckReceipt[] =>
   readLocal<CheckReceipt[]>(join(run.dir, 'checks.json')) ?? [];
@@ -35,10 +38,12 @@ function inputFingerprint(
   root: string,
   inputs: string[],
   content = contentFingerprint(root),
+  dependency = dependencyFingerprint(root),
 ): string {
-  if (!inputs.length) return content;
+  const complete = dependency === null ? content : hash([content, dependency]);
+  if (!inputs.length) return complete;
   return hash([
-    content,
+    complete,
     [...new Set(inputs)].sort().map((path) => {
       if (!repoPath(path))
         throw new Error(
@@ -89,7 +94,7 @@ interface CheckOptions {
   command: string[];
   skip?: string;
   force?: boolean;
-  onStart?: () => void;
+  onStart?: (receipt: CheckReceipt) => void;
   input?: string[];
 }
 export function executeCheck(
@@ -97,13 +102,103 @@ export function executeCheck(
   run: Run,
   opts: CheckOptions,
 ): CheckReceipt & { reused?: boolean } {
-  return publicationLock(run, () => executeUnlocked(root, run, opts), 'checks.lock');
+  return publicationLock(
+    run,
+    () => {
+      const prepared = prepareCheck(root, run, opts);
+      if ('cached' in prepared) return prepared.cached;
+      const result = opts.skip
+        ? undefined
+        : spawnSync(opts.command[0]!, opts.command.slice(1), {
+            cwd: prepared.cwd,
+            env: process.env,
+            encoding: 'utf8',
+            maxBuffer: 64 * 1024 * 1024,
+            windowsHide: true,
+          });
+      if (result?.stdout) process.stderr.write(result.stdout);
+      if (result?.stderr) process.stderr.write(result.stderr);
+      return prepared.finish(result);
+    },
+    'checks.lock',
+  );
 }
-function executeUnlocked(
+interface CheckResult {
+  status: number | null;
+  error?: Error;
+  stdout: string;
+  stderr: string;
+}
+export function executeCheckLive(
   root: string,
   run: Run,
   opts: CheckOptions,
-): CheckReceipt & { reused?: boolean } {
+): Promise<CheckReceipt & { reused?: boolean }> {
+  return publicationLock(
+    run,
+    async () => {
+      const prepared = prepareCheck(root, run, opts);
+      if ('cached' in prepared) return prepared.cached;
+      const result = opts.skip
+        ? undefined
+        : await streamCheck(opts.command, prepared.cwd);
+      return prepared.finish(result);
+    },
+    'checks.lock',
+  );
+}
+function streamCheck(command: string[], cwd: string): Promise<CheckResult> {
+  return new Promise((resolveResult) => {
+    const child = spawn(command[0]!, command.slice(1), {
+      cwd,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    let stdout = '',
+      stderr = '',
+      error: Error | undefined,
+      bytes = 0;
+    const interrupt = (signal: NodeJS.Signals) => {
+      error ??= new Error(`Validation interrupted by ${signal}.`);
+      child.kill(signal);
+    };
+    const onInterrupt = () => interrupt('SIGINT');
+    const onTerminate = () => interrupt('SIGTERM');
+    process.once('SIGINT', onInterrupt);
+    process.once('SIGTERM', onTerminate);
+    const capture = (text: string, isError: boolean) => {
+      process.stderr.write(text);
+      bytes += Buffer.byteLength(text);
+      if (bytes > 64 * 1024 * 1024) {
+        error ??= new Error('Validation output exceeded the 64 MiB capture limit.');
+        child.kill();
+        return;
+      }
+      if (isError) stderr += text;
+      else stdout += text;
+    };
+    child.stdout!.setEncoding('utf8');
+    child.stderr!.setEncoding('utf8');
+    child.stdout!.on('data', (text: string) => capture(text, false));
+    child.stderr!.on('data', (text: string) => capture(text, true));
+    child.on('error', (failure) => {
+      error ??= failure;
+    });
+    child.once('close', (status) => {
+      process.off('SIGINT', onInterrupt);
+      process.off('SIGTERM', onTerminate);
+      resolveResult({ status, error, stdout, stderr });
+    });
+  });
+}
+function prepareCheck(
+  root: string,
+  run: Run,
+  opts: CheckOptions,
+):
+  | { cached: CheckReceipt & { reused?: boolean } }
+  | { cwd: string; finish: (result: CheckResult | undefined) => CheckReceipt } {
   const cwd = resolve(root, opts.cwd ?? '.');
   const rel = relative(root, cwd).replace(/\\/g, '/');
   if (
@@ -119,7 +214,14 @@ function executeUnlocked(
   const environment = checkEnvironment();
   const safeName = makeScrubber([root]).text(opts.name);
   const previous = receipts(run);
-  const old = previous.find((c) => c.name === safeName);
+  const old = previous.find(
+    (c) =>
+      c.outcome === 'passed' &&
+      c.fingerprint === fingerprint &&
+      c.environment === environment &&
+      c.cwd === rel &&
+      (c.commandSha256 ?? hash(c.command)) === hash(opts.command),
+  );
   if (
     !opts.force &&
     old?.outcome === 'passed' &&
@@ -128,9 +230,26 @@ function executeUnlocked(
     old.cwd === rel &&
     (old.commandSha256 ?? hash(old.command)) === hash(opts.command) &&
     !opts.skip
-  )
-    return { ...old, reused: true };
-  opts.onStart?.();
+  ) {
+    count('check.reused');
+    const reused = {
+      ...old,
+      name: safeName,
+      reused: true,
+      reuse: {
+        state: 'reused' as const,
+        reason: 'Exact command, inputs, directory and environment match.',
+        matchedName: old.name,
+      },
+    };
+    if (old.name !== safeName)
+      writeLocal(join(run.dir, 'checks.json'), [
+        ...previous.filter((c) => c.name !== safeName),
+        reused,
+      ]);
+    return { cached: reused };
+  }
+  count('check.executed');
   const startedAt = new Date().toISOString();
   const start = performance.now();
   const scrub = makeScrubber([root]);
@@ -154,68 +273,71 @@ function executeUnlocked(
     ...previous.filter((c) => c.name !== safeName),
     running,
   ]);
-  const result = opts.skip
-    ? undefined
-    : spawnSync(opts.command[0]!, opts.command.slice(1), {
-        cwd,
-        env: process.env,
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-        windowsHide: true,
-      });
-  if (result?.stdout) process.stderr.write(result.stdout);
-  if (result?.stderr) process.stderr.write(result.stderr);
-  const after = inputFingerprint(root, opts.input ?? []);
-  const receipt: CheckReceipt = {
-    v: 1,
-    name: safeName,
-    command: opts.command.map((c) => scrub.text(c)),
-    commandSha256: hash(opts.command),
-    cwd: rel,
-    kind: checkKind(`${opts.name} ${opts.command.join(' ')}`),
-    fingerprint,
-    inputs: opts.input,
-    environment,
-    outcome: opts.skip
-      ? 'not-run'
-      : result?.status === 0 && !result.error && after === fingerprint
-        ? 'passed'
-        : 'failed',
-    exitCode: result?.status ?? null,
-    reason:
-      scrub.text(
-        opts.skip ??
-          (after !== fingerprint
-            ? 'The command changed validation inputs; run checks after finalizing those changes.'
-            : (result?.error?.message ?? '')),
-      ) || undefined,
-    summary: makeScrubber([root])
-      .text(`${result?.stdout ?? ''}\n${result?.stderr ?? ''}`)
-      .replace(/\x1b\[[0-9;]*m/g, '')
-      .split(/\r?\n/)
-      .filter((s) =>
-        /\b\d+\s+(?:pass|fail|tests?|checks?)\b|\b(?:Tests|Test Files):/.test(s),
-      )
-      .slice(-3)
-      .map((s) => s.slice(0, 200)),
-    startedAt,
-    durationMs: Math.round(performance.now() - start),
+  opts.onStart?.(running);
+  return {
+    cwd,
+    finish: (result) => {
+      const after = inputFingerprint(root, opts.input ?? []);
+      const receipt: CheckReceipt = {
+        v: 1,
+        name: safeName,
+        command: opts.command.map((c) => scrub.text(c)),
+        commandSha256: hash(opts.command),
+        cwd: rel,
+        kind: checkKind(`${opts.name} ${opts.command.join(' ')}`),
+        fingerprint,
+        inputs: opts.input,
+        environment,
+        outcome: opts.skip
+          ? 'not-run'
+          : result?.status === 0 && !result.error && after === fingerprint
+            ? 'passed'
+            : 'failed',
+        exitCode: result?.status ?? null,
+        reason:
+          scrub.text(
+            opts.skip ??
+              (after !== fingerprint
+                ? 'The command changed validation inputs; run checks after finalizing those changes.'
+                : (result?.error?.message ?? '')),
+          ) || undefined,
+        summary: makeScrubber([root])
+          .text(`${result?.stdout ?? ''}\n${result?.stderr ?? ''}`)
+          .replace(/\x1b\[[0-9;]*m/g, '')
+          .split(/\r?\n/)
+          .filter((s) =>
+            /\b\d+\s+(?:pass|fail|tests?|checks?)\b|\b(?:Tests|Test Files):/.test(s),
+          )
+          .slice(-3)
+          .map((s) => s.slice(0, 200)),
+        startedAt,
+        durationMs: Math.round(performance.now() - start),
+        reuse: {
+          state: 'executed',
+          reason: opts.force
+            ? 'Explicitly forced.'
+            : 'No passing receipt matches the current command, inputs, directory and environment.',
+        },
+      };
+      writeLocal(join(run.dir, 'checks.json'), [
+        ...previous.filter((c) => c.name !== safeName),
+        receipt,
+      ]);
+      return receipt;
+    },
   };
-  writeLocal(join(run.dir, 'checks.json'), [
-    ...previous.filter((c) => c.name !== safeName),
-    receipt,
-  ]);
-  return receipt;
 }
 export function checkReport(root: string, run: Run) {
   const fingerprint = contentFingerprint(root);
+  const dependency = dependencyFingerprint(root);
   const environment = checkEnvironment();
   return receipts(run).map((c) => ({
     ...c,
     current: (() => {
       try {
         return (
-          c.fingerprint === inputFingerprint(root, c.inputs ?? [], fingerprint) &&
+          c.fingerprint ===
+            inputFingerprint(root, c.inputs ?? [], fingerprint, dependency) &&
           c.environment === environment
         );
       } catch {

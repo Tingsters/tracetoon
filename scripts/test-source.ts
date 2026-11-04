@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { prepareDependencies } from './dependencies.ts';
 import {
   longestFirst,
   readTestTimes,
@@ -8,6 +9,7 @@ import {
   writeTestTimes,
 } from './test-files.ts';
 const root = resolve(import.meta.dir, '..');
+prepareDependencies();
 const args = process.argv.slice(2);
 const results = await runTestFiles({
   root,

@@ -3,11 +3,16 @@
 ## Setup
 
 ```sh
-git clone https://github.com/Tingsters/Showtail ../Showtail
 git clone https://github.com/Tingsters/tracetoon && cd tracetoon
+bun run dependencies:prepare
 bun install
 bun run test
 ```
+
+The dependency command prepares the exact Showtail revision in
+`build-dependencies.json` under `.tracetoon-deps/Showtail`. It can use an
+existing repository with `--source <path>`; it never builds from its moving
+branch. `build.config.json` records the required Bun version and build recipe.
 
 ## Layout
 
@@ -36,7 +41,7 @@ bun run test
 
 ## Before sending a change
 
-- Development checks require Bun 1.3.14 or newer (the CI pin). `bun run test`
+- Use Bun 1.3.14, as pinned by the build recipe and CI. `bun run test`
   runs the complete source suite with up to four fresh Bun processes. Each file
   gets a new process so native state cannot leak between files; tests within each
   file remain sequential. Once a full run has recorded each file's passing time
@@ -45,6 +50,8 @@ bun run test
   start largest first. `bun run typecheck && bun run test`
   macOS runs one file at a time because the pinned Bun version's subprocess-heavy
   suites fail intermittently under concurrent macOS load. Full coverage is kept.
+  Windows runs two files at a time to reduce Git-process contention; Linux runs
+  up to four. Every invocation retains per-file logs under `node_modules/.cache/test-logs`.
 - `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
 - `bun run test:bundled` exercises the shipped bundle; `bun run build` followed
   by `bun run test:compiled` rehearses publication against the native executable.
@@ -66,7 +73,7 @@ bun run test
 - Never commit real session logs. Fixtures are synthetic or scrubbed.
 
 Contributor research and review handoffs live in `src/contribution/`; their host
-agent role prompts and v1 contracts are documented in the packaged skill's
+agent role prompts and v2 claim/source contracts are documented in the packaged skill's
 `references/contribution-workflow.md`. Run `bun scripts/eval-contributions.ts
 prepare`, supply separate baseline and three-phase drafts, then run
 `review-inputs` and `score` to exercise the synthetic, source-cited evaluation.
@@ -89,8 +96,44 @@ tests and reader probes are not automated humor scores. Artifacts stay in .git/.
 
 Bump only `package.json`, then run `bun run bundle`. The build stamps the skill
 VERSION, plugin version and shared build identity; `bun run build:check` detects
-drift. Commit the generated files, then push a matching `vX.Y.Z` tag after review.
-The release workflow rebuilds the bundle, verifies versions and builds binaries
-and skill zips from that same identity. Never publish a source-only update as
-though it updated installed runtimes. `tracetoon doctor --json` reports actual
-runtime and hook identities, installed skill mismatches and observed hook events.
+drift. Commit the generated files and open a same-repository PR. After all three
+platform suites pass, CI builds the five native targets and six skill archives,
+checks reproducibility, and rehearses the exact candidate bundle and Windows
+executable. It retains an artifact named for the source commit and workflow
+attempt, with per-file checksums, output receipts and a complete skill inventory.
+CI uses Python 3.11's standard library to package ZIPs with explicit Unix file
+permissions. The archive tests also extract and execute the launcher on Linux
+and macOS. Run those focused checks with `python -B -m unittest discover -s
+.github/scripts -p test_package_candidate.py -v`.
+
+Freeze the artifact's ID, run ID, GitHub digest and local checksums before
+evaluation. Keep the originating source commit and runtime unchanged throughout
+the fixed admission and confirmation stages. An inconclusive or failing gate
+ends the round without a release. Only after passing the full development
+(90 drafts/240 judgments) and held-out (36 drafts/96 judgments) adoption gates,
+commit a reviewed `release-promotion.json` using the
+`tracetoon.release-promotion/v1` contract in
+`.github/scripts/release-assets.ts`. Record both experiment IDs and report hashes,
+the immutable artifact identity, and the manifest, checksums, Windows executable
+and bundle hashes. Private cases and raw model outputs must remain outside Git.
+
+An explicit user request may authorize releasing a CI-tested candidate after an
+inconclusive admission screen. Record that separate decision using
+`tracetoon.release-promotion/v2`: include the request's reason and recording time,
+the actual calibration/admission experiment IDs and report hashes, and mark
+development and held-out confirmation as not run. This does not turn the
+benchmark into a pass or establish a score/performance gain. The release notes
+publish that limitation; artifact identity and byte verification still apply.
+
+Push the matching `vX.Y.Z` tag after merging the validated changes. The release
+workflow verifies the successful originating CI run, artifact identity, source
+build identity, the recorded release basis and every asset checksum, then publishes
+those exact bytes. It does not build replacement release files. Install from
+that release and compare the installed runtime and skill against the retained
+inventory. `tracetoon doctor --json` reports actual runtime and hook identities,
+installed skill mismatches and observed hook events.
+
+`bun run build:reproduce` builds bundle and native artifacts from two isolated
+source snapshots. Output receipts bind the artifact hash to the compiler,
+dependency manifest and target. Keep a passing reproduction report when changing
+the build pipeline; it establishes reproducibility on that host/toolchain.

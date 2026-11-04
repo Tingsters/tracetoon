@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { count, measured } from './profile.ts';
 
 export interface ExecResult {
   ok: boolean;
@@ -18,15 +19,23 @@ export function run(
     timeoutMs?: number;
   } = {},
 ): ExecResult {
-  const r = spawnSync(cmd, args, {
-    cwd: opts.cwd,
-    input: opts.input,
-    env: opts.env ?? process.env,
-    encoding: 'utf8',
-    maxBuffer: 256 * 1024 * 1024,
-    windowsHide: true,
-    timeout: opts.timeoutMs,
-  });
+  const kind = /(?:^|[\\/])git(?:\.exe)?$/i.test(cmd)
+    ? 'git'
+    : /(?:^|[\\/])gh(?:\.exe)?$/i.test(cmd)
+      ? 'github'
+      : 'other';
+  count(`subprocess.${kind}`);
+  const r = measured(`subprocess.${kind}`, () =>
+    spawnSync(cmd, args, {
+      cwd: opts.cwd,
+      input: opts.input,
+      env: opts.env ?? process.env,
+      encoding: 'utf8',
+      maxBuffer: 256 * 1024 * 1024,
+      windowsHide: true,
+      timeout: opts.timeoutMs,
+    }),
+  );
   if (r.error)
     return { ok: false, code: -1, stdout: '', stderr: String(r.error.message) };
   return {

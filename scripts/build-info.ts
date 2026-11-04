@@ -1,23 +1,29 @@
 /** Stamp one identity into the skill, bundle and compiled binaries. */
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { prepareDependencies } from './dependencies.ts';
 
 const root = resolve(import.meta.dir, '..');
-export function buildManifest(check = false) {
+export function buildManifest(check = false, stamp = true) {
+  const dependencies = [prepareDependencies()];
+  const recipe = JSON.parse(readFileSync(join(root, 'build.config.json'), 'utf8'));
+  if (recipe.schema !== 'tracetoon.build-recipe/v1' || recipe.bunVersion !== Bun.version)
+    throw new Error(`Builds require Bun ${recipe.bunVersion}; found ${Bun.version}.`);
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
     .version as string;
   const pluginPath = join(root, 'plugin/.claude-plugin/plugin.json');
   const plugin = JSON.parse(readFileSync(pluginPath, 'utf8'));
-  if (check && plugin.version !== version)
+  if ((check || !stamp) && plugin.version !== version)
     throw new Error('Plugin version differs from package.json. Run bun run bundle.');
-  if (!check)
+  if (!check && stamp)
     writeFileSync(pluginPath, JSON.stringify({ ...plugin, version }, null, 2) + '\n');
   const paths: string[] = [];
   const walk = (dir: string) => {
     for (const e of readdirSync(join(root, dir), { withFileTypes: true })) {
       const path = `${dir}/${e.name}`;
       if (['build.json', 'VERSION'].includes(e.name) || path.includes('/dist/')) continue;
+      if (/\/bin\/tracetoon-(?:windows|linux|darwin)-/.test(path)) continue;
       if (e.isDirectory()) walk(path);
       else if (e.isFile()) paths.push(path);
     }
@@ -26,6 +32,9 @@ export function buildManifest(check = false) {
   paths.push(
     'package.json',
     'bun.lock',
+    'tsconfig.json',
+    'build-dependencies.json',
+    'build.config.json',
     'install.sh',
     'install.ps1',
     'plugin/.claude-plugin/plugin.json',
@@ -46,9 +55,14 @@ export function buildManifest(check = false) {
   }
   const manifest = {
     version,
-    buildId: hash.digest('hex'),
+    buildId: hash
+      .update(JSON.stringify({ dependencies, compiler: Bun.version, recipe }))
+      .digest('hex'),
     revision: process.env.TRACETOON_BUILD_REVISION ?? process.env.GITHUB_SHA ?? null,
-    protocol: 1,
+    protocol: 2,
+    dependencies,
+    compiler: { name: 'bun', version: Bun.version },
+    recipe,
   };
   const file = join(root, 'plugin/skills/tracetoon/build.json');
   if (check) {
@@ -62,10 +76,39 @@ export function buildManifest(check = false) {
       throw new Error(
         'Build identity is stale. Run bun run bundle after finalizing source and skill changes.',
       );
-  } else {
+    const bundle = join(root, 'plugin/skills/tracetoon/dist/tracetoon.mjs'),
+      receiptFile = `${bundle}.build.json`;
+    if (!existsSync(receiptFile))
+      throw new Error('Bundle output receipt is missing. Run bun run bundle.');
+    const receipt = JSON.parse(readFileSync(receiptFile, 'utf8'));
+    if (
+      receipt.buildId !== manifest.buildId ||
+      receipt.sha256 !== createHash('sha256').update(readFileSync(bundle)).digest('hex')
+    )
+      throw new Error('Bundle bytes do not match their build output receipt.');
+  } else if (stamp) {
     writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
     writeFileSync(join(root, 'plugin/skills/tracetoon/VERSION'), version + '\n');
   }
   return manifest;
+}
+/** Output hashes bind the shared source/recipe identity to a compiler and target. */
+export function recordOutput(file: string, target: string, buildId: string) {
+  const receipt = {
+    schema: 'tracetoon.build-output/v1',
+    buildId,
+    target,
+    inputManifestSha256: createHash('sha256')
+      .update(readFileSync(join(root, 'plugin/skills/tracetoon/build.json')))
+      .digest('hex'),
+    sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
+    compiler: {
+      version: Bun.version,
+      sha256: createHash('sha256').update(readFileSync(process.execPath)).digest('hex'),
+      host: `${process.platform}-${process.arch}`,
+    },
+  };
+  writeFileSync(`${file}.build.json`, JSON.stringify(receipt, null, 2) + '\n');
+  return receipt;
 }
 if (import.meta.main) console.log(buildManifest(process.argv.includes('--check')));

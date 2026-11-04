@@ -11,6 +11,7 @@ const record = (value: unknown): value is Record<string, unknown> =>
 export function parseBodyReview(
   value: unknown,
   refExists: (ref: string) => boolean,
+  v2?: { body: string; title?: string; checkpoints: string[] },
 ): BodyReview {
   requireThat(record(value), 'bodyReview must be an object.');
   requireThat(
@@ -31,7 +32,7 @@ export function parseBodyReview(
     requireThat(
       record(claim) &&
         typeof claim.at === 'string' &&
-        /^body:\d+(-\d+)?$/.test(claim.at) &&
+        (/^body:\d+(-\d+)?$/.test(claim.at) || (!!v2 && claim.at === 'title')) &&
         refExists(claim.at) &&
         nonempty(claim.claim) &&
         (CLAIM_VERDICTS as readonly string[]).includes(claim.verdict as string) &&
@@ -45,6 +46,50 @@ export function parseBodyReview(
     );
     for (const ref of claim.evidence as string[])
       requireThat(refExists(ref), `Unknown evidence reference: ${ref}`);
+    if (v2) {
+      const location = /^body:(\d+)(?:-(\d+))?$/.exec(String(claim.at));
+      const text = location
+        ? v2.body
+            .split(/\r?\n/)
+            .slice(Number(location[1]) - 1, Number(location[2] ?? location[1]))
+            .join('\n')
+        : (v2.title ?? '');
+      requireThat(
+        nonempty(claim.id) &&
+          nonempty(claim.quote) &&
+          text.includes(claim.quote as string) &&
+          ['behavior', 'validation', 'review-location', 'context'].includes(
+            String(claim.kind),
+          ),
+        'Review v2 claims need a unique id, exact quote at the cited location, and kind.',
+      );
+    }
+  }
+  if (v2) {
+    const ids = value.claims.map((c) => (c as Record<string, unknown>).id);
+    requireThat(new Set(ids).size === ids.length, 'Review claim IDs must be unique.');
+    requireThat(
+      Array.isArray(value.coverage),
+      'Review v2 needs behavior checkpoint coverage.',
+    );
+    const seen = new Set<string>();
+    for (const entry of value.coverage) {
+      requireThat(
+        record(entry) &&
+          nonempty(entry.checkpoint) &&
+          v2.checkpoints.includes(String(entry.checkpoint)) &&
+          !seen.has(String(entry.checkpoint)) &&
+          strings(entry.claims) &&
+          entry.claims.every((id) => ids.includes(id)) &&
+          (entry.claims.length > 0 || nonempty(entry.omission)),
+        'Each behavior checkpoint needs known claims or an explicit omission.',
+      );
+      seen.add(String(entry.checkpoint));
+    }
+    requireThat(
+      seen.size === v2.checkpoints.length,
+      'Review v2 must account for every behavior checkpoint.',
+    );
   }
   requireThat(Array.isArray(value.omissions), 'bodyReview needs an omissions array.');
   for (const gap of value.omissions) {

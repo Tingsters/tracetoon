@@ -75,15 +75,15 @@ irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
 The installer puts a `tracetoon` command on your PATH and ends with a line about
 comics: which image route it found and what to do next. Restart your agent,
 then in any repo with your work on a branch, ask:
-*"Open a PR for this branch with Tracetoon."*
+_"Open a PR for this branch with Tracetoon."_
 
-| Agent | Status |
-|---|---|
-| Claude Code | supported |
-| Codex (CLI and app) | supported |
-| Antigravity (CLI and IDE) | supported |
-| Gemini CLI | runs the skill (its own logs aren't read yet) |
-| Copilot CLI | planned |
+| Agent                     | Status                                        |
+| ------------------------- | --------------------------------------------- |
+| Claude Code               | supported                                     |
+| Codex (CLI and app)       | supported                                     |
+| Antigravity (CLI and IDE) | supported                                     |
+| Gemini CLI                | runs the skill (its own logs aren't read yet) |
+| Copilot CLI               | planned                                       |
 
 Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
 again. Downloads are checked against the release's SHA-256 checksums.
@@ -134,13 +134,13 @@ after a restart.
 
 Turn it off at whichever level you need. Any "off" wins:
 
-| Scope | Off | On again |
-|---|---|---|
-| One command | `TRACETOON=0 gh pr create ...` | (just once) |
-| You, everywhere | `tracetoon off` | `tracetoon on` |
-| This repo, for everyone | `tracetoon off --repo` (writes `.github/tracetoon.json`; commit it) | `tracetoon on --repo` |
-| This repo, just you | `tracetoon off --local` (git config) | `tracetoon on --local` |
-| CI | off automatically when `CI=true` | `TRACETOON=1` |
+| Scope                   | Off                                                                 | On again               |
+| ----------------------- | ------------------------------------------------------------------- | ---------------------- |
+| One command             | `TRACETOON=0 gh pr create ...`                                      | (just once)            |
+| You, everywhere         | `tracetoon off`                                                     | `tracetoon on`         |
+| This repo, for everyone | `tracetoon off --repo` (writes `.github/tracetoon.json`; commit it) | `tracetoon on --repo`  |
+| This repo, just you     | `tracetoon off --local` (git config)                                | `tracetoon on --local` |
+| CI                      | off automatically when `CI=true`                                    | `TRACETOON=1`          |
 
 `tracetoon status` shows whether it's on here and which setting decided.
 
@@ -154,12 +154,12 @@ Turn it off at whichever level you need. Any "off" wins:
   [release](https://github.com/Tingsters/tracetoon/releases) into your agent's
   skills folder:
 
-| Agent | Folder |
-|---|---|
-| Claude Code | `~/.claude/skills/tracetoon` |
-| Codex | `~/.agents/skills/tracetoon` (or `.agents/skills/` in a repo) |
+| Agent       | Folder                                                               |
+| ----------- | -------------------------------------------------------------------- |
+| Claude Code | `~/.claude/skills/tracetoon`                                         |
+| Codex       | `~/.agents/skills/tracetoon` (or `.agents/skills/` in a repo)        |
 | Antigravity | `~/.gemini/config/skills/tracetoon` (or `.agents/skills/` in a repo) |
-| Gemini CLI | `~/.gemini/skills/tracetoon` |
+| Gemini CLI  | `~/.gemini/skills/tracetoon`                                         |
 
 </details>
 
@@ -189,6 +189,11 @@ earlier coding does not require registration, branch changes or wrapped tests.
 `task begin`, `check`, `task complete`, `task defer` and `task block` remain optional
 for users who want explicit evidence receipts or bookkeeping. Existing PR edits,
 metadata changes, merges, pushes, help and dry runs are not intercepted.
+
+`tracetoon check` streams command output to stderr while it runs, including in
+JSON mode. The receipt and validation lock stay active until the command exits;
+stdout contains the final receipt. A quiet interval alone does not establish a
+stalled check. Interrupted checks do not establish a passing result.
 
 1. **`tracetoon doctor`** checks git and gh, whether you can push to the repo,
    and whether a comic can be drawn, when PR preparation starts.
@@ -275,28 +280,28 @@ respect the story's panel count.
 
 `tracetoon config set <key> <value>`, or per repo in `.github/tracetoon.json`:
 
-| Key | Default | Meaning |
-|---|---|---|
-| `enabled` | `true` | Use Tracetoon for PRs (also `tracetoon on`/`off`) |
-| `comic` | `allowed` | `off`, `allowed` (include a comic unless the repo's contributing rules forbid images in PRs) or `always` (ignore those rules). `true`/`false` still mean `allowed`/`off` |
-| `style` | `auto` | Pin one art style for every comic (an idea from `references/styles.md` or any description), or `auto` to vary |
-| `promptQuoting` | `paraphrase` | `verbatim` quotes your prompts in the PR |
-| `disclosure` | `assisted-by` | Disclosure style (a repo's AI policy can ask for another) |
-| `hosting` | `auto` | Where the comic goes: `branch`, `attach`, or `auto` |
-| `imageConsent` | `[]` | Image routes you approved (set by `tracetoon images --approve`; user config only) |
-| `budgetTokens` | `12000` | Digest size |
+| Key             | Default       | Meaning                                                                                                                                                                  |
+| --------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enabled`       | `true`        | Use Tracetoon for PRs (also `tracetoon on`/`off`)                                                                                                                        |
+| `comic`         | `allowed`     | `off`, `allowed` (include a comic unless the repo's contributing rules forbid images in PRs) or `always` (ignore those rules). `true`/`false` still mean `allowed`/`off` |
+| `style`         | `auto`        | Pin one art style for every comic (an idea from `references/styles.md` or any description), or `auto` to vary                                                            |
+| `promptQuoting` | `paraphrase`  | `verbatim` quotes your prompts in the PR                                                                                                                                 |
+| `disclosure`    | `assisted-by` | Disclosure style (a repo's AI policy can ask for another)                                                                                                                |
+| `hosting`       | `auto`        | Where the comic goes: `branch`, `attach`, or `auto`                                                                                                                      |
+| `imageConsent`  | `[]`          | Image routes you approved (set by `tracetoon images --approve`; user config only)                                                                                        |
+| `budgetTokens`  | `12000`       | Digest size                                                                                                                                                              |
 
 ### Image routes
 
 `tracetoon comic art` uses the first route you approved that can draw, in this
 order:
 
-| Route | Needs | Prompts go to |
-| --- | --- | --- |
-| `codex` | the Codex CLI, signed in with ChatGPT (`codex login`) | OpenAI, counted against your Codex usage |
-| `antigravity` (experimental) | the Antigravity CLI, signed in | Google, counted against your Antigravity quota |
-| `openai` | `OPENAI_API_KEY` (model `gpt-image-2.5-flare`, change with `TRACETOON_OPENAI_MODEL`) | OpenAI, billed to your key |
-| `gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` (model `gemini-nano-banana-2.1`, change with `TRACETOON_GEMINI_MODEL`) | Google, billed to your key |
+| Route                        | Needs                                                                                                       | Prompts go to                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `codex`                      | the Codex CLI, signed in with ChatGPT (`codex login`)                                                       | OpenAI, counted against your Codex usage       |
+| `antigravity` (experimental) | the Antigravity CLI, signed in                                                                              | Google, counted against your Antigravity quota |
+| `openai`                     | `OPENAI_API_KEY` (model `gpt-image-2.5-flare`, change with `TRACETOON_OPENAI_MODEL`)                        | OpenAI, billed to your key                     |
+| `gemini`                     | `GEMINI_API_KEY` or `GOOGLE_API_KEY` (model `gemini-nano-banana-2.1`, change with `TRACETOON_GEMINI_MODEL`) | Google, billed to your key                     |
 
 Prompts contain only the comic's scenes and character descriptions, never code
 or log text. Nothing is sent until you approve a route, and only you can approve
@@ -317,7 +322,7 @@ checkpoints or git-ai notes, the digest says so.
 ## Develop
 
 ```sh
-git clone https://github.com/Tingsters/Showtail ../Showtail   # shared log readers
+bun run dependencies:prepare  # isolated Showtail source at build-dependencies.json
 bun install
 bun test
 bun run typecheck
@@ -326,8 +331,10 @@ bun run bundle      # rebuilds plugin/skills/tracetoon/dist/tracetoon.mjs
 
 Tracetoon builds on [`@showtail/agent-traces`](https://github.com/Tingsters/Showtail/tree/main/packages/agent-traces),
 the log readers and redaction shared with [Showtail](https://github.com/Tingsters/Showtail).
-Until that package is on npm, development expects a Showtail checkout next to
+Until that package is on npm, builds use the locked, isolated checkout in `.tracetoon-deps/Showtail` instead of a mutable checkout next to
 this repo (see `tsconfig.json` paths). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Apache-2.0. The bundled Comic Neue font is under the SIL Open Font License
 (`plugin/skills/tracetoon/assets/fonts/OFL.txt`).
+
+Builds pin shared source in `build-dependencies.json` and compiler/target recipes in `build.config.json`. `bun run build:reproduce` compares bundle and native output hashes from two isolated source snapshots. Output `.build.json` receipts record the exact artifact, compiler executable, input manifest, and target. `bun run dependencies:prepare --source <local-Showtail-repository>` can seed the locked checkout without a network clone.

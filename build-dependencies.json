@@ -1,0 +1,8 @@
+{
+  "schema": "tracetoon.build-dependencies/v1",
+  "showtail": {
+    "repository": "https://github.com/Tingsters/Showtail.git",
+    "revision": "dd0b6f40a09e206c1571a0440f2bdc2b78222c18",
+    "packageTree": "6eb00aad7a5c9aa7d54b6dbe3bdb1cd4cb17957e"
+  }
+}

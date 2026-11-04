@@ -44,6 +44,11 @@ that bypass on your own initiative.
 
 ## Workflow
 
+Keep the selected JSON run ID and artifact paths in every handoff. An explicit
+run failure must not switch to another run. Start with compact evidence and
+notes; expand individual facts when needed rather than loading full traces into
+every role. Keep the researcher, drafter and independent reviewer separate.
+
 0. **Initialize PR preparation.** Reuse the run from the hook redirect, or run
    `tracetoon task begin --json` now and keep its run ID. Use actual host session
    and transcript identifiers when available; otherwise omit them. Hooks can
@@ -57,6 +62,8 @@ that bypass on your own initiative.
      way to record checks the user or repository already requires. Reuse existing
      logs/receipts with their revision limits; do not rerun validation just to
      fill evidence gaps. Missing checks are reported as unknown, not as passes.
+     Serialize `tracetoon check` attempts for the same run; wait for each
+     command to finish before starting the next.
    - `task complete`, `task defer` and `task block` remain optional bookkeeping.
      Reuse unchanged research and art; refresh PR evidence and review when inputs change.
 
@@ -84,7 +91,7 @@ that bypass on your own initiative.
    - When you suggest a command for the user to run themselves, use
      `command.run` from `tracetoon status --json` (the launcher's full path if
      `tracetoon` isn't on their PATH).
-2. **Digest.** `tracetoon digest --json` (add `--run <id>` to reuse the run
+2. **Prepare.** `tracetoon prepare --json` (add `--run <id>` to reuse the run
    from step 0). It prints the run folder and the digest path. Run it as its
    own command, after any `git commit`, never chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
@@ -104,7 +111,10 @@ that bypass on your own initiative.
      their sources and environments distinct, and never infer hosted CI status.
      Historical edit markers can miss shell writes; they do not establish that
      code stayed unchanged. Current matching-content claims need a V receipt.
-3. **Context.** `tracetoon context --json`. Note the PR template, existing PR,
+     In the public body, name the commands and observed results. Keep receipt
+     internals local; do not turn content or environment fingerprints into a
+     general validation assurance. Attribute each result to its actual command.
+3. **Context.** Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).
    - **Researcher phase.** Launch a separate researcher with the host's native
@@ -115,7 +125,9 @@ that bypass on your own initiative.
      drafting. Use its source-backed AI policy and disclosure controls alongside
      the original context. Collection gaps remain visible and advisory.
    - Keep the host as coordinator. Use distinct researcher, drafter and reviewer
-     agents; record their actual host ids. If native delegation is unavailable,
+     agents; record their actual host ids. Start fresh contexts where supported, pass the
+     focused paths in `role-packets.json`, and retain the same drafter for corrections.
+     Do not copy the entire coordinator transcript into every role. If native delegation is unavailable,
      run the phases sequentially with `mode: "inline"` and clearly disclose the
      inline draft / self-review. Never invent an agent id or claim independence.
    - Honor `contribution.offline` throughout research and review. Follow relevant
@@ -138,7 +150,7 @@ that bypass on your own initiative.
 4. **Drafter phase.** Launch a distinct drafter with `digest.json`, `changes.patch`,
    `evidence-notes.md`, `context.json`, `guidance.json`, relevant code read access, and the role prompt in
    [contribution-workflow.md](references/contribution-workflow.md). It reads the
-   trace evidence (using `tracetoon expand <ref>` for detail) and writes `body.md`
+   trace evidence (using `tracetoon expand <refs...>` for batched detail) and writes `body.md`
    in the run folder following
    [references/writing-guide.md](references/writing-guide.md). For a new PR,
    also write a one-line `title.txt`, preserving an explicit user-supplied title,
@@ -161,7 +173,9 @@ that bypass on your own initiative.
      behavior is stated from code, not guessed. Then write a local
      `change-map.json` grouping every change by idea in reading order (see the
      writing guide). It is never posted; `render` checks that it covers every
-     behavior file and shares it with the reviewer.
+     behavior file and shares it with the reviewer. Collect the main changed code and
+     relevant callers with `tracetoon source <paths...> --revision base|head --run <id>`
+     before rendering; this snapshots unchanged branches as well as changed hunks.
    - Within each idea, record material conditions, defaults, fallbacks and public
      options as `behaviorChecks` with `diff:` evidence. A mapped file can contain
      several distinct changes. Use these checks to catch omissions without
@@ -169,14 +183,14 @@ that bypass on your own initiative.
    - Include the strongest relevant motivation supported by a user request,
      decision or commit explanation. Attribute commit-only accounts, preserve
      useful issue/PR/doc references, and expand clipped facts with
-     `tracetoon expand <ref> --run <id>` as needed (`S1`, `D1`, `P1`, `R1`,
+     `tracetoon expand <refs...> --run <id>` as needed (`S1`, `D1`, `P1`, `R1`,
      `V1` or `commit:<sha>`).
 5. **Have the drafter write the comic, then draw it** (skip if `comic` is `off`,
    the user doesn't want one, or `aiPolicy.media` is `prohibited` and `comic`
    isn't `always`; render applies the comic setting either way). Follow
    [references/comic-guide.md](references/comic-guide.md). The comic sits in
    the PR, so its first reader is the reviewer: after reading it they should
-   know *what changed* and smile. Labels with the PR's real names let someone
+   know _what changed_ and smile. Labels with the PR's real names let someone
    outside the repo get it too:
    - compare three distinct short story/composition/cast concepts in local
      `comic-design.json`, following [comic-direction.md](references/comic-direction.md).
@@ -237,7 +251,7 @@ that bypass on your own initiative.
    [contribution-workflow.md](references/contribution-workflow.md).
    The reviewer also checks the description's accuracy (`review.json.bodyReview`).
    First, it reads only the title and body and records what it thinks changed.
-   Then it checks each claim against the diff, looking for counter-evidence,
+   Then it checks each independent factual clause against the diff and source snapshots, including fallbacks and the owning symbols of review pointers, looking for counter-evidence,
    and lists behavior the body leaves out. Re-render to
    validate and display the assessment. Return draftable findings, including
    claims that aren't `supported` and omissions, to the drafter
@@ -303,3 +317,7 @@ that bypass on your own initiative.
 - **Respect privacy.** The digest is already redacted. Don't add paths outside
   the repository, usernames, or anything from other projects, in the text or
   the comic.
+
+Preparation commands do not require repeating passing checks. Reuse matching check receipts, research, and unchanged renders. Valid review findings remain findings after the two correction rounds; never rerun an entire external benchmark to obtain a favorable review. `profiles.jsonl` is optional local timing/counter data, never evidence that a check passed. Older runtimes without `prepare` can use `digest` followed by `context`.
+
+`check` streams progress on stderr while its receipt remains running. A quiet interval alone does not establish a hang. Wait for completion or record an explicit interruption; an interrupted run does not establish a pass.

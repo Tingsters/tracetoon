@@ -6,17 +6,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   BUNDLE_CONTRACTS,
+  NATIVE_CONTRACTS,
   PUBLICATION_CONTRACT,
   PASSIVE_CREATION_CONTRACT,
+  PREPARATION_CONTRACT,
   contractPattern,
   missingContracts,
 } from './packaged-contracts.ts';
 
 const compiled = process.argv.includes('--compiled');
 const root = resolve(import.meta.dir, '..');
-const cases = compiled
-  ? [PUBLICATION_CONTRACT, PASSIVE_CREATION_CONTRACT]
-  : BUNDLE_CONTRACTS;
+const cases = compiled ? NATIVE_CONTRACTS : BUNDLE_CONTRACTS;
 const results = await runTestFiles({
   root,
   files: [...new Set(cases.map((c) => c.file))],
@@ -28,7 +28,8 @@ const results = await runTestFiles({
       ? {
           TRACETOON_TEST_BINARY: resolve(
             root,
-            `dist/tracetoon${process.platform === 'win32' ? '.exe' : ''}`,
+            process.env.TRACETOON_TEST_BINARY ??
+              `dist/tracetoon${process.platform === 'win32' ? '.exe' : ''}`,
           ),
         }
       : {

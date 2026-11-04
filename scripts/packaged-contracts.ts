@@ -17,7 +17,28 @@ export const PASSIVE_CREATION_CONTRACT: PackagedContract = {
   pattern: 'creation publishes without pre-coding registration or wrapped checks',
   minimum: 1,
 };
+export const PREPARATION_CONTRACT: PackagedContract = {
+  id: 'shared-preparation-and-source',
+  file: 'tests/preparation.test.ts',
+  pattern:
+    'shared preparation, immutable code snapshots and batch expansion preserve evidence',
+  minimum: 1,
+};
+export const CHECK_PROGRESS_CONTRACT: PackagedContract = {
+  id: 'live-check-progress',
+  file: 'tests/check-progress.test.ts',
+  pattern: 'CLI streams check progress while the receipt and lock still indicate running',
+  minimum: 1,
+};
+export const NATIVE_CONTRACTS = [
+  PUBLICATION_CONTRACT,
+  PASSIVE_CREATION_CONTRACT,
+  PREPARATION_CONTRACT,
+  CHECK_PROGRESS_CONTRACT,
+];
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
+  CHECK_PROGRESS_CONTRACT,
+  PREPARATION_CONTRACT,
   {
     id: 'trace-selection-and-redaction',
     file: 'tests/flow.test.ts',

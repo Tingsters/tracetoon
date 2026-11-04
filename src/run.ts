@@ -11,11 +11,26 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { count } from './util/profile.ts';
 
 export interface Run {
   id: string;
   dir: string;
+}
+
+/** Legacy scratch runs have no owner; registered runs must stay in their worktree. */
+export function assertRunOwner(run: Run, root: string, branch: string): void {
+  const file = join(run.dir, 'task.json');
+  if (!existsSync(file)) return;
+  const task = JSON.parse(readFileSync(file, 'utf8'));
+  if (
+    (task.root && resolve(task.root) !== resolve(root)) ||
+    (task.branch && task.branch !== branch)
+  )
+    throw new Error(
+      `Run ${run.id} belongs to another worktree or branch. Select its checkout or use another --run.`,
+    );
 }
 
 function runsDir(gitDir: string): string {
@@ -99,14 +114,23 @@ export function findRun(gitDir: string, id?: string): Run {
 
 export function writeJson(run: Run, file: string, data: unknown): string {
   const p = join(run.dir, file);
-  writeFileSync(p, JSON.stringify(data, null, 2) + '\n', 'utf8');
+  const text = JSON.stringify(data, null, 2) + '\n';
+  if (!existsSync(p) || readFileSync(p, 'utf8') !== text) {
+    writeFileSync(p, text, 'utf8');
+    count('artifact.writes');
+  } else count('artifact.writesReused');
   return p;
 }
 
 export function readJson<T>(run: Run, file: string): T | undefined {
   const p = join(run.dir, file);
   if (!existsSync(p)) return undefined;
-  return JSON.parse(readFileSync(p, 'utf8')) as T;
+  const text = readFileSync(p, 'utf8');
+  if (file.startsWith('digest')) {
+    count('evidence.reads');
+    count('evidence.bytes', Buffer.byteLength(text));
+  }
+  return JSON.parse(text) as T;
 }
 
 export function readText(run: Run, file: string): string | undefined {

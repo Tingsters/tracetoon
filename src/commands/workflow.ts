@@ -1,7 +1,7 @@
 import { defaultBase } from '../git/pr.ts';
 import { findRun } from '../run.ts';
 import { beginTask, readTask, repository, saveTask } from '../workflow/state.ts';
-import { executeCheck, receipts } from '../workflow/checks.ts';
+import { executeCheckLive, receipts } from '../workflow/checks.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import { readHost, rememberRepository } from '../workflow/hostSession.ts';
 
@@ -73,7 +73,7 @@ export function taskCmd(
   );
 }
 
-export function checkCmd(
+export async function checkCmd(
   cwd: string,
   command: string[],
   opts: OutOpts & {
@@ -90,10 +90,16 @@ export function checkCmd(
   const task = readTask(run);
   if (task && (task.branch !== repo.branch || task.root !== repo.root))
     throw new UserError('Run checks in this task worktree and branch.');
-  const receipt = executeCheck(repo.root, run, {
+  const receipt = await executeCheckLive(repo.root, run, {
     ...opts,
     name: opts.name ?? command.join(' '),
     command,
+    onStart: (receipt) => {
+      if (receipt.outcome === 'running' && !opts.skip)
+        process.stderr.write(
+          `${receipt.name}: running; command output follows on stderr.\n`,
+        );
+    },
   });
   emit(
     opts,

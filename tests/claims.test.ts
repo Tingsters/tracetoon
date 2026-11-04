@@ -353,6 +353,30 @@ describe('verification claims', () => {
 });
 
 describe('attribution', () => {
+  test('pr8: dogfooding and shared words do not establish a requested evaluation', () => {
+    const d = digest([], {
+      prompts: [
+        {
+          id: 'S1',
+          text: 'Make the preview link clickable. Evaluate preview formatting.',
+          ledToEdits: true,
+        },
+      ],
+    });
+    for (const text of [
+      'The digest fixes support the requested evaluation of summary accuracy.',
+      'The user asked for evaluation of summary accuracy.',
+      'In response to the user request, evaluate summary accuracy.',
+    ])
+      expect(check(text, d).find((f) => f.kind === 'attribution')?.state).toBe(
+        'not established',
+      );
+    expect(
+      check('Per the commit notes, dogfooding exposed summary problems.', d).filter(
+        (f) => f.kind === 'attribution',
+      ),
+    ).toEqual([]);
+  });
   const withDecision = digest([], {
     decisions: [
       {
