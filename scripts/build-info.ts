@@ -5,7 +5,7 @@ import { join, relative, resolve } from 'node:path';
 import { prepareDependencies } from './dependencies.ts';
 
 const root = resolve(import.meta.dir, '..');
-export function buildManifest(check = false) {
+export function buildManifest(check = false, stamp = true) {
   const dependencies = [prepareDependencies()];
   const recipe = JSON.parse(readFileSync(join(root, 'build.config.json'), 'utf8'));
   if (recipe.schema !== 'tracetoon.build-recipe/v1' || recipe.bunVersion !== Bun.version)
@@ -14,9 +14,9 @@ export function buildManifest(check = false) {
     .version as string;
   const pluginPath = join(root, 'plugin/.claude-plugin/plugin.json');
   const plugin = JSON.parse(readFileSync(pluginPath, 'utf8'));
-  if (check && plugin.version !== version)
+  if ((check || !stamp) && plugin.version !== version)
     throw new Error('Plugin version differs from package.json. Run bun run bundle.');
-  if (!check)
+  if (!check && stamp)
     writeFileSync(pluginPath, JSON.stringify({ ...plugin, version }, null, 2) + '\n');
   const paths: string[] = [];
   const walk = (dir: string) => {
@@ -86,7 +86,7 @@ export function buildManifest(check = false) {
       receipt.sha256 !== createHash('sha256').update(readFileSync(bundle)).digest('hex')
     )
       throw new Error('Bundle bytes do not match their build output receipt.');
-  } else {
+  } else if (stamp) {
     writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
     writeFileSync(join(root, 'plugin/skills/tracetoon/VERSION'), version + '\n');
   }

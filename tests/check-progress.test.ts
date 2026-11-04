@@ -13,8 +13,9 @@ test('CLI streams check progress while the receipt and lock still indicate runni
   const command = `console.log('CHECK_PROGRESS_VISIBLE'); const timer=setInterval(()=>{if(require('node:fs').existsSync(${JSON.stringify(release)})){clearInterval(timer);console.log('1 pass');}},20);`;
   const proc = Bun.spawn(
     [
-      process.execPath,
-      cli,
+      ...(process.env.TRACETOON_TEST_BINARY
+        ? [process.env.TRACETOON_TEST_BINARY]
+        : [process.execPath, cli]),
       '--json',
       'check',
       '--run',

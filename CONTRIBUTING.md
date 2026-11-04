@@ -96,11 +96,30 @@ tests and reader probes are not automated humor scores. Artifacts stay in .git/.
 
 Bump only `package.json`, then run `bun run bundle`. The build stamps the skill
 VERSION, plugin version and shared build identity; `bun run build:check` detects
-drift. Commit the generated files, then push a matching `vX.Y.Z` tag after review.
-The release workflow rebuilds the bundle, verifies versions and builds binaries
-and skill zips from that same identity. Never publish a source-only update as
-though it updated installed runtimes. `tracetoon doctor --json` reports actual
-runtime and hook identities, installed skill mismatches and observed hook events.
+drift. Commit the generated files and open a same-repository PR. After all three
+platform suites pass, CI builds the five native targets and six skill archives,
+checks reproducibility, and rehearses the exact candidate bundle and Windows
+executable. It retains an artifact named for the source commit and workflow
+attempt, with per-file checksums, output receipts and a complete skill inventory.
+
+Freeze the artifact's ID, run ID, GitHub digest and local checksums before
+evaluation. Keep the originating source commit and runtime unchanged throughout
+the fixed admission and confirmation stages. An inconclusive or failing gate
+ends the round without a release. Only after passing the full development
+(90 drafts/240 judgments) and held-out (36 drafts/96 judgments) adoption gates,
+commit a reviewed `release-promotion.json` using the
+`tracetoon.release-promotion/v1` contract in
+`.github/scripts/release-assets.ts`. Record both experiment IDs and report hashes,
+the immutable artifact identity, and the manifest, checksums, Windows executable
+and bundle hashes. Private cases and raw model outputs must remain outside Git.
+
+Push the matching `vX.Y.Z` tag after merging the validated changes. The release
+workflow verifies the successful originating CI run, artifact identity, source
+build identity, both adoption records and every asset checksum, then publishes
+those exact bytes. It does not build replacement release files. Install from
+that release and compare the installed runtime and skill against the retained
+inventory. `tracetoon doctor --json` reports actual runtime and hook identities,
+installed skill mismatches and observed hook events.
 
 `bun run build:reproduce` builds bundle and native artifacts from two isolated
 source snapshots. Output receipts bind the artifact hash to the compiler,
