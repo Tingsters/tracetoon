@@ -319,3 +319,5 @@ every role. Keep the researcher, drafter and independent reviewer separate.
   the comic.
 
 Preparation commands do not require repeating passing checks. Reuse matching check receipts, research, and unchanged renders. Valid review findings remain findings after the two correction rounds; never rerun an entire external benchmark to obtain a favorable review. `profiles.jsonl` is optional local timing/counter data, never evidence that a check passed. Older runtimes without `prepare` can use `digest` followed by `context`.
+
+`check` streams progress on stderr while its receipt remains running. A quiet interval alone does not establish a hang. Wait for completion or record an explicit interruption; an interrupted run does not establish a pass.

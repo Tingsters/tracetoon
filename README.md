@@ -190,6 +190,11 @@ earlier coding does not require registration, branch changes or wrapped tests.
 for users who want explicit evidence receipts or bookkeeping. Existing PR edits,
 metadata changes, merges, pushes, help and dry runs are not intercepted.
 
+`tracetoon check` streams command output to stderr while it runs, including in
+JSON mode. The receipt and validation lock stay active until the command exits;
+stdout contains the final receipt. A quiet interval alone does not establish a
+stalled check. Interrupted checks do not establish a passing result.
+
 1. **`tracetoon doctor`** checks git and gh, whether you can push to the repo,
    and whether a comic can be drawn, when PR preparation starts.
 2. **`tracetoon digest`** reads the branch from git (base, commits, the exact

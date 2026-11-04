@@ -31,13 +31,21 @@ export function publicationLock<T>(
     rmSync(path);
     fd = openSync(path, 'wx');
   }
-  try {
-    writeFileSync(fd, JSON.stringify({ pid: process.pid }));
-    return action();
-  } finally {
+  const release = () => {
     closeSync(fd);
     rmSync(path, { force: true });
+  };
+  let result: T;
+  try {
+    writeFileSync(fd, JSON.stringify({ pid: process.pid }));
+    result = action();
+  } catch (error) {
+    release();
+    throw error;
   }
+  if (result instanceof Promise) return result.finally(release) as T;
+  release();
+  return result;
 }
 
 export function recordTiming(run: Run, stage: string, durationMs: number) {
