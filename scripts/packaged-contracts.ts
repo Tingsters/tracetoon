@@ -17,7 +17,15 @@ export const PASSIVE_CREATION_CONTRACT: PackagedContract = {
   pattern: 'creation publishes without pre-coding registration or wrapped checks',
   minimum: 1,
 };
+export const PREPARATION_CONTRACT: PackagedContract = {
+  id: 'shared-preparation-and-source',
+  file: 'tests/preparation.test.ts',
+  pattern:
+    'shared preparation, immutable code snapshots and batch expansion preserve evidence',
+  minimum: 1,
+};
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
+  PREPARATION_CONTRACT,
   {
     id: 'trace-selection-and-redaction',
     file: 'tests/flow.test.ts',

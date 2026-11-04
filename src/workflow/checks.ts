@@ -10,6 +10,8 @@ import type { Run as EvidenceRun } from '../digest/build.ts';
 import { makeScrubber } from '../digest/sanitize.ts';
 import { publicationLock } from './publication.ts';
 import { readSubmittedFile, repoPath } from '../util/repoFiles.ts';
+import { dependencyFingerprint } from './validationInputs.ts';
+import { count } from '../util/profile.ts';
 
 export interface CheckReceipt {
   v: 1;
@@ -27,6 +29,7 @@ export interface CheckReceipt {
   durationMs: number;
   commandSha256?: string;
   inputs?: string[];
+  reuse?: { state: 'executed' | 'reused'; reason: string; matchedName?: string };
 }
 export const receipts = (run: Run): CheckReceipt[] =>
   readLocal<CheckReceipt[]>(join(run.dir, 'checks.json')) ?? [];
@@ -35,10 +38,12 @@ function inputFingerprint(
   root: string,
   inputs: string[],
   content = contentFingerprint(root),
+  dependency = dependencyFingerprint(root),
 ): string {
-  if (!inputs.length) return content;
+  const complete = dependency === null ? content : hash([content, dependency]);
+  if (!inputs.length) return complete;
   return hash([
-    content,
+    complete,
     [...new Set(inputs)].sort().map((path) => {
       if (!repoPath(path))
         throw new Error(
@@ -119,7 +124,14 @@ function executeUnlocked(
   const environment = checkEnvironment();
   const safeName = makeScrubber([root]).text(opts.name);
   const previous = receipts(run);
-  const old = previous.find((c) => c.name === safeName);
+  const old = previous.find(
+    (c) =>
+      c.outcome === 'passed' &&
+      c.fingerprint === fingerprint &&
+      c.environment === environment &&
+      c.cwd === rel &&
+      (c.commandSha256 ?? hash(c.command)) === hash(opts.command),
+  );
   if (
     !opts.force &&
     old?.outcome === 'passed' &&
@@ -128,9 +140,27 @@ function executeUnlocked(
     old.cwd === rel &&
     (old.commandSha256 ?? hash(old.command)) === hash(opts.command) &&
     !opts.skip
-  )
-    return { ...old, reused: true };
+  ) {
+    count('check.reused');
+    const reused = {
+      ...old,
+      name: safeName,
+      reused: true,
+      reuse: {
+        state: 'reused' as const,
+        reason: 'Exact command, inputs, directory and environment match.',
+        matchedName: old.name,
+      },
+    };
+    if (old.name !== safeName)
+      writeLocal(join(run.dir, 'checks.json'), [
+        ...previous.filter((c) => c.name !== safeName),
+        reused,
+      ]);
+    return reused;
+  }
   opts.onStart?.();
+  count('check.executed');
   const startedAt = new Date().toISOString();
   const start = performance.now();
   const scrub = makeScrubber([root]);
@@ -200,6 +230,12 @@ function executeUnlocked(
       .map((s) => s.slice(0, 200)),
     startedAt,
     durationMs: Math.round(performance.now() - start),
+    reuse: {
+      state: 'executed',
+      reason: opts.force
+        ? 'Explicitly forced.'
+        : 'No passing receipt matches the current command, inputs, directory and environment.',
+    },
   };
   writeLocal(join(run.dir, 'checks.json'), [
     ...previous.filter((c) => c.name !== safeName),
@@ -209,13 +245,15 @@ function executeUnlocked(
 }
 export function checkReport(root: string, run: Run) {
   const fingerprint = contentFingerprint(root);
+  const dependency = dependencyFingerprint(root);
   const environment = checkEnvironment();
   return receipts(run).map((c) => ({
     ...c,
     current: (() => {
       try {
         return (
-          c.fingerprint === inputFingerprint(root, c.inputs ?? [], fingerprint) &&
+          c.fingerprint ===
+            inputFingerprint(root, c.inputs ?? [], fingerprint, dependency) &&
           c.environment === environment
         );
       } catch {

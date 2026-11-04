@@ -6,6 +6,10 @@ host's actual delegation tool when available. Record actual invocation ids, not
 persona names. If delegation is unavailable, perform each phase sequentially with
 `mode: "inline"`; the render output must say inline draft / self-review.
 
+Start each role in a fresh context when supported. Pass its focused packet from
+`role-packets.json`; use batch evidence expansion instead of copying full transcripts.
+If context isolation is unavailable, report that limitation honestly.
+
 Pass the resolved repository root and absolute run folder to every role as local
 tool context. Artifact paths below are relative to that run folder; run Tracetoon
 commands from the repository root. Keep those absolute paths out of PR content.
@@ -36,7 +40,7 @@ the user's authorization or request secrets. Keep snapshots and evidence local.
 > unresolved contradictions. Rendering directives require explicit applicable
 > source support. Do not draft the PR or claim requirements have been met.
 
-`tracetoon context` prepares `guidance-request.json` and `changes.patch`, using
+`tracetoon prepare` prepares the digest and context together, including `guidance-request.json` and `changes.patch`, using
 the same submitted revision/working-tree choice as the digest. Root guide seeds
 and ancestor instruction files are discovered locally; the researcher follows
 their links. `tracetoon guidance check --json` validates the handoff. It does not
@@ -132,8 +136,14 @@ existing rendering. Human-only sections must never be filled in by an agent.
       "kind": "behavior",
       "paths": ["src/util/shell.ts"],
       "behaviorChecks": [
-        { "behavior": "Quoted separators stay inside arguments.", "evidence": ["diff:5-12"] },
-        { "behavior": "Splitting resumes after a heredoc terminator.", "evidence": ["diff:20-28"] }
+        {
+          "behavior": "Quoted separators stay inside arguments.",
+          "evidence": ["diff:5-12"]
+        },
+        {
+          "behavior": "Splitting resumes after a heredoc terminator.",
+          "evidence": ["diff:20-28"]
+        }
       ]
     },
     {
@@ -203,12 +213,36 @@ Include `comicReview` in review.json for new comic packets:
   "perceivedJoke": "The actual comic turn, or why none is identifiable",
   "inferredChange": "The software change the image alone suggests, before reading the PR",
   "checks": {
-    "clarity": { "state": "satisfied", "reason": "Concrete reading evidence", "panels": [1] },
-    "continuity": { "state": "inapplicable", "reason": "One static scene", "panels": [1] },
-    "fidelity": { "state": "satisfied", "reason": "Compare supplied facts after image-first pass", "panels": [1] },
-    "payoff": { "state": "uncertain", "reason": "Explain whether there is a joke beyond the lesson", "panels": [1] },
-    "readability": { "state": "satisfied", "reason": "Actual lettering and reading path inspected", "panels": [1] },
-    "relevance": { "state": "satisfied", "reason": "The inferred change matches the PR; labels name the real parts", "panels": [1] }
+    "clarity": {
+      "state": "satisfied",
+      "reason": "Concrete reading evidence",
+      "panels": [1]
+    },
+    "continuity": {
+      "state": "inapplicable",
+      "reason": "One static scene",
+      "panels": [1]
+    },
+    "fidelity": {
+      "state": "satisfied",
+      "reason": "Compare supplied facts after image-first pass",
+      "panels": [1]
+    },
+    "payoff": {
+      "state": "uncertain",
+      "reason": "Explain whether there is a joke beyond the lesson",
+      "panels": [1]
+    },
+    "readability": {
+      "state": "satisfied",
+      "reason": "Actual lettering and reading path inspected",
+      "panels": [1]
+    },
+    "relevance": {
+      "state": "satisfied",
+      "reason": "The inferred change matches the PR; labels name the real parts",
+      "panels": [1]
+    }
   },
   "correction": { "target": "premise", "instruction": "A concrete suggested revision" }
 }
@@ -263,7 +297,7 @@ MSR 2026). The review has three passes:
    `inferredStart` (where you would start reviewing). This checks whether the
    text alone gets the change across. A reader who can't tell what changed
    has learned little from the description.
-2. **Claim audit, after reading the diff.** For each sentence in the body that
+2. **Claim audit, after reading the diff.** For each independent factual clause in the title or body that
    makes a factual claim (behavior, scope, cause, result, example), record a
    verdict:
    - `supported`: the diff or digest shows it;
@@ -274,6 +308,7 @@ MSR 2026). The review has three passes:
    Try to disprove each claim before accepting it: look for the hunk that
    would contradict it, not only one that agrees. Cite `diff:`, `digest:` or
    `author:` evidence; only `unsupported` may have none.
+
 3. **Coverage.** List significant behavior the diff changes that the body
    omits or misdescribes, with `diff:` evidence. Use `change-map.json`, when
    present, including its within-file `behaviorChecks`, as a list of what to look
@@ -318,6 +353,26 @@ into a claim of unchanged code or final-content validation. Preserve the actual
 historical pass with its unknown tested content; current content claims need a
 matching V receipt.
 
+Split compound assertions: a correct first clause does not establish the rest.
+Before accepting "no longer", "all" or "always", inspect defaults, early returns,
+fallback branches and exceptions. Qualify the statement when an unchanged path
+still has the old behavior. Treat each review pointer as a factual assertion:
+check the owning symbol and its callers, not only a filename containing nearby
+logic. Batch-read the original code with `tracetoon source <paths...> --revision
+base|head --run <id>` and cite the emitted `code:<id>:<line[-line]>` references.
+A snapshot establishes the cited source text, not the truth of a semantic verdict.
+Collect sources before rendering; new source evidence requires a refreshed render.
+
+For v2, give each claim a unique `id`, an exact `quote` found at `at` (`title` or
+`body:<line[-line]>`), and `kind`: `behavior`, `validation`, `review-location`, or
+`context`. Several clauses may cite the same body line. Quote each relevant clause
+rather than treating a supported sentence as proof of every assertion it contains.
+Account for every change-map `behaviorChecks` entry in `coverage`: group 1/check 1
+is `B1.1`, group 2/check 1 is `B2.1`, and so on. Each entry names the relevant
+claim IDs or gives an explicit omission explanation. These checkpoints guide
+coverage; independently verify them against the original source. The CLI checks
+quote/reference integrity and coverage accounting, not semantic correctness.
+
 Then compare the cold read with the diff in `transfer`: `satisfied`, or
 `needs-revision` with the gap. Give a concrete `correction` wherever the drafter
 can fix something.
@@ -328,20 +383,24 @@ can fix something.
   "inferredStart": "The new splitter, then its test.",
   "transfer": { "state": "satisfied", "reason": "Matches the main hunk in the splitter." },
   "claims": [
-    { "at": "body:1-2", "claim": "Quoted arguments with spaces stay together", "verdict": "supported", "evidence": ["diff:14-31"] },
-    { "at": "body:4", "claim": "All call sites use the splitter", "verdict": "overstated", "evidence": ["diff:52-58"], "correction": "Say three of the four call sites; the hook still splits by hand." }
+    { "id": "claim1", "at": "body:1-2", "quote": "Quoted arguments with spaces stay together", "kind": "behavior", "claim": "Quoted arguments with spaces stay together", "verdict": "supported", "evidence": ["diff:14-31"] },
+    { "id": "claim2", "at": "body:4", "quote": "All call sites use the splitter", "kind": "behavior", "claim": "All call sites use the splitter", "verdict": "overstated", "evidence": ["diff:52-58"], "correction": "Say three of the four call sites; the hook still splits by hand." }
   ],
   "omissions": [
     { "behavior": "Empty quoted arguments are now kept", "evidence": ["diff:22-24"], "correction": "Mention it, or the test that covers it." }
+  ],
+  "coverage": [
+    { "checkpoint": "B1.1", "claims": ["claim1"] },
+    { "checkpoint": "B1.2", "claims": [], "omission": "The body omits resumed splitting after the heredoc terminator." }
   ]
 }
 ```
 
-### Review contract (v1)
+### Review contract (v2; v1 remains readable)
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "inputFingerprint": "<copy from review-input.json>",
   "drafter": { "mode": "delegated", "agentId": "<actual drafter id>" },
   "reviewer": { "mode": "delegated", "agentId": "<actual reviewer id>" },
@@ -361,7 +420,7 @@ States: `satisfied`, `violated`, `inapplicable`, `missing-evidence`,
 `unresolved-conflict`. Each requirement needs one assessment. `satisfied` needs
 supporting evidence, not just a source stating the rule. Evidence references are
 `title`, `body:<line[-line]>`, `diff:<line[-line]>`, `author:<line[-line]>`,
-`source:<source-id>:<line[-line]>`, or `digest:<fact-id>` (R1, P1, D1, etc.).
+`source:<source-id>:<line[-line]>`, `code:<id>:<line[-line]>`, or `digest:<fact-id>` (R1, P1, D1, etc.).
 Line ranges must exist. Put uncertainty into the assessment rather than asserting
 unverified CI, approval, CLA or human actions. Conflicting applicability assessments
 require updated research or an unresolved-conflict finding. All delegated ids

@@ -7,6 +7,15 @@ export const BUILD_INFO = {
   version: TOOL_VERSION,
   buildId: manifest.buildId,
   revision: manifest.revision,
-  protocol: 1,
-  capabilities: ['task-lifecycle', 'check-receipts', 'pr-creation-routing'],
+  protocol: manifest.protocol,
+  ...('dependencies' in manifest ? { dependencies: manifest.dependencies } : {}),
+  ...('compiler' in manifest ? { compiler: manifest.compiler } : {}),
+  capabilities: [
+    'task-lifecycle',
+    'check-receipts',
+    'pr-creation-routing',
+    'shared-preparation',
+    'batch-evidence',
+    'claim-review-v2',
+  ],
 };

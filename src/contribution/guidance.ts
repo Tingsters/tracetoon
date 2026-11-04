@@ -8,6 +8,7 @@ import { POLICY_FILES, findPrTemplate, type AiPolicy } from '../github/repoConte
 import type { PrTruth } from '../git/pr.ts';
 import { readText, writeJson, type Run } from '../run.ts';
 import { git } from '../util/exec.ts';
+import { count } from '../util/profile.ts';
 import type {
   AgentRole,
   Guidance,
@@ -25,11 +26,20 @@ export function readRepoSource(root: string, location: string): string {
   return readRepoFile(root, location).toString('utf8');
 }
 
-export function submission(truth: PrTruth): {
+interface SubmittedCode {
   patch: string;
   headSha: string;
   sha256: string;
-} {
+}
+const committedSubmissions = new WeakMap<PrTruth, SubmittedCode>();
+export function submission(truth: PrTruth): SubmittedCode {
+  const cached = !truth.usedWorkingTree ? committedSubmissions.get(truth) : undefined;
+  if (cached) {
+    count('submission.reused');
+    return { ...cached };
+  }
+  const headSha =
+    truth.headSha ?? git(truth.toplevel, ['rev-parse', 'HEAD']).stdout.trim();
   const args = [
     'diff',
     '--no-color',
@@ -38,7 +48,7 @@ export function submission(truth: PrTruth): {
     '-U3',
     truth.mergeBase,
   ];
-  if (!truth.usedWorkingTree) args.push('HEAD');
+  if (!truth.usedWorkingTree) args.push(headSha);
   args.push(
     '--',
     '.',
@@ -74,8 +84,9 @@ export function submission(truth: PrTruth): {
       }
     }
   }
-  const headSha = git(truth.toplevel, ['rev-parse', 'HEAD']).stdout.trim();
-  return { patch, headSha, sha256: objectHash({ headSha, patch }) };
+  const resultCode = { patch, headSha, sha256: objectHash({ headSha, patch }) };
+  if (!truth.usedWorkingTree) committedSubmissions.set(truth, { ...resultCode });
+  return resultCode;
 }
 
 export function researchPacket(

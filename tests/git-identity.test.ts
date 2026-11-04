@@ -1,10 +1,11 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultBase, gitIdentity, prTruth } from '../src/git/pr.ts';
 import { repository } from '../src/workflow/state.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
+import { submission } from '../src/contribution/guidance.ts';
 
 // These build real repos and run many git processes; Windows CI runners are slow.
 setDefaultTimeout(60_000);
@@ -24,6 +25,7 @@ describe('repository identity in one git call', () => {
       toplevel: resolve(repo.root),
       gitDir: resolve(repo.root, '.git'),
       branch: 'feature',
+      headSha: g(repo.root, 'rev-parse', 'HEAD'),
       ok: true,
     });
     expect(repository(join(repo.root, 'deep'))).toEqual({
@@ -55,6 +57,24 @@ describe('repository identity in one git call', () => {
 });
 
 describe('base branch detection from one ref listing', () => {
+  test('committed submissions stay pinned while working-tree submissions stay fresh', () => {
+    const repo = makeRepo();
+    const first = repo.commit('a.ts', 'first\n', 'first change');
+    const truth = prTruth(repo.root, { noGh: true });
+    repo.commit('a.ts', 'second\n', 'second change');
+    const pinned = submission(truth);
+    expect(pinned.headSha).toBe(first);
+    expect(pinned.patch).toContain('+first');
+    expect(pinned.patch).not.toContain('+second');
+    pinned.patch = 'caller mutation';
+    expect(submission(truth).patch).toContain('+first');
+    const working = { ...prTruth(repo.root, { noGh: true }), usedWorkingTree: true };
+    const before = submission(working);
+    writeFileSync(join(repo.root, 'a.ts'), 'uncommitted\n');
+    const after = submission(working);
+    expect(after.patch).toContain('+uncommitted');
+    expect(after.sha256).not.toBe(before.sha256);
+  });
   test('origin/HEAD wins, then main, master, trunk, develop, then main by default', () => {
     const repo = makeRepo(); // main + feature
     expect(defaultBase(repo.root)).toBe('main');

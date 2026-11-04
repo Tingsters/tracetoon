@@ -385,6 +385,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     comicSha256: comicSha,
     changeMap: changeMapRaw !== undefined,
     ...(changeMapRaw !== undefined ? { changeMapSha256: objectHash(changeMapRaw) } : {}),
+    ...(readJson(run, 'source-evidence.json')
+      ? { codeSourcesSha256: objectHash(readJson(run, 'source-evidence.json')) }
+      : {}),
     ...(comic && script
       ? {
           comic: {
@@ -408,7 +411,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     packet.patch,
     composition.issues,
   );
-  writeJson(run, 'review-result.json', contributionReview);
+  writeJson(run, 'review-result.json', {
+    ...contributionReview,
+    inputFingerprint: reviewPacket.fingerprint,
+    reportSha256: objectHash(readJson(run, 'review.json') ?? null),
+  });
   // Advisory: check the description's claims against the captured evidence.
   const claims = checkClaims({
     title,

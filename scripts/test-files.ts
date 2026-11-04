@@ -1,12 +1,19 @@
 /** Bound concurrency while giving every test file its own OS process. */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { privateRepoPath } from '../src/util/repoFiles.ts';
 
 // Bun 1.3.14's subprocess-heavy suites fail intermittently under concurrent
 // macOS load, including with fresh processes. Keep full coverage there serial.
-export const TEST_FILE_WORKERS = process.platform === 'darwin' ? 1 : 4;
+export const TEST_FILE_WORKERS =
+  process.platform === 'darwin' ? 1 : process.platform === 'win32' ? 2 : 4;
 
 const TIMES_FILE = 'node_modules/.cache/tracetoon-test-times.json';
 export type TestTimes = Record<string, number>;
@@ -101,6 +108,9 @@ export async function runTestFiles(options: {
   )
     throw new Error('Test execution requires files and a positive worker count');
   let next = 0;
+  const logParent = join(options.root, 'node_modules', '.cache', 'test-logs');
+  mkdirSync(logParent, { recursive: true });
+  const logs = mkdtempSync(join(logParent, 'run-'));
   const results: Array<{ file: string; code: number; ms: number; report?: string }> = [];
   const worker = async () => {
     while (next < options.files.length) {
@@ -108,6 +118,12 @@ export async function runTestFiles(options: {
       const file = options.files[index]!;
       const report = options.reports ? join(options.reports, `${index}.xml`) : undefined;
       const started = performance.now();
+      const logFile = join(logs, `${index}.log`);
+      writeFileSync(logFile, `Test file: ${file}\n`);
+      writeFileSync(
+        join(logs, 'files.json'),
+        JSON.stringify(options.files, null, 2) + '\n',
+      );
       const result = await new Promise<{
         file: string;
         code: number;
@@ -133,9 +149,11 @@ export async function runTestFiles(options: {
           stderr = '';
         child.stdout!.on('data', (chunk) => {
           stdout += String(chunk);
+          appendFileSync(logFile, chunk);
         });
         child.stderr!.on('data', (chunk) => {
           stderr += String(chunk);
+          appendFileSync(logFile, chunk);
         });
         child.once('error', (error) => {
           stderr += error.message;
@@ -162,5 +180,7 @@ export async function runTestFiles(options: {
       worker,
     ),
   );
+  writeFileSync(join(logs, 'results.json'), JSON.stringify(results, null, 2) + '\n');
+  if (!options.quiet) console.log(`Test logs: ${logs}`);
   return results;
 }

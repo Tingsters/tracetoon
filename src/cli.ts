@@ -12,7 +12,14 @@ import {
 import { doctor } from './commands/doctor.ts';
 import { guidanceCheckCmd } from './commands/guidance.ts';
 import { imagesCmd } from './commands/images.ts';
-import { contextCmd, digestCmd, expandCmd, scanCmd } from './commands/digest.ts';
+import {
+  contextCmd,
+  digestCmd,
+  expandCmd,
+  scanCmd,
+  prepareCmd,
+} from './commands/digest.ts';
+import { sourceCmd } from './commands/source.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
 import { publishCmd, renderCmd } from './commands/publish.ts';
 import {
@@ -36,6 +43,7 @@ import { runLifecycle, type LifecycleEvent } from './hook/lifecycle.ts';
 import { assertRunOwner, findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
 import { recordTiming } from './workflow/publication.ts';
+import { saveProfile } from './util/profile.ts';
 
 const list = (v: string) =>
   v
@@ -144,15 +152,37 @@ program
   .option('--exclude <ids>', 'session refs or ids to leave out', list)
   .option('--budget <tokens>', 'approximate token budget', Number)
   .option('--offline', 'do not ask GitHub for an existing PR')
-  .action((o) => digestCmd(cwd, { ...g(), ...o }));
+  .action((o) => {
+    digestCmd(cwd, { ...g(), ...o });
+  });
 
 program
-  .command('expand <ref>')
+  .command('expand <refs...>')
   .description(
     'print full redacted evidence for a session, S/D/P/R/V fact or commit:<sha>',
   )
   .option('--run <id>', 'run id (default: latest)')
   .action((ref, o) => expandCmd(cwd, ref, { ...g(), ...o }));
+
+program
+  .command('prepare')
+  .description('prepare digest and contribution context from one repository snapshot')
+  .option('--run <id>', 'refresh an existing run')
+  .option('--base <ref>', 'base branch')
+  .option('--include <ids>', 'session refs or ids to include', list)
+  .option('--exclude <ids>', 'session refs or ids to exclude', list)
+  .option('--budget <tokens>', 'approximate digest token budget', Number)
+  .option('--offline', 'disable GitHub lookups and external contributor research')
+  .action((o) => {
+    prepareCmd(cwd, { ...g(), ...o });
+  });
+
+program
+  .command('source <paths...>')
+  .description('snapshot base/head source files and emit immutable review references')
+  .option('--run <id>', 'run id (default: latest)')
+  .option('--revision <revision>', 'prepared base or head', 'head')
+  .action((paths, o) => sourceCmd(cwd, paths, { ...g(), ...o }));
 
 program
   .command('context')
@@ -161,7 +191,9 @@ program
   )
   .option('--run <id>', 'run id (default: latest)')
   .option('--offline', 'disable GitHub lookups and require offline contributor research')
-  .action((o) => contextCmd(cwd, { ...g(), ...o }));
+  .action((o) => {
+    contextCmd(cwd, { ...g(), ...o });
+  });
 
 program
   .command('guidance')
@@ -339,15 +371,23 @@ try {
   process.exitCode = exitCodeOf(err);
 } finally {
   if (
-    timedAction?.run &&
-    ['digest', 'context', 'render', 'publish', 'art', 'check'].includes(timedAction.name)
+    timedAction &&
+    [
+      'digest',
+      'prepare',
+      'context',
+      'expand',
+      'source',
+      'render',
+      'publish',
+      'art',
+      'check',
+    ].includes(timedAction.name)
   ) {
     try {
-      recordTiming(
-        findRun(repository(cwd).gitDir, timedAction.run),
-        timedAction.name,
-        performance.now() - timedAction.started,
-      );
+      const run = findRun(repository(cwd).gitDir, timedAction.run);
+      recordTiming(run, timedAction.name, performance.now() - timedAction.started);
+      saveProfile(run, timedAction.name);
     } catch {
       /* timing must not break the workflow */
     }

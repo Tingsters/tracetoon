@@ -8,6 +8,7 @@ import {
   BUNDLE_CONTRACTS,
   PUBLICATION_CONTRACT,
   PASSIVE_CREATION_CONTRACT,
+  PREPARATION_CONTRACT,
   contractPattern,
   missingContracts,
 } from './packaged-contracts.ts';
@@ -15,7 +16,7 @@ import {
 const compiled = process.argv.includes('--compiled');
 const root = resolve(import.meta.dir, '..');
 const cases = compiled
-  ? [PUBLICATION_CONTRACT, PASSIVE_CREATION_CONTRACT]
+  ? [PUBLICATION_CONTRACT, PASSIVE_CREATION_CONTRACT, PREPARATION_CONTRACT]
   : BUNDLE_CONTRACTS;
 const results = await runTestFiles({
   root,

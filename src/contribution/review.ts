@@ -4,6 +4,8 @@ import { bodyReviewLines, parseBodyReview } from './bodyReview.ts';
 import { comicReviewLines, parseComicReview } from './comicReview.ts';
 import { readJson, readText, type Run } from '../run.ts';
 import { digestFact } from '../digest/facts.ts';
+import { codeHash, type CodeSources } from '../commands/source.ts';
+import { repoPath } from '../util/repoFiles.ts';
 import {
   checkRole,
   nonempty,
@@ -33,6 +35,7 @@ export function reviewInput(input: {
   /** The drafter's local change map, shared as a coverage aid when present. */
   changeMap?: boolean;
   changeMapSha256?: string;
+  codeSourcesSha256?: string;
 }): ReviewInput {
   const { generatedAt: _time, ...digest } = input.digest;
   const { generatedAt: _fullTime, ...fullDigest } = input.fullDigest ?? input.digest;
@@ -49,6 +52,7 @@ export function reviewInput(input: {
     comicSha256: input.comicSha256 ?? '',
     ...(input.fullDigest ? { fullDigestSha256: objectHash(fullDigest) } : {}),
     ...(input.changeMapSha256 ? { changeMapSha256: input.changeMapSha256 } : {}),
+    ...(input.codeSourcesSha256 ? { codeSourcesSha256: input.codeSourcesSha256 } : {}),
     ...(input.comic ? { comic: input.comic } : {}),
   };
   return {
@@ -67,6 +71,7 @@ export function reviewInput(input: {
       'final-body.md',
       'approval.json',
       ...(input.changeMap ? ['change-map.json'] : []),
+      ...(input.codeSourcesSha256 ? ['source-evidence.json'] : []),
       ...(input.comic
         ? ['comic-observation-input.json', input.comic.imagePath, input.comic.scriptPath]
         : []),
@@ -91,7 +96,25 @@ function evidenceExists(
   digest: TraceDigest,
   patch: string,
   author: string,
+  code?: CodeSources,
 ): boolean {
+  const codeRef = /^code:([a-f0-9]{24}):(\d+)(?:-(\d+))?$/.exec(ref);
+  if (codeRef) {
+    const file = code?.files.find((file) => file.id === codeRef[1]);
+    const start = Number(codeRef[2]),
+      end = Number(codeRef[3] ?? codeRef[2]);
+    return (
+      !!file &&
+      repoPath(file.path) &&
+      (file.revision === digest.pr.mergeBase ||
+        (!digest.pr.usedWorkingTree && file.revision === input.headSha)) &&
+      file.id === codeHash(`${file.revision}\0${file.path}\0${file.blob}`).slice(0, 24) &&
+      file.sha256 === codeHash(file.content) &&
+      start >= 1 &&
+      end >= start &&
+      end <= file.content.split(/\r?\n/).length
+    );
+  }
   if (ref === 'title') return true;
   if (/^commit:[a-f0-9]{7,40}$/i.test(ref)) return !!digestFact(digest, ref);
   const fact = /^digest:([^:]+)$/.exec(ref);
@@ -164,8 +187,10 @@ export function loadReview(
   try {
     const value: unknown = JSON.parse(raw);
     requireThat(
-      isRecord(value) && value.v === 1 && nonempty(value.inputFingerprint),
-      'review.json needs v: 1 and inputFingerprint.',
+      isRecord(value) &&
+        (value.v === 1 || value.v === 2) &&
+        nonempty(value.inputFingerprint),
+      'review.json needs v: 1 or 2 and inputFingerprint.',
     );
     checkRole(value.drafter);
     checkRole(value.reviewer);
@@ -221,11 +246,44 @@ export function loadReview(
     const seen = new Set<string>();
     const author = readText(run, 'author.md') ?? '';
     const fullDigest = readJson<TraceDigest>(run, 'digest-full.json') ?? digest;
+    const code = readJson<CodeSources>(run, 'source-evidence.json');
+    if ((code ? objectHash(code) : undefined) !== input.codeSourcesSha256)
+      return {
+        ...base,
+        mode,
+        status: 'stale',
+        issues: [
+          ...base.issues,
+          'Code evidence changed after this render; render and review the updated packet.',
+        ],
+      };
+    const map = readJson<{ groups?: { kind?: string; behaviorChecks?: unknown[] }[] }>(
+      run,
+      'change-map.json',
+    );
+    const missingCheckpoints =
+      value.v === 2 &&
+      (!map ||
+        (map.groups ?? []).some(
+          (group) => group.kind === 'behavior' && !group.behaviorChecks?.length,
+        ));
+    if (missingCheckpoints)
+      base.issues.push(
+        'Review v2 needs material behavior checkpoints for each behavior group in change-map.json.',
+      );
+    const checkpoints = (map?.groups ?? []).flatMap((group, i) =>
+      (group.behaviorChecks ?? []).map((_, j) => `B${i + 1}.${j + 1}`),
+    );
     const bodyReview =
       value.bodyReview === undefined
         ? undefined
-        : parseBodyReview(value.bodyReview, (ref) =>
-            evidenceExists(ref, input, guidance, fullDigest, patch, author),
+        : parseBodyReview(
+            value.bodyReview,
+            (ref) =>
+              evidenceExists(ref, input, guidance, fullDigest, patch, author, code),
+            value.v === 2
+              ? { body: input.body, title: input.title, checkpoints }
+              : undefined,
           );
     if (!bodyReview)
       base.issues.push(
@@ -253,7 +311,7 @@ export function loadReview(
       );
       for (const ref of finding.evidence)
         requireThat(
-          evidenceExists(ref, input, guidance, fullDigest, patch, author),
+          evidenceExists(ref, input, guidance, fullDigest, patch, author, code),
           `Unknown evidence reference: ${ref}`,
         );
       const rule = base.requirements.find((r) => r.id === finding.requirement)!;
@@ -295,6 +353,7 @@ export function loadReview(
       mode,
       status:
         incomplete ||
+        missingCheckpoints ||
         !bodyReview ||
         (input.comic && !comicReview) ||
         (input.comic && !comicReview?.checks.relevance) ||

@@ -1,6 +1,8 @@
 /dist/
 node_modules/
+.tracetoon-deps/
 *.log
 *.tmp.ts
 *.tmp.png
 plugin/skills/tracetoon/bin/tracetoon-*-*
+plugin/skills/tracetoon/dist/*.build.json

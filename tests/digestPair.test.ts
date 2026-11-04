@@ -1,8 +1,11 @@
-import { expect, test } from 'bun:test';
+import { expect, setDefaultTimeout, test } from 'bun:test';
 import { buildDigest, buildDigestPair, compactDigest } from '../src/digest/build.ts';
 import { prTruth } from '../src/git/pr.ts';
 import { makeRepo } from './helpers.ts';
 import type { SessionMatch } from '../src/correlate/correlate.ts';
+// These tests create repositories and resolve real Git history before measuring
+// the pure digest operation. Windows process startup exceeds Bun's 5s default.
+setDefaultTimeout(30_000);
 
 test('paired projections retain redacted full evidence and never share mutable arrays', () => {
   const repo = makeRepo();
