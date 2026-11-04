@@ -219,6 +219,17 @@ export function verifyAssets(out: string): AssetManifest {
     throw Error('Candidate bundle receipt is invalid.');
   return manifest;
 }
+export function verifyCandidateInputs(out: string, skill?: string, revision?: string) {
+  const manifest = verifyAssets(out);
+  if (revision && manifest.sourceRevision !== revision)
+    throw Error('Candidate source differs from the requested revision.');
+  if (
+    skill &&
+    JSON.stringify(skillInventory(skill)) !== JSON.stringify(manifest.skillFiles)
+  )
+    throw Error('Extracted candidate skill differs from the retained inventory.');
+  return manifest;
+}
 export function validatePromotion(p: Promotion) {
   if (
     p.schema !== 'tracetoon.release-promotion/v1' ||
@@ -297,7 +308,21 @@ if (import.meta.main) {
         process.env.GITHUB_SHA ??
         Bun.spawnSync(['git', 'rev-parse', 'HEAD']).stdout.toString().trim(),
     );
-  else if (mode === 'verify') {
+  else if (mode === 'assets') {
+    const assets = verifyCandidateInputs(
+      resolve(dir!),
+      promotionPath ? resolve(promotionPath) : undefined,
+      process.env.TRACETOON_BUILD_REVISION,
+    );
+    console.log(
+      JSON.stringify({
+        version: assets.version,
+        buildId: assets.buildId,
+        sourceRevision: assets.sourceRevision,
+        windowsSha256: sha(join(resolve(dir!), 'tracetoon-windows-x64.exe')),
+      }),
+    );
+  } else if (mode === 'verify') {
     const p: Promotion = JSON.parse(readFileSync(resolve(promotionPath!), 'utf8'));
     const assets = verifyPromotion(resolve(dir!), p, buildManifest(false, false), tag!);
     if (
@@ -330,6 +355,6 @@ if (import.meta.main) {
     else console.log(JSON.stringify(values));
   } else
     throw Error(
-      'Use inventory <assets>, metadata <promotion>, or verify <assets> <promotion> <tag>.',
+      'Use inventory <assets>, assets <assets> [skill], metadata <promotion>, or verify <assets> <promotion> <tag>.',
     );
 }

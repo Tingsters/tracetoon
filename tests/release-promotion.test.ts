@@ -6,6 +6,7 @@ import {
   SUPPORTED_TARGETS,
   verifyArtifactMetadata,
   verifyAssets,
+  verifyCandidateInputs,
   verifyPromotion,
   writeInventory,
   type Promotion,
@@ -111,6 +112,17 @@ test('promotion verifies the exact frozen bytes and requires both full adoption 
   );
   writeFileSync(join(out, 'tracetoon-windows-x64.exe'), 'different bytes');
   expect(() => verifyAssets(out)).toThrow('checksum mismatch');
+});
+test('retained candidate inputs bind extracted skill bytes and the tested source revision', () => {
+  const { out, skill, manifest } = fixture();
+  expect(verifyCandidateInputs(out, skill, 'c'.repeat(40)).buildId).toBe(
+    manifest.buildId,
+  );
+  expect(() => verifyCandidateInputs(out, skill, 'd'.repeat(40))).toThrow(
+    'requested revision',
+  );
+  writeFileSync(join(skill, 'SKILL.md'), 'changed instructions');
+  expect(() => verifyCandidateInputs(out, skill)).toThrow('retained inventory');
 });
 test('artifact API identity, inventory paths and receipt identities cannot drift at publication', () => {
   const { out, promotion } = fixture();
