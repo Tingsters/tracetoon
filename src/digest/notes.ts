@@ -171,6 +171,25 @@ export function evidenceNotes(
       lines.push(`- commit:${c.sha}: ${c.body!.slice(0, 1200)}`);
     lines.push('');
   }
+  const traced = digest.files.filter(
+    (f) => (f.role ?? 'behavior') === 'behavior' || f.role === 'tests',
+  );
+  if (traced.some((f) => f.facts || f.checksAfterLastEdit)) {
+    lines.push('## Where each change came from (evidence graph)');
+    for (const f of traced.slice(0, 15)) {
+      const from = f.facts?.length ? f.facts.join(', ') : 'no captured prompt';
+      const checks = f.checksAfterLastEdit?.length
+        ? `checks after its last captured edit: ${f.checksAfterLastEdit.join(', ')}`
+        : 'no check captured after its last edit';
+      lines.push(`- ${f.path}: ${from}; ${checks}`);
+    }
+    if (traced.length > 15) lines.push(`- ${traced.length - 15} more files.`);
+    lines.push(
+      '',
+      'Ask `tracetoon query why <path>` for the turns, diff refs and commits behind a file, `tracetoon query unverified` for files no check followed, and `tracetoon query outline` for the whole map.',
+      '',
+    );
+  }
   const byRole = new Map<string, string[]>();
   for (const f of digest.files) {
     const role = f.role ?? 'behavior';

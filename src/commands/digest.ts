@@ -25,6 +25,7 @@ import { evidenceNotes } from '../digest/notes.ts';
 import { repository, workFingerprint } from '../workflow/state.ts';
 import type { Run } from '../run.ts';
 import { count } from '../util/profile.ts';
+import { graphEnricher, saveGraph, type GraphOutcome } from '../graph/evidence.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -92,10 +93,12 @@ export function digestCmd(
   };
   // Both digests describe the same truth; read its provenance once.
   const interop = detectInterop(truth);
+  const graph: GraphOutcome = {};
   const { digest, full, extractionMs, projectionMs } = buildDigestPair(truth, matches, {
     ...build,
     interop,
     budgetTokens: opts.budget ?? config.budgetTokens,
+    enrich: graphEnricher(truth, graph),
   });
   try {
     recordTiming(run, 'digest-extraction', extractionMs);
@@ -165,6 +168,7 @@ export function digestCmd(
   writeJson(run, 'session-selection.json', build);
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
+  saveGraph(run, graph);
   writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full), 'utf8');
   const captured = submissionSnapshot(truth);
   writeJson(run, 'submission.json', captured);
@@ -205,7 +209,7 @@ export function digestCmd(
           .filter(Boolean)
           .join('\n'),
     );
-  return { truth, run, digest, full, captured };
+  return { truth, run, digest, full, captured, graph: graph.graph };
 }
 
 export function expandCmd(
@@ -379,8 +383,16 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
       'evidence-notes.md',
       'change-map.json',
     ],
+    graph: prepared.graph
+      ? {
+          path: 'evidence-graph.json',
+          stats: prepared.graph.stats,
+          drafter: ['outline', 'why <path>', 'turn <S#>', 'unverified'],
+          reviewer: ['unverified', 'unexplained', 'why <path|H#>', 'stale <R#>'],
+        }
+      : null,
     instructions:
-      'Use fresh role contexts where supported. Read the cold-read packet before the reviewer evidence. Expand referenced evidence in batches; missing evidence remains unknown.',
+      'Use fresh role contexts where supported. Read the cold-read packet before the reviewer evidence. Expand referenced evidence in batches; missing evidence remains unknown. Drafter and reviewer: ask the evidence graph with `tracetoon query <name> --run <id>` (start with `outline`) before reading the whole patch; its diff refs are citable as change-map behaviorChecks evidence.',
   };
   writeJson(prepared.run, 'role-packets.json', roles);
   emit(

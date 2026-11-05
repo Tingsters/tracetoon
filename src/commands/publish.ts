@@ -17,7 +17,8 @@ import {
   reviewLine,
   reviewSummary,
 } from '../contribution/review.ts';
-import type { GuidanceRequest } from '../contribution/types.ts';
+import type { GuidanceRequest, ReviewInput } from '../contribution/types.ts';
+import { loadGraphReview } from '../graph/evidence.ts';
 import {
   existsSync,
   readdirSync,
@@ -373,6 +374,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       existsSync(join(truth.toplevel, path)),
   });
   writeJson(run, 'change-map-checks.json', changeMapFindings);
+  const graphLeads = loadGraphReview(run);
   const reviewPacket = reviewInput({
     title,
     body,
@@ -388,6 +390,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     ...(readJson(run, 'source-evidence.json')
       ? { codeSourcesSha256: objectHash(readJson(run, 'source-evidence.json')) }
       : {}),
+    ...(graphLeads ? { graphLeads } : {}),
     ...(comic && script
       ? {
           comic: {
@@ -483,6 +486,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         titleNote ? `Note: ${titleNote}` : '',
         titleLine(titleFindings),
         claimLine(claims),
+        graphLine(graphLeads),
         changeMapFindings.length
           ? `Change map (advisory):\n${changeMapFindings.map((f) => `  - ${f.text}`).join('\n')}`
           : '',
@@ -530,6 +534,26 @@ function policyLines(policy: AiPolicy, mediaBanned: boolean): string {
   for (const i of policy.prInstructions ?? [])
     out.push(`Repo instruction (${i.file}:${i.line}): ${i.text}`);
   return out.join('\n');
+}
+
+/** What the evidence graph wants the reviewer to look at, in one or two lines. */
+function graphLine(leads: ReviewInput['graphLeads'] | undefined): string {
+  if (!leads || (!leads.unverified.length && !leads.unexplained.length)) return '';
+  const parts = [
+    leads.unverified.length
+      ? `${leads.unverified.length} behavior/test file(s) with no passing check after their last captured edit (${leads.unverified
+          .slice(0, 3)
+          .map((u) => u.file)
+          .join(', ')}${leads.unverified.length > 3 ? ', …' : ''})`
+      : '',
+    leads.unexplained.length
+      ? `${leads.unexplained.length} hunk(s) no captured agent edit explains (${leads.unexplained
+          .slice(0, 3)
+          .map((u) => u.diff)
+          .join(', ')}${leads.unexplained.length > 3 ? ', …' : ''})`
+      : '',
+  ].filter(Boolean);
+  return `Evidence graph (advisory): ${parts.join('; ')}. The reviewer checks the body claims nothing about these it can't support; details: tracetoon query unverified|unexplained.`;
 }
 
 /** One advisory line about the claim check, with the claims worth a look. */

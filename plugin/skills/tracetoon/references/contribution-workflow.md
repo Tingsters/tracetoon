@@ -124,6 +124,16 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > For combined shell invocations, expand the full command and output and map
 > each outcome to its producing command. Keep receipt metadata in the local map;
 > draft concrete commands and results without general verification assurances.
+>
+> Navigate the evidence with the run's evidence graph before reading the whole
+> patch. `tracetoon query outline --run <id>` lists every changed file with the
+> prompts whose edits survive in it, the commits that touched it and the checks
+> run after its last captured edit. `query why <path>` gives the turns behind a
+> file (prompt ids, that turn's decisions and plans) and its hunks as diff refs
+> (`diff:120-141`): read those hunks and cite them as behaviorChecks evidence.
+> `query turn <S#>` shows what one request led to, including dead-end edits.
+> Do not describe a file in `query unverified` as tested or verified. Graph
+> links are captured evidence; a missing link means not captured, not absent.
 
 ### change-map.json (local, never posted)
 
@@ -309,6 +319,14 @@ MSR 2026). The review has three passes:
    would contradict it, not only one that agrees. Cite `diff:`, `digest:` or
    `author:` evidence; only `unsupported` may have none.
 
+   Also read `graphLeads` in review-input.json: behavior and test files no
+   passing check followed after their last captured edit, and hunks no captured
+   edit explains. In the claim audit, a verification claim that covers an
+   unverified file is not `supported`, and a user request or agent session
+   credited with an unexplained hunk needs other evidence (a commit explanation,
+   `author.md`). Use `tracetoon query why <path|H#> --run <id>` to check who
+   asked for a change and `query stale <R#>` to see which files a cited run
+   did not see.
 3. **Coverage.** List significant behavior the diff changes that the body
    omits or misdescribes, with `diff:` evidence. Use `change-map.json`, when
    present, including its within-file `behaviorChecks`, as a list of what to look
