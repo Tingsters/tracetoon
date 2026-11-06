@@ -6,8 +6,8 @@ host's actual delegation tool when available. Record actual invocation ids, not
 persona names. If delegation is unavailable, perform each phase sequentially with
 `mode: "inline"`; the render output must say inline draft / self-review.
 Drafting inline, you follow the drafter prompt below yourself, including its
-evidence-graph steps (`tracetoon query outline`, then `query why` per behavior
-file); they apply to whoever drafts, not only to a delegated drafter.
+evidence-brief steps (`tracetoon query brief`); they apply to whoever drafts,
+not only to a delegated drafter.
 
 Start each role in a fresh context when supported. Pass its focused packet from
 `role-packets.json`; use batch evidence expansion instead of copying full transcripts.
@@ -128,18 +128,21 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > each outcome to its producing command. Keep receipt metadata in the local map;
 > draft concrete commands and results without general verification assurances.
 >
-> Start with the run's evidence graph, and use it as an index into the
-> evidence, not a replacement for reading it. `tracetoon query outline --run <id>`
-> lists every changed file with the prompts whose edits survive in it, the
-> commits that touched it and the checks run after its last captured edit, then
-> every commit, marking those with a message body. `query why <path>` gives the
-> turns behind a file (prompt ids, that turn's decisions and plans), every hunk
-> as a diff ref (`diff:120-141`) with whether a captured edit explains it, and
-> the commits that touched it with their bodies. Read every behavior hunk and
-> cite them as behaviorChecks evidence; expand every commit with a body, because
-> commit messages often hold the motivation. `query turn <S#>` shows what one
-> request led to, including dead-end edits. Do not describe a file in
-> `query unverified` as tested or verified. Graph links are captured evidence; a
+> Draft from the run's evidence brief (`tracetoon query brief --run <id>`, also
+> printed by `prepare` and at the top of `evidence-notes.md`). `changes` groups
+> the diff into change units and names the files and symbols that own each one:
+> describe each unit there, behavior first, and point reviewers at the owning
+> symbol, not the largest file. `requests` and `commitMessages` give the reasons:
+> a commit-message sentence speaks for its own commit only, so never stretch it
+> over other changes ("all of these were found while…"), and where a change has
+> no captured reason, say what it does, not why. `validation` dates every check
+> against the edits: report a check that ran before later edits as a result
+> from before them, and a result only a commit message reports as the message's
+> claim, not a run. State its `limits` honestly and follow its `avoid` rules.
+> Read every behavior hunk the brief cites (diff refs like `diff:120-141`) and
+> cite them as behaviorChecks evidence. `query why <path>` drills into one file
+> and `query turn <S#>` into one request, including dead-end edits. Do not
+> describe a file in `query unverified` as tested or verified. Graph links are captured evidence; a
 > missing link means not captured, not absent. Before writing that a check was
 > not run, expand the session's commands: a chained command can hold several
 > checks.

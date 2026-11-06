@@ -18,7 +18,8 @@ import {
   reviewSummary,
 } from '../contribution/review.ts';
 import type { GuidanceRequest, ReviewInput } from '../contribution/types.ts';
-import { graphOutline, loadGraph, loadGraphReview } from '../graph/evidence.ts';
+import { graphClaimFacts } from '../graph/claims.ts';
+import { graphBrief, loadGraph, loadGraphReview } from '../graph/evidence.ts';
 import {
   existsSync,
   readdirSync,
@@ -420,12 +421,14 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     reportSha256: objectHash(readJson(run, 'review.json') ?? null),
   });
   // Advisory: check the description's claims against the captured evidence.
+  const storedGraph = loadGraph(run);
   const claims = checkClaims({
     title,
     body: bodyMd,
     digest,
     root: truth.toplevel,
     authorText: readText(run, 'author.md'),
+    graph: storedGraph ? graphClaimFacts(storedGraph) : undefined,
   });
   writeJson(run, 'claims.json', claims);
   const notes = contextNotes(digest, bodyMd, claims);
@@ -434,10 +437,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const writeYourself =
     ctx.aiPolicy.text === 'prohibited' ||
     ctx.aiPolicy.text === 'author-written-recommended';
-  const storedGraph = loadGraph(run);
   const outline = evidenceNotes(
     readJson<TraceDigest>(run, 'digest-full.json') ?? digest,
-    storedGraph ? graphOutline(storedGraph) : undefined,
+    storedGraph ? graphBrief(storedGraph) : undefined,
   );
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
   writeJson(run, 'approval.json', approval);
@@ -452,7 +454,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const stale = digestStale(truth.toplevel, digest);
   const graphHint =
     digest.graph && !graphQueried(run)
-      ? 'The evidence graph was not queried in this run. Run `tracetoon query outline`, then `tracetoon query why <path>` for each behavior file, check the draft against what they show, and render again.'
+      ? 'Check the draft against the evidence brief (`tracetoon query brief`, also at the top of evidence-notes.md): every claim within its change, reason and validation row, nothing its avoid rules forbid. Then render again.'
       : undefined;
   emit(
     opts,

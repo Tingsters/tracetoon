@@ -17,6 +17,7 @@ passing receipt supports only the command and environment that were checked.
 | `pr.dirty` | Uncommitted changes existed: a run may have tested code that isn't in the PR |
 | `stats.agentMatchedPct` | Share of non-trivial added lines that match a captured agent edit |
 | `stats.commitsMadeInSessions` / `stats.commits` | Commits a session made (printed by its git commands, or its message in a `git commit`) |
+| `stats.about` | These numbers are Tracetoon's line matching for the trace section, not authorship: don't report them in the description |
 | `sessions[].ref` | Stable hashed id; use it with `--include`, `--exclude`, `expand` |
 | `sessions[].band` | `included`, or `ambiguous` (ask the user) |
 | `sessions[].score`, `reasons` | Why the session was matched |
@@ -58,6 +59,7 @@ commits each session made. Ask it with `tracetoon query <name> --run <id>`:
 
 | Query | Answers |
 |---|---|
+| `brief` | Start here: change units with their owning symbols, the requests and commit-message sentences behind each (scoped to their commit), checks dated against the edits, limits, and what not to claim |
 | `outline` | Every changed file: role, size, hunks, prompts whose edits survive in it, commits, checks after its last edit |
 | `why <path\|path:line\|H#\|diff:N>` | The turns behind a file or hunk (prompt, decisions, plans, diff refs), its commits and its checks |
 | `verified [path]` / `unverified` | Check runs after each file's last captured edit / behavior and test files with no passing one |

@@ -27,7 +27,7 @@ import type { Run } from '../run.ts';
 import { count } from '../util/profile.ts';
 import {
   graphEnricher,
-  graphOutline,
+  graphBrief,
   saveGraph,
   type GraphOutcome,
 } from '../graph/evidence.ts';
@@ -99,11 +99,18 @@ export function digestCmd(
   // Both digests describe the same truth; read its provenance once.
   const interop = detectInterop(truth);
   const graph: GraphOutcome = {};
+  // Check receipts first, so the evidence graph sees which checks are fresh.
+  let checksReport: ReturnType<typeof checkReport> | undefined;
+  let verification: ReturnType<typeof receiptEvidence> | undefined;
+  if (readTask(run)) {
+    checksReport = checkReport(truth.toplevel, run);
+    verification = receiptEvidence(truth.toplevel, run, checksReport);
+  }
   const { digest, full, extractionMs, projectionMs } = buildDigestPair(truth, matches, {
     ...build,
     interop,
     budgetTokens: opts.budget ?? config.budgetTokens,
-    enrich: graphEnricher(truth, graph),
+    enrich: graphEnricher(truth, graph, verification),
   });
   try {
     recordTiming(run, 'digest-extraction', extractionMs);
@@ -111,8 +118,8 @@ export function digestCmd(
   } catch {
     // Optional telemetry must not prevent creation of the evidence packet.
   }
-  if (readTask(run)) {
-    const report = checkReport(truth.toplevel, run);
+  if (checksReport && verification) {
+    const report = checksReport;
     const validation = report.map((c) => ({
       name: c.name,
       command: c.command.join(' '),
@@ -121,7 +128,6 @@ export function digestCmd(
       reason: c.reason,
       durationMs: c.durationMs,
     }));
-    const verification = receiptEvidence(truth.toplevel, run, report);
     digest.verification = full.verification = verification;
     digest.checksSha = full.checksSha = receipts(run).length
       ? fileHash(run, 'checks.json')
@@ -174,8 +180,8 @@ export function digestCmd(
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
   saveGraph(run, graph);
-  const outline = graph.graph ? graphOutline(graph.graph) : undefined;
-  writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full, outline), 'utf8');
+  const brief = graph.graph ? graphBrief(graph.graph) : undefined;
+  writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full, brief), 'utf8');
   const captured = submissionSnapshot(truth);
   writeJson(run, 'submission.json', captured);
   const ambiguous = digest.sessions.filter((s) => s.band === 'ambiguous');
@@ -215,7 +221,7 @@ export function digestCmd(
           .filter(Boolean)
           .join('\n'),
     );
-  return { truth, run, digest, full, captured, graph: graph.graph, outline };
+  return { truth, run, digest, full, captured, graph: graph.graph, brief };
 }
 
 export function expandCmd(
@@ -355,7 +361,7 @@ export function contextCmd(
  * body, past the skill's drafter instructions.
  */
 export function graphNext(run: string): string {
-  return `before drafting, map the change with the evidence graph: \`tracetoon query outline --run ${run}\`, then \`tracetoon query why <path> --run ${run}\` for each behavior file. Then read every behavior hunk it lists and expand commits marked with a message body.`;
+  return `draft from the evidence brief below (\`tracetoon query brief --run ${run}\`): describe each change unit at the symbols that own it, give the reasons its requests and its own commit's sentences give, report validation as the brief dates it, state its limits, and follow its avoid rules. Read the diff refs it cites before describing a hunk; \`tracetoon query why <path> --run ${run}\` drills into one file.`;
 }
 
 export function prepareCmd(cwd: string, opts: DigestOpts) {
@@ -402,12 +408,12 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
       ? {
           path: 'evidence-graph.json',
           stats: prepared.graph.stats,
-          drafter: ['outline', 'why <path>', 'turn <S#>', 'unverified'],
+          drafter: ['brief', 'why <path>', 'turn <S#>', 'unverified'],
           reviewer: ['unverified', 'unexplained', 'why <path|H#>', 'stale <R#>'],
         }
       : null,
     instructions:
-      'Use fresh role contexts where supported. Read the cold-read packet before the reviewer evidence. Expand referenced evidence in batches; missing evidence remains unknown. Drafter and reviewer: ask the evidence graph with `tracetoon query <name> --run <id>` (start with `outline`) before reading the whole patch; its diff refs are citable as change-map behaviorChecks evidence.',
+      'Use fresh role contexts where supported. Read the cold-read packet before the reviewer evidence. Expand referenced evidence in batches; missing evidence remains unknown. Drafter and reviewer: ask the evidence graph with `tracetoon query <name> --run <id>` (start with `brief`) before reading the whole patch; its diff refs are citable as change-map behaviorChecks evidence.',
   };
   writeJson(prepared.run, 'role-packets.json', roles);
   emit(
@@ -416,7 +422,7 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
       run: prepared.run.id,
       ...(prepared.graph ? { next: graphNext(prepared.run.id) } : {}),
       // One JSON line, so piping through `head` still shows the whole map.
-      ...(prepared.outline ? { graphOutline: prepared.outline } : {}),
+      ...(prepared.brief ? { brief: prepared.brief } : {}),
       runDir: prepared.run.dir,
       rolePackets: join(prepared.run.dir, 'role-packets.json'),
       digestPath: join(prepared.run.dir, 'digest.json'),
@@ -427,7 +433,7 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
       [
         `Run ${prepared.run.id}: digest, context and role-packets.json prepared from one snapshot.`,
         prepared.graph ? `Next: ${graphNext(prepared.run.id)}` : '',
-        prepared.outline ? `Evidence graph outline:\n${prepared.outline}` : '',
+        prepared.brief ? `Evidence brief:\n${prepared.brief}` : '',
       ]
         .filter(Boolean)
         .join('\n'),

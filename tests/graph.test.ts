@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { reviewInput } from '../src/contribution/review.ts';
 import { compactDigest, type Run, type TraceDigest } from '../src/digest/build.ts';
 import { checkClaims, type ClaimInput } from '../src/digest/claims.ts';
-import { patchHunks } from '../src/graph/build.ts';
+import { commitSentences, definedSymbol, patchHunks } from '../src/graph/build.ts';
 import { toToon } from '../src/graph/toon.ts';
 import { deriveFromGraphJson } from '../src/graph/derive.ts';
 import { GraphEngine, graphEngineAvailable, withGraph } from '../src/graph/engine.ts';
@@ -208,6 +208,126 @@ describe('evidence graph', () => {
     expect(outline.stdout).toMatch(
       /\n  src\/manual\.ts,behavior,1,0,1,1,"",[0-9a-f]{12},no captured edit\n/,
     );
+  });
+
+  test('the brief groups changes, scopes reasons and dates checks', () => {
+    const { repo, cli } = scenario();
+    const r = cli(repo.root, '--json', 'digest', '--offline');
+    const b = cli(repo.root, '--json', 'query', 'brief', '--run', r.json.run);
+    expect(b.code).toBe(0);
+    const sec = (t: string) => b.json.sections.find((x: any) => x.title === t).rows;
+    expect(b.json.sections.map((x: any) => x.title)).toEqual([
+      'changes',
+      'requests',
+      'commitMessages',
+      'validation',
+      'limits',
+      'avoid',
+    ]);
+    const changes = sec('changes');
+    const of = (file: string) =>
+      changes.find((c: any) => c.where.some((w: string) => w.startsWith(file)));
+    // One commit, so changes split by the request whose edits survive in them.
+    expect(of('src/greet.ts').requests).toEqual(['S1']);
+    expect(of('src/greet.ts').where).toEqual(['src/greet.ts (greet)']);
+    expect(of('src/farewell.ts').requests).toEqual(['S2']);
+    expect(of('src/farewell.ts')).not.toBe(of('src/greet.ts'));
+    expect(sec('requests').map((x: any) => x.ref)).toEqual(['S1', 'S2']);
+    expect(sec('requests')[0].text).toContain('greet helper');
+    // The last run of each command; it ran before farewell's final edit.
+    const v = sec('validation');
+    expect(v.map((x: any) => x.check)).toEqual(['R2']);
+    expect(v[0].editedAfter).toEqual(['src/farewell.ts']);
+    expect(v[0].when).toBe('before later edits to the files in editedAfter');
+    const limits = sec('limits')
+      .map((x: any) => x.limit)
+      .join('\n');
+    expect(limits).toContain('src/farewell.ts');
+    expect(limits).not.toContain('src/greet.ts:');
+    expect(sec('avoid').length).toBeGreaterThan(3);
+  });
+
+  test('with several commits, changes follow commits and messages stay with their commit', () => {
+    const { claudeHome, cli } = setup();
+    const repo = makeRepo();
+    new ClaudeLog(repo.root)
+      .prompt('Add greet and a limit')
+      .write(join(repo.root, 'src/greet.ts'), GREET)
+      .write(join(repo.root, 'src/limit.ts'), MANUAL)
+      .save(claudeHome, 'commits');
+    mkdirSync(join(repo.root, 'src'), { recursive: true });
+    writeFileSync(join(repo.root, 'src/greet.ts'), GREET);
+    git(repo.root, ['add', '.']);
+    git(repo.root, [
+      'commit',
+      '-q',
+      '-m',
+      'feat: greet',
+      '-m',
+      'Found while dogfooding. The eval now shows 12/12 checks pass.',
+    ]);
+    writeFileSync(join(repo.root, 'src/limit.ts'), MANUAL);
+    git(repo.root, ['add', '.']);
+    git(repo.root, [
+      'commit',
+      '-q',
+      '-m',
+      'feat: limit',
+      '-m',
+      'Requested by a reviewer.',
+    ]);
+    const r = cli(repo.root, '--json', 'digest', '--offline');
+    const b = cli(repo.root, '--json', 'query', 'brief', '--run', r.json.run);
+    const sec = (t: string) => b.json.sections.find((x: any) => x.title === t).rows;
+    const changes = sec('changes');
+    expect(changes).toHaveLength(2);
+    expect(
+      changes.every((c: any) => c.groupedBy === 'commit' && c.commits.length === 1),
+    ).toBe(true);
+    const msgs = sec('commitMessages');
+    const dogfood = msgs.find((m: any) => m.text === 'Found while dogfooding.');
+    const greetCommit = changes.find((c: any) => c.where[0].startsWith('src/greet.ts'))
+      .commits[0];
+    expect(dogfood.about).toBe(`commit ${greetCommit} only`);
+    // A result reported only in the message is listed as asserted, not run.
+    const asserted = sec('validation').find((v: any) => v.kind === 'commit message');
+    expect(asserted).toMatchObject({
+      outcome: 'asserted',
+      cmd: 'The eval now shows 12/12 checks pass.',
+    });
+    expect(msgs.some((m: any) => m.text.includes('12/12'))).toBe(false);
+  });
+
+  test('commit messages split into attributable sentences; result claims are marked', () => {
+    expect(
+      commitSentences(
+        'Found while dogfooding this PR.\n\nTwo causes:\n- A turn kept old prompts. Now only edits count.\n- Commits in output counted.\n\nCo-Authored-By: Someone <a@b.c>',
+      ),
+    ).toEqual([
+      'Found while dogfooding this PR.',
+      'Two causes:',
+      'A turn kept old prompts.',
+      'Now only edits count.',
+      'Commits in output counted.',
+    ]);
+  });
+
+  test('symbols are read from definitions in common languages', () => {
+    expect(definedSymbol('export function chooseProvider(opts) {')).toBe(
+      'chooseProvider',
+    );
+    expect(definedSymbol('export const leadingCd = (cmd: string) => {')).toBe(
+      'leadingCd',
+    );
+    expect(definedSymbol('  async renderCmd(run: Run): Promise<void> {')).toBe(
+      'renderCmd',
+    );
+    expect(definedSymbol('def parse_lines(text):')).toBe('parse_lines');
+    expect(definedSymbol('func (s *Server) Handle(w http.ResponseWriter) {')).toBe(
+      'Handle',
+    );
+    expect(definedSymbol('  if (x) {')).toBeUndefined();
+    expect(definedSymbol('  return foo(bar);')).toBeUndefined();
   });
 
   test('graph construction is deterministic', () => {
@@ -427,23 +547,20 @@ describe('graph-derived evidence in checks, budgets, notes and review', () => {
     const { repo, cli } = scenario();
     const r = cli(repo.root, '--json', 'digest', '--offline');
     const notes = readFileSync(join(r.json.runDir, 'evidence-notes.md'), 'utf8');
-    // The first thing a drafter reads points it at the graph.
+    // The first thing a drafter reads points it at the brief.
     expect(notes.split('\n').slice(0, 4).join('\n')).toContain(
-      'Start with the evidence graph: `tracetoon query outline`',
+      'Draft from the evidence brief below (`tracetoon query brief`)',
     );
     expect(notes).toContain('## Where each change came from (evidence graph)');
     const prepared = cli(repo.root, '--json', 'prepare', '--offline');
-    expect(Object.keys(prepared.json).slice(0, 3)).toEqual([
-      'run',
-      'next',
-      'graphOutline',
-    ]);
-    // The outline itself is embedded, so a drafter that never queries still sees it.
-    expect(prepared.json.graphOutline).toContain('files[');
-    expect(prepared.json.graphOutline).toContain('src/greet.ts');
-    expect(notes).toContain('## Evidence graph outline (`tracetoon query outline`)');
+    expect(Object.keys(prepared.json).slice(0, 3)).toEqual(['run', 'next', 'brief']);
+    // The brief itself is embedded, so a drafter that never queries still sees it.
+    expect(prepared.json.brief).toContain('changes[');
+    expect(prepared.json.brief).toContain('src/greet.ts (greet)');
+    expect(prepared.json.brief).toContain('avoid[');
+    expect(notes).toContain('## Evidence brief (`tracetoon query brief`)');
     expect(prepared.json.next).toContain(
-      `tracetoon query outline --run ${prepared.json.run}`,
+      `tracetoon query brief --run ${prepared.json.run}`,
     );
     expect(notes).toContain(
       '- src/greet.ts: S1; checks after its last captured edit: R2:failed, R1:passed',

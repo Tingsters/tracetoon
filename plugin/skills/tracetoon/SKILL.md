@@ -153,11 +153,13 @@ every role. Keep the researcher, drafter and independent reviewer separate.
    trace evidence (using `tracetoon expand <refs...>` for batched detail) and writes `body.md`
    in the run folder following
    [references/writing-guide.md](references/writing-guide.md). Whoever drafts,
-   a delegated drafter or you inline, starts from the evidence graph:
-   `tracetoon query outline --run <id>`, then `query why <path>` for each
-   behavior file. Use the graph as an index, not a substitute for reading: still
-   read every behavior hunk in the patch, expand every commit with a message
-   body, and read the decisions and plans the graph cites. For a new PR,
+   a delegated drafter or you inline, drafts from the evidence brief
+   (`tracetoon query brief --run <id>`; `prepare` prints it and it heads
+   `evidence-notes.md`). It lists the change units at the symbols that own them,
+   the requests and commit-message sentences behind each (each scoped to its own
+   commit), checks dated against the edits, limits, and what not to claim. Read
+   the diff refs it cites before describing a hunk; `query why <path>` drills
+   into one file. For a new PR,
    also write a one-line `title.txt`, preserving an explicit user-supplied title,
    otherwise following the guide's "The title" section
    and `titleRules` from context. For an existing PR, keep its title unless the
@@ -303,7 +305,7 @@ every role. Keep the researcher, drafter and independent reviewer separate.
 ### Other commands
 
 - `tracetoon query [name] --run <id>`: ask the run's evidence graph. Named
-  queries: `outline`, `why <path|path:line|H#|diff:N>`, `verified [path]`,
+  queries: `brief` (start here), `outline`, `why <path|path:line|H#|diff:N>`, `verified [path]`,
   `unverified`, `unexplained`, `turn <S#>`, `stale <R#>`, `dead-ends`,
   `pushback`, `schema`; or `--cypher "MATCH … RETURN …"` (read-only). Output is
   compact TOON; add `--json` for JSON and `--all` past the row cap.

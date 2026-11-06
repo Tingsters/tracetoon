@@ -26,7 +26,9 @@ export type NodeLabel =
   | 'Edit'
   | 'File'
   | 'Hunk'
-  | 'Commit';
+  | 'Commit'
+  | 'CommitClaim'
+  | 'Change';
 
 export type RelType =
   | 'IN_SESSION'
@@ -37,7 +39,13 @@ export type RelType =
   | 'OF'
   | 'LATER_EDIT'
   | 'MADE'
-  | 'TOUCHES';
+  | 'TOUCHES'
+  | 'INTRODUCED'
+  | 'SAYS'
+  | 'ASKED_BEFORE'
+  | 'HAS'
+  | 'ASKED_BY'
+  | 'EXPLAINED_BY';
 
 export type Value = string | number | boolean | null | string[];
 
@@ -68,6 +76,8 @@ export interface EvidenceGraph {
     edits: number;
     /** Edits none of whose lines survive in the PR. */
     deadEndEdits: number;
+    /** Change units (one idea each). */
+    changes?: number;
   };
 }
 
@@ -75,15 +85,21 @@ export interface EvidenceGraph {
 export const SCHEMA_DOC = {
   nodes: {
     Session: 'id (hashed ref), agent, band (included|ambiguous), score, title',
-    Prompt: 'id (S#), t, text (clipped; expand for full), pushback, ledToEdits, session',
-    Decision: 'id (D#), t, text (clipped), session',
-    Plan: 'id (P#), t, approved, text (first line), session',
-    Run: 'id (R#), t, cmd, kind (test|build|lint|typecheck|eval|other), outcome (passed|failed|unknown), revision, session',
-    Receipt: 'id (V#), cmd, outcome: current exact-content validation receipt',
+    Prompt:
+      'id (S#), t, text (up to 1500 chars; expand for full), pushback, ledToEdits, session',
+    Decision: 'id (D#), t, text, session',
+    Plan: 'id (P#), t, approved, text (first line), excerpt, session',
+    Run: 'id (R#), t, cmd, kind (test|build|lint|typecheck|eval|other), outcome (passed|failed|unknown), revision, summary (result lines), when (relative to the edits), session',
+    Receipt:
+      'id (V#), cmd, kind, outcome, summary, when: a check run on the submitted content',
     Edit: 'id (E#), t, file, added, removed, surviving (lines still in the PR), inPr, via (shell when made by a command), session',
     File: 'id (repo-relative path), role (behavior|tests|docs|config|generated|version), inPr, added, removed, unmatched',
-    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context',
-    Commit: 'id (short SHA), subject, body (message body, clipped; null when none)',
+    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (enclosing symbol), symbols (defined on added lines), branches',
+    Commit: 'id (short SHA), subject, body (message body; null when none), t',
+    CommitClaim:
+      'id (<sha>#n), commit, text (one sentence of the commit message), assertsResult (reports a result: commit-message assertion, not a run)',
+    Change:
+      'id (CH#), key (commit:<sha> | prompt:S# | dir:<path>), files, roles, symbols (defined or enclosing), added, removed, branches (added lines that branch or fall back)',
   },
   relationships: {
     IN_SESSION: '(Prompt|Decision|Plan|Run|Edit)-[:IN_SESSION]->(Session)',
@@ -98,6 +114,15 @@ export const SCHEMA_DOC = {
       '(Run)-[:LATER_EDIT]->(File): the session edited this PR file after the run (the run did not see that edit)',
     MADE: '(Session)-[:MADE]->(Commit)',
     TOUCHES: '(Commit)-[:TOUCHES]->(File)',
+    INTRODUCED:
+      "(Commit)-[:INTRODUCED {lines}]->(Hunk): lines from that commit's own patch still in the hunk",
+    SAYS: '(Commit)-[:SAYS]->(CommitClaim)',
+    ASKED_BEFORE:
+      '(Prompt)-[:ASKED_BEFORE]->(Commit): typed in an included session after the previous commit and before this one',
+    HAS: '(Change)-[:HAS]->(Hunk)',
+    ASKED_BY: '(Change)-[:ASKED_BY {how}]->(Prompt)',
+    EXPLAINED_BY:
+      '(Change)-[:EXPLAINED_BY]->(Commit): commits whose lines are in the change',
   },
   notes: [
     'Timestamps (t) are ISO strings; compare them as strings.',

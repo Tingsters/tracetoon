@@ -16,6 +16,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { checkGraphClaims, type GraphClaimFacts } from '../graph/claims.ts';
 import type { Run, TraceDigest } from './build.ts';
 
 export type ClaimState =
@@ -41,6 +42,8 @@ export interface ClaimInput {
   root?: string;
   /** Things the author told Tracetoon (author.md), treated as author-reported. */
   authorText?: string;
+  /** Commit-message sentences, branching changes and run results from the evidence graph. */
+  graph?: GraphClaimFacts;
 }
 
 // ------------------------------------------------------------------ text
@@ -514,6 +517,10 @@ export function checkClaims(input: ClaimInput): ClaimFinding[] {
     const a = checkAttribution(s, input);
     if (a) out.push(a);
     out.push(...checkReferences(s, input));
+    if (input.graph && !mentionedBy(input.authorText, s))
+      for (const g of checkGraphClaims(s, input.graph))
+        // One finding per sentence and kind: the shallow checks speak first.
+        if (!out.some((f) => f.quote === g.quote && f.kind === g.kind)) out.push(g);
   }
   return out;
 }

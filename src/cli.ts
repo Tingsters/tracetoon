@@ -168,7 +168,7 @@ program
 program
   .command('query [words...]')
   .description(
-    "ask this run's evidence graph: a named query (outline, why <path|H#>, verified, unverified, unexplained, turn <S#>, stale <R#>, dead-ends, pushback, schema) or --cypher",
+    "ask this run's evidence graph: a named query (brief, outline, why <path|H#>, verified, unverified, unexplained, turn <S#>, stale <R#>, dead-ends, pushback, schema) or --cypher",
   )
   .option('--run <id>', 'run id (default: latest)')
   .option('--cypher <query>', 'a read-only Cypher query (MATCH ... RETURN ...)')

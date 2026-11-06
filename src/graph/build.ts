@@ -27,9 +27,53 @@ export interface PatchHunk {
   diff: string;
   /** The function or section git printed after the @@ header. */
   context?: string;
+  /** The enclosing symbol named in `context`, when one can be read from it. */
+  scope?: string;
+  /** Functions, classes, methods and types defined on added lines. */
+  symbols: string[];
+  /** Added lines that branch or fall back (if/else, ??, ||, catch, default…). */
+  branches: number;
   /** Normalized added lines, for matching edits. Never written out. */
   lines: Set<string>;
+  /** Normalized removed lines, for matching commits that only delete. Never written out. */
+  gone: Set<string>;
 }
+
+const KEYWORDS = new Set([
+  'if',
+  'for',
+  'while',
+  'switch',
+  'catch',
+  'return',
+  'function',
+  'else',
+  'new',
+  'await',
+  'typeof',
+  'do',
+  'try',
+  'with',
+  'super',
+  'this',
+]);
+const DEFINITIONS = [
+  /\b(?:function\*?|class|interface|enum|type|def|fn|struct|trait|module|record)\s+([A-Za-z_$][\w$]*)/,
+  /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/,
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)\s*(?::[^=]+)?=>|[A-Za-z_$][\w$]*\s*=>|function\b)/,
+  /^\s*(?:(?:export|public|private|protected|static|async|override|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*(?::\s*[^={;]+)?\{\s*$/,
+];
+/** The name a line of code defines, if it defines one. */
+export function definedSymbol(line: string): string | undefined {
+  for (const re of DEFINITIONS) {
+    const m = re.exec(line);
+    if (m?.[1] && !KEYWORDS.has(m[1])) return m[1];
+  }
+  return undefined;
+}
+/** Lines that add a branch or a fallback: each path deserves its own sentence. */
+export const BRANCHING =
+  /(\bif\s*\(|\bif\s+[^=]|\belse\b|\belif\b|\bswitch\s*\(|\bcase\s+[^:]+:|\bcatch\b|\bexcept\b|\?\?|\|\||\bdefault\s*:|\bfallback\b|\?\s*[^:?]+\s*:\s*)/;
 
 /**
  * Split a `git diff` patch into hunks with their changes.patch line ranges. Hunk
@@ -67,11 +111,17 @@ export function patchHunks(patch: string): PatchHunk[] {
         newLeft--;
         cur.added++;
         newLine++;
-        const e = evidenceLine(line.slice(1));
+        const raw = line.slice(1);
+        const e = evidenceLine(raw);
         if (e) cur.lines.add(e);
+        const sym = definedSymbol(raw);
+        if (sym && !cur.symbols.includes(sym)) cur.symbols.push(sym);
+        if (BRANCHING.test(raw) && !/^\s*(\/\/|#|\*)/.test(raw)) cur.branches++;
       } else if (c === '-') {
         oldLeft--;
         cur.removed++;
+        const e = evidenceLine(line.slice(1));
+        if (e) cur.gone.add(e);
       } else {
         oldLeft--;
         newLeft--;
@@ -95,8 +145,12 @@ export function patchHunks(patch: string): PatchHunk[] {
         added: 0,
         removed: 0,
         diff: '',
-        ...(h[4]?.trim() ? { context: clip(h[4].trim(), 80) } : {}),
+        ...(h[4]?.trim() ? { context: clip(h[4].trim(), 160) } : {}),
+        ...(h[4]?.trim() && definedSymbol(h[4]) ? { scope: definedSymbol(h[4]) } : {}),
+        symbols: [],
+        branches: 0,
         lines: new Set(),
+        gone: new Set(),
       };
       continue;
     }
@@ -131,7 +185,41 @@ export interface GraphInputs {
   patch: string;
   /** Short or full commit SHA → repo-relative paths it touched. */
   commitFiles?: Map<string, string[]>;
+  /** Full commit SHA → file → normalized lines the commit added (its own patch); removed lines are prefixed with "-". */
+  commitLines?: Map<string, Map<string, string[]>>;
 }
+
+/** Commit-message sentences that report a result rather than explain a change. */
+const RESULT_CLAIM =
+  /(\b\d+\s*\/\s*\d+\b|\b\d+\s+(?:pass|passed|passing|fail|failed|failing|tests?|checks?|cases?)\b|\b(?:tests?|checks?|suite|evals?|build|ci)\s+(?:now\s+)?(?:pass|passes|passed|green|succeed|succeeds)\b|\ball\s+(?:tests|checks)\b|\bverified\b|\bconfirmed\b)/i;
+
+/** A commit body as separate sentences or bullets, each attributable on its own. */
+export function commitSentences(body: string): string[] {
+  return (
+    body
+      .split(/\n\s*\n|\n(?=\s*(?:[-*•]|\d+[.)])\s)/)
+      .flatMap((para) =>
+        para
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/^(?:[-*•]|\d+[.)])\s+/, '')
+          .split(/(?<=[.!?])\s+(?=[A-Z`"'(])/),
+      )
+      .map((x) => x.trim())
+      // Trailers (Co-Authored-By: …, Signed-off-by: …) are not explanations.
+      .filter(
+        (x) => x.length > 3 && !/^[A-Za-z][\w-]*-[Bb]y:\s|^[A-Z][\w-]+:\s*\S+@/.test(x),
+      )
+  );
+}
+
+const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.');
+const RUN_WHEN: Record<string, string> = {
+  'no later edits seen': 'after the last captured edit',
+  'before later edits': 'before later edits (stale for the files edited after it)',
+  'after later work': 'after later work (tested code that is not this PR)',
+  unknown: 'unknown',
+};
 
 export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
   const { full, trails } = input;
@@ -185,6 +273,9 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       removed: h.removed,
       diff: h.diff,
       context: h.context ?? null,
+      scope: h.scope ?? null,
+      symbols: h.symbols,
+      branches: h.branches,
     });
     rel('OF', ['Hunk', h.id], ['File', h.file]);
   }
@@ -203,7 +294,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       if (p.id)
         node('Prompt', p.id, {
           t: p.t ?? null,
-          text: clip(p.text.replace(/\s+/g, ' '), 160),
+          text: clip(p.text.replace(/\s+/g, ' '), 1500),
           pushback: !!p.pushback,
           ledToEdits: p.ledToEdits,
           session: s.ref,
@@ -212,7 +303,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       if (d.id)
         node('Decision', d.id, {
           t: d.t ?? null,
-          text: clip(d.text.replace(/\s+/g, ' '), 160),
+          text: clip(d.text.replace(/\s+/g, ' '), 600),
           session: s.ref,
         });
     for (const p of s.plans)
@@ -221,6 +312,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
           t: p.t ?? null,
           approved: p.approved ?? null,
           text: clip(firstLine(p.excerpt), 120),
+          excerpt: clip(p.excerpt.replace(/\s+/g, ' '), 600),
           session: s.ref,
         });
     for (const r of s.runs)
@@ -231,6 +323,8 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
           kind: r.kind,
           outcome: r.outcome,
           revision: r.revision,
+          summary: r.summary.slice(0, 3),
+          when: RUN_WHEN[r.revision] ?? r.revision,
           session: s.ref,
         });
     for (const label of ['Prompt', 'Decision', 'Plan', 'Run'] as const) {
@@ -253,27 +347,80 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
     }
   }
   for (const r of full.verification ?? [])
-    if (r.id) node('Receipt', r.id, { cmd: clip(r.cmd, 120), outcome: r.outcome });
+    if (r.id)
+      node('Receipt', r.id, {
+        cmd: clip(r.cmd, 120),
+        kind: r.kind,
+        outcome: r.outcome,
+        summary: r.summary.slice(0, 3),
+        when: 'fresh: run on the submitted content',
+      });
 
-  // Commits and the files they touched.
+  // Commits, the files they touched, the hunks their own lines survive in, and
+  // their messages split into sentences that can each be attributed on their own.
+  const hunkCommits = new Map<string, Map<string, number>>();
+  const lookup = <T>(m: Map<string, T> | undefined, sha: string): T | undefined =>
+    m?.get(sha) ??
+    [...(m?.entries() ?? [])].find(([k]) => k.startsWith(sha.slice(0, 12)))?.[1];
   for (const c of full.pr.commits) {
     const sha = c.sha.slice(0, 12);
     node('Commit', sha, {
       subject: clip(c.subject, 120),
       // The message body often holds the motivation; keep it queryable.
-      body: c.body ? clip(c.body, 600) : null,
+      body: c.body ? clip(c.body, 4000) : null,
+      t: c.time ?? null,
     });
-    const touched =
-      input.commitFiles?.get(c.sha) ??
-      [...(input.commitFiles?.entries() ?? [])].find(([k]) => k.startsWith(sha))?.[1] ??
-      [];
-    for (const path of touched)
+    for (const path of lookup(input.commitFiles, c.sha) ?? [])
       if (prFiles.has(path)) rel('TOUCHES', ['Commit', sha], ['File', path]);
+    for (const [path, added] of lookup(input.commitLines, c.sha) ?? []) {
+      const set = new Set(added);
+      for (const h of hunksByFile.get(path) ?? []) {
+        let n = 0;
+        for (const l of h.lines) if (set.has(l)) n++;
+        for (const l of h.gone) if (set.has(`-${l}`)) n++;
+        if (n) {
+          rel('INTRODUCED', ['Commit', sha], ['Hunk', h.id], { lines: n });
+          const m = hunkCommits.get(h.id) ?? new Map<string, number>();
+          m.set(sha, (m.get(sha) ?? 0) + n);
+          hunkCommits.set(h.id, m);
+        }
+      }
+    }
+    commitSentences(c.body ?? '').forEach((text, i) => {
+      const id = `${sha}#${i + 1}`;
+      node('CommitClaim', id, {
+        commit: sha,
+        text: clip(text, 400),
+        assertsResult: RESULT_CLAIM.test(text),
+      });
+      rel('SAYS', ['Commit', sha], ['CommitClaim', id]);
+    });
   }
+  // Requests typed in an included session between the previous commit and this
+  // one: what the user asked for while this commit's change was being made, even
+  // when no captured edit links them (shell edits, edits by another tool).
+  const included = full.sessions.filter((s) => s.band === 'included');
+  const timed = full.pr.commits
+    .filter((c) => c.time)
+    .sort((a, b) => a.time!.localeCompare(b.time!));
+  timed.forEach((c, i) => {
+    const after = i ? timed[i - 1]!.time! : '';
+    for (const s of included) {
+      if (s.span.start && s.span.start > c.time!) continue;
+      for (const p of s.prompts)
+        if (p.id && p.t && p.t > after && p.t <= c.time!)
+          rel('ASKED_BEFORE', ['Prompt', p.id], ['Commit', c.sha.slice(0, 12)]);
+    }
+  });
 
   // Walk each session's trail: turns, edits, survival and later edits.
   let editN = 0;
   let deadEnds = 0;
+  const band = new Map(full.sessions.map((s) => [s.ref, s.band]));
+  /** Hunk → prompt → surviving lines, from included sessions only. */
+  const hunkPrompts = new Map<string, Map<string, number>>();
+  /** File → prompts of included turns that edited it at all (surviving or not). */
+  const fileTurns = new Map<string, Set<string>>();
   const linked = new Set<string>();
   for (const trail of trails) {
     let turn: string | undefined;
@@ -332,12 +479,101 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       for (const [h, n] of into) {
         rel('SURVIVES_IN', ['Edit', id], ['Hunk', h], { lines: n });
         linked.add(h);
+        if (turn && band.get(trail.ref) === 'included') {
+          const m = hunkPrompts.get(h) ?? new Map<string, number>();
+          m.set(turn, (m.get(turn) ?? 0) + n);
+          hunkPrompts.set(h, m);
+        }
       }
+      if (turn && e.inPr && band.get(trail.ref) === 'included')
+        fileTurns.set(e.file, (fileTurns.get(e.file) ?? new Set()).add(turn));
       // Every earlier run in this session did not see this edit to a PR file.
       if (e.inPr)
         for (const r of openRuns) rel('LATER_EDIT', ['Run', r], ['File', e.file]);
     }
   }
+
+  // Change units: the hunks that belong to one idea. Commits are the author's own
+  // grouping, so with several commits a hunk joins the commit whose lines it
+  // holds most; otherwise the request turn whose edits it holds most; otherwise
+  // its directory. Ordered behavior first, by size.
+  const top = (m: Map<string, number> | undefined) =>
+    m && [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+  const committing = new Set([...hunkCommits.values()].flatMap((m) => [...m.keys()]));
+  const groups = new Map<string, PatchHunk[]>();
+  for (const h of hunks) {
+    const commit = committing.size > 1 ? top(hunkCommits.get(h.id)) : undefined;
+    const prompt = top(hunkPrompts.get(h.id));
+    const key = commit
+      ? `commit:${commit}`
+      : prompt
+        ? `prompt:${prompt}`
+        : `dir:${dirOf(h.file)}`;
+    groups.set(key, [...(groups.get(key) ?? []), h]);
+  }
+  const roleOf = (f: string) => String(nodes.get(`File|${f}`)?.props.role ?? 'other');
+  // One commit and one request can still hold several ideas. A group with many
+  // behavior files splits by module; its tests, docs and version files form one
+  // supporting change, so behavior is described apart from bookkeeping.
+  const MAX_BEHAVIOR_FILES = 4;
+  for (const [key, hs] of [...groups]) {
+    const behaviorFiles = new Set(
+      hs.filter((h) => roleOf(h.file) === 'behavior').map((h) => h.file),
+    );
+    if (behaviorFiles.size <= MAX_BEHAVIOR_FILES) continue;
+    groups.delete(key);
+    for (const h of hs) {
+      const sub =
+        roleOf(h.file) === 'behavior' ? `${key}|${dirOf(h.file)}` : `${key}|supporting`;
+      groups.set(sub, [...(groups.get(sub) ?? []), h]);
+    }
+  }
+  const weight = (hs: PatchHunk[]) =>
+    hs
+      .filter((h) => roleOf(h.file) === 'behavior')
+      .reduce((a, h) => a + h.added + h.removed, 0);
+  const ordered = [...groups.entries()].sort(
+    (a, b) =>
+      weight(b[1]) - weight(a[1]) ||
+      b[1].reduce((n, h) => n + h.added, 0) - a[1].reduce((n, h) => n + h.added, 0) ||
+      a[0].localeCompare(b[0]),
+  );
+  ordered.forEach(([key, hs], i) => {
+    const id = `CH${i + 1}`;
+    const files = [...new Set(hs.map((h) => h.file))];
+    const roles = [...new Set(files.map(roleOf))].sort();
+    const symbols = [
+      ...new Set(hs.flatMap((h) => [...h.symbols, ...(h.scope ? [h.scope] : [])])),
+    ].slice(0, 16);
+    node('Change', id, {
+      key,
+      files,
+      roles,
+      symbols,
+      added: hs.reduce((n, h) => n + h.added, 0),
+      removed: hs.reduce((n, h) => n + h.removed, 0),
+      branches: hs.reduce((n, h) => n + h.branches, 0),
+    });
+    const commits = new Set<string>();
+    const asked = new Map<string, string>();
+    for (const h of hs) {
+      rel('HAS', ['Change', id], ['Hunk', h.id]);
+      for (const c of hunkCommits.get(h.id)?.keys() ?? []) commits.add(c);
+      for (const p of hunkPrompts.get(h.id)?.keys() ?? [])
+        asked.set(p, 'its edits survive here');
+    }
+    for (const c of commits) rel('EXPLAINED_BY', ['Change', id], ['Commit', c]);
+    // Weaker links only when nothing survives line for line.
+    if (!asked.size)
+      for (const f of files)
+        for (const p of fileTurns.get(f) ?? [])
+          asked.set(p, 'its turn edited these files');
+    if (!asked.size)
+      for (const r of rels)
+        if (r.type === 'ASKED_BEFORE' && commits.has(r.to.id))
+          asked.set(r.from.id, 'typed before the commit that made it');
+    for (const [p, how] of asked) rel('ASKED_BY', ['Change', id], ['Prompt', p], { how });
+  });
 
   const sorted = [...nodes.values()];
   return {
@@ -351,6 +587,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       linkedHunks: linked.size,
       edits: editN,
       deadEndEdits: deadEnds,
+      changes: ordered.length,
     },
   };
 }

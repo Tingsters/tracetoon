@@ -212,7 +212,320 @@ export function unexplainedHunks(g: GraphEngine): Record<string, unknown>[] {
     .sort((a, b) => byDiff(String(a.diff), String(b.diff)));
 }
 
+const clipText = (s: unknown, n: number) => {
+  const t = String(s ?? '');
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+const refs = (xs: string[], cap: number) =>
+  xs.length > cap ? [...xs.slice(0, cap), `+${xs.length - cap} more`] : xs;
+
+/**
+ * Everything a description needs, in the order it is written: the change units
+ * (with the symbols that own them), why each was made, what checked it and when,
+ * what the evidence does not establish, and what not to claim. Each row cites
+ * its evidence; nothing in it is inferred beyond the graph.
+ */
+export function brief(g: GraphEngine): Section[] {
+  const changes = g
+    .run(
+      `MATCH (c:Change)
+       RETURN c.id AS id, c.key AS key, c.files AS files, c.roles AS roles, c.symbols AS symbols,
+              c.added AS added, c.removed AS removed, c.branches AS branches`,
+    )
+    .rows.sort((a, b) => Number(String(a.id).slice(2)) - Number(String(b.id).slice(2)));
+  const hunkRows = g.run(
+    `MATCH (c:Change)-[:HAS]->(h:Hunk)
+     OPTIONAL MATCH (h)<-[:SURVIVES_IN]-(e:Edit)-[:IN_SESSION]->(:Session {band: 'included'})
+     OPTIONAL MATCH (h)<-[:INTRODUCED]-(k:Commit)
+     RETURN c.id AS change, h.id AS hunk, h.file AS file, h.diff AS diff, h.scope AS scope,
+            h.symbols AS symbols, h.branches AS branches, count(DISTINCT e) AS edits,
+            collect(DISTINCT k.id) AS commits`,
+  ).rows;
+  const fileRole = new Map(
+    g
+      .run('MATCH (f:File {inPr: true}) RETURN f.id AS id, f.role AS role')
+      .rows.map((r) => [String(r.id), String(r.role)]),
+  );
+  const asked = g.run(
+    `MATCH (c:Change)-[a:ASKED_BY]->(p:Prompt)
+     OPTIONAL MATCH (x)-[:IN_TURN]->(p) WHERE x:Decision OR x:Plan
+     RETURN c.id AS change, p.id AS id, p.text AS text, p.pushback AS pushback, a.how AS how,
+            collect(DISTINCT x.id) AS facts`,
+  ).rows;
+  const turnFacts = new Map(
+    g
+      .run(
+        `MATCH (x)-[:IN_TURN]->(:Prompt) WHERE x:Decision OR x:Plan
+         RETURN x.id AS id, coalesce(x.excerpt, x.text) AS text`,
+      )
+      .rows.map((r) => [String(r.id), String(r.text ?? '')]),
+  );
+  const said = g.run(
+    `MATCH (c:Change)-[:EXPLAINED_BY]->(k:Commit)
+     OPTIONAL MATCH (k)-[:SAYS]->(m:CommitClaim)
+     RETURN c.id AS change, k.id AS commit, k.subject AS subject,
+            collect(DISTINCT {id: m.id, text: m.text, result: m.assertsResult}) AS claims`,
+  ).rows;
+  const commitScope = new Map<string, string[]>();
+  for (const h of hunkRows)
+    for (const k of (h.commits as string[]) ?? [])
+      commitScope.set(k, uniq([...(commitScope.get(k) ?? []), String(h.file)]));
+
+  const changeRows = changes.map((c) => {
+    const hs = hunkRows
+      .filter((h) => h.change === c.id)
+      .sort((a, b) => byDiff(String(a.diff), String(b.diff)));
+    const files = (c.files as string[]) ?? [];
+    const where = files.map((f) => {
+      const syms = uniq(
+        hs
+          .filter((h) => h.file === f)
+          .flatMap((h) => [
+            ...((h.symbols as string[]) ?? []),
+            ...(h.scope ? [String(h.scope)] : []),
+          ]),
+      ).slice(0, 6);
+      return syms.length ? `${f} (${syms.join(', ')})` : f;
+    });
+    return {
+      change: c.id,
+      groupedBy: String(c.key).split(':')[0],
+      where,
+      added: c.added,
+      removed: c.removed,
+      diff: refs(
+        hs.map((h) => String(h.diff)),
+        10,
+      ),
+      commits: uniq(hs.flatMap((h) => (h.commits as string[]) ?? [])).sort(),
+      requests: uniq(
+        asked.filter((a) => a.change === c.id).map((a) => String(a.id)),
+      ).sort(factOrder),
+    };
+  });
+
+  // Each request and commit sentence once; changes cite them by ref.
+  const requests: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const a of [...asked].sort((x, y) => factOrder(String(x.id), String(y.id)))) {
+    if (seen.has(String(a.id))) continue;
+    seen.add(String(a.id));
+    requests.push({
+      ref: a.id,
+      kind: a.pushback ? 'user request (pushback)' : 'user request',
+      text: clipText(a.text, 600),
+    });
+    for (const f of ((a.facts as string[]) ?? []).sort(factOrder))
+      if (!seen.has(f)) {
+        seen.add(f);
+        requests.push({
+          ref: f,
+          kind: `${f.startsWith('P') ? 'plan' : 'decision'} in the turn of ${String(a.id)}`,
+          text: clipText(turnFacts.get(f), 400),
+        });
+      }
+  }
+  const commitText: Record<string, unknown>[] = [];
+  const commitsSeen = new Set<string>();
+  for (const k of [...said].sort((x, y) =>
+    String(x.commit).localeCompare(String(y.commit)),
+  )) {
+    if (commitsSeen.has(String(k.commit))) continue;
+    commitsSeen.add(String(k.commit));
+    const scope = (commitScope.get(String(k.commit)) ?? []).sort().join(' ');
+    commitText.push({ ref: `commit:${String(k.commit)}`, about: scope, text: k.subject });
+    for (const m of ((k.claims as { id: string; text: string; result: boolean }[]) ?? [])
+      .filter((m) => m.id && !m.result)
+      .sort((x, y) => Number(x.id.split('#')[1]) - Number(y.id.split('#')[1])))
+      commitText.push({
+        ref: m.id,
+        about: `commit ${String(k.commit)} only`,
+        text: m.text,
+      });
+  }
+  for (const r of changeRows) {
+    const links = asked.filter((a) => a.change === r.change);
+    (r as Record<string, unknown>).requests = links
+      .sort((x, y) => factOrder(String(x.id), String(y.id)))
+      .map((a) =>
+        a.how === 'its edits survive here'
+          ? String(a.id)
+          : `${String(a.id)} (${String(a.how)})`,
+      );
+    if (!links.length && !(r.commits as string[]).length)
+      (r as Record<string, unknown>).requests = [
+        'none captured: say what it does, not why',
+      ];
+  }
+
+  const receipts = g
+    .run(
+      'MATCH (v:Receipt) RETURN v.id AS id, v.kind AS kind, v.outcome AS outcome, v.summary AS summary, v.when AS when, v.cmd AS cmd',
+    )
+    .rows.sort((a, b) => factOrder(String(a.id), String(b.id)));
+  const runs = g
+    .run(
+      `MATCH (r:Run)-[:IN_SESSION]->(:Session {band: 'included'})
+       WHERE r.kind IN $kinds
+       OPTIONAL MATCH (r)-[:LATER_EDIT]->(f:File)
+       RETURN r.id AS id, r.kind AS kind, r.outcome AS outcome, r.summary AS summary,
+              r.when AS when, r.cmd AS cmd, r.t AS t, r.revision AS revision,
+              collect(DISTINCT f.id) AS later`,
+      { kinds: CHECK_KINDS },
+    )
+    .rows.filter((r) => r.revision !== 'after later work')
+    .sort((a, b) => String(a.t ?? '').localeCompare(String(b.t ?? '')));
+  // The last run of each command is what the session ended on; earlier ones are history.
+  const lastOf = new Map<string, Record<string, unknown>>();
+  for (const r of runs) lastOf.set(String(r.cmd), r);
+  // Runs that saw the final edits are what counts; an earlier, stale run is kept
+  // only when no later run of its kind exists, as the best evidence there is.
+  const current = (r: Record<string, unknown>) =>
+    r.revision === 'no later edits seen' && !((r.later as string[]) ?? []).length;
+  for (const [cmd, r] of [...lastOf])
+    if (!current(r) && [...lastOf.values()].some((x) => current(x) && x.kind === r.kind))
+      lastOf.delete(cmd);
+  const staleKinds = new Map<string, string>();
+  for (const [cmd, r] of lastOf) if (!current(r)) staleKinds.set(String(r.kind), cmd);
+  for (const [cmd, r] of [...lastOf])
+    if (!current(r) && staleKinds.get(String(r.kind)) !== cmd) lastOf.delete(cmd);
+  const validation: Record<string, unknown>[] = (
+    [
+      ...receipts.map((v) => ({ ...v, editedAfter: [] as string[] })),
+      ...[...lastOf.values()]
+        .sort((a, b) => factOrder(String(a.id), String(b.id)))
+        .map((r) => ({
+          ...r,
+          editedAfter: refs(((r.later as string[]) ?? []).sort(), 5),
+        })),
+    ] as Record<string, unknown>[]
+  ).map((r) => ({
+    check: r.id,
+    kind: r.kind,
+    outcome: r.outcome,
+    result: ((r.summary as string[]) ?? []).join('; ') || null,
+    when: (r.editedAfter as string[]).length
+      ? 'before later edits to the files in editedAfter'
+      : r.when,
+    editedAfter: r.editedAfter,
+    cmd: r.cmd,
+  }));
+  for (const m of g
+    .run(
+      'MATCH (m:CommitClaim {assertsResult: true}) RETURN m.id AS id, m.commit AS commit, m.text AS text',
+    )
+    .rows.sort((a, b) => String(a.id).localeCompare(String(b.id))))
+    validation.push({
+      check: m.id,
+      kind: 'commit message',
+      outcome: 'asserted',
+      result: null,
+      when: `not a run: commit ${String(m.commit)} says so`,
+      editedAfter: [],
+      cmd: m.text,
+    });
+
+  const checks = new Map(checksAfterLastEdit(g).map((c) => [c.file, c]));
+  // A file no captured edit explains still has a last-change time: its commits'.
+  const committed = new Map<string, string>();
+  for (const r of g.run(
+    `MATCH (k:Commit)-[:TOUCHES]->(f:File) WHERE k.t IS NOT NULL RETURN f.id AS file, max(k.t) AS t`,
+  ).rows)
+    committed.set(String(r.file), String(r.t));
+  const passedAfter = (t: string) =>
+    runs
+      .filter((r) => r.outcome === 'passed' && String(r.t ?? '') > t)
+      .map((r) => String(r.id));
+  const freshPass = receipts
+    .filter((v) => v.outcome === 'passed')
+    .map((v) => String(v.id));
+  const limits: Record<string, unknown>[] = [];
+  for (const c of changes) {
+    const hs = hunkRows.filter((h) => h.change === c.id);
+    const behavior = ((c.files as string[]) ?? []).filter((f) =>
+      ['behavior', 'tests'].includes(fileRole.get(f) ?? ''),
+    );
+    const unchecked = behavior.filter((f) => {
+      const k = checks.get(f);
+      if (k?.lastEdit) return !k.after.some((x) => x.outcome === 'passed');
+      const t = committed.get(f);
+      return !t || !passedAfter(t).length;
+    });
+    if (unchecked.length)
+      limits.push({
+        change: c.id,
+        limit: freshPass.length
+          ? `No logged passing check after the last captured edit of ${unchecked.join(', ')}; fresh ${freshPass.join(', ')} passed on the submitted code, which shows the suite passes, not that it exercises this change.`
+          : `No passing check after the last captured edit of ${unchecked.join(', ')}: don't call it tested or verified.`,
+      });
+    const unexplained = hs.filter(
+      (h) =>
+        !Number(h.edits) &&
+        !((h.commits as string[]) ?? []).length &&
+        ['behavior', 'tests'].includes(fileRole.get(String(h.file)) ?? ''),
+    );
+    if (unexplained.length)
+      limits.push({
+        change: c.id,
+        limit: `${unexplained.length} hunk(s) with no captured edit or commit link (${refs(
+          unexplained.map((h) => String(h.diff)),
+          4,
+        ).join(' ')}): read them in the patch before describing them.`,
+      });
+    if (Number(c.branches) > 0)
+      limits.push({
+        change: c.id,
+        limit: `Adds ${String(c.branches)} branching or fallback line(s)${(() => {
+          const where = uniq(
+            hs
+              .filter((h) => Number(h.branches) > 0)
+              .map((h) =>
+                String(h.scope ?? ((h.symbols as string[]) ?? [])[0] ?? h.file),
+              ),
+          ).slice(0, 5);
+          return where.length ? ` (in ${where.join(', ')})` : '';
+        })()}: describe each path, and don't say "always", "only", "no longer" or "all" unless every path does it.`,
+      });
+    if (!asked.some((a) => a.change === c.id) && !said.some((x) => x.change === c.id))
+      limits.push({
+        change: c.id,
+        limit: 'No captured motivation: do not supply one (e.g. "found while testing").',
+      });
+  }
+
+  const avoid = [
+    "Tracetoon's line matching (matched %, unmatched lines, commits made in sessions) is not authorship: don't report who wrote what as percentages or counts.",
+    'A commit-message sentence speaks for its own commit only: never generalize it to other commits ("all of these were found while…").',
+    'Results that appear only in a commit message (validation rows marked "asserted") are not runs: attribute them to that commit message or leave them out.',
+    "Checks listed with files edited after them did not see those edits: don't present them as testing the final code.",
+    'Point reviewers at the symbol that owns a behavior (from changes.where), not at the largest file.',
+  ].map((rule) => ({ rule }));
+
+  return [
+    section(
+      'changes',
+      ['change', 'groupedBy', 'where', 'added', 'removed', 'diff', 'commits', 'requests'],
+      changeRows,
+    ),
+    section('requests', ['ref', 'kind', 'text'], requests),
+    section('commitMessages', ['ref', 'about', 'text'], commitText),
+    section(
+      'validation',
+      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'cmd'],
+      validation,
+    ),
+    section('limits', ['change', 'limit'], limits),
+    section('avoid', ['rule'], avoid),
+  ];
+}
+
 export const QUERIES: NamedQuery[] = [
+  {
+    name: 'brief',
+    args: '',
+    help: 'Start here. The PR as a reviewer needs it: change units with the symbols that own them, why each was made (requests, plans, commit-message sentences scoped to their commit), checks with when they ran, limits the evidence leaves open, and what not to claim.',
+    run: (g) => brief(g),
+  },
   {
     name: 'schema',
     args: '',
@@ -258,6 +571,7 @@ export const QUERIES: NamedQuery[] = [
                 hunks, prompts, collect(DISTINCT c.id) AS commits`,
       ).rows;
       const checks = new Map(checksAfterLastEdit(g).map((c) => [c.file, c]));
+
       const rank = (role: unknown) => ({ behavior: 0, tests: 1 })[String(role)] ?? 2;
       return [
         section(

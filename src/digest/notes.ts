@@ -84,24 +84,24 @@ export function evidenceNotes(
     TraceDigest,
     'sessions' | 'files' | 'pr' | 'verification' | 'validation' | 'graph'
   >,
-  outline?: string,
+  brief?: string,
 ): string {
   const included = digest.sessions.filter((s) => s.band === 'included');
   const lines: string[] = ['# Notes to write from', ''];
   if (digest.graph)
     lines.push(
-      'Start with the evidence graph: `tracetoon query outline`, then `tracetoon query why <path>` for each behavior file. It maps every hunk to the request behind it and marks commits whose message explains them.',
+      'Draft from the evidence brief below (`tracetoon query brief`): change units at the symbols that own them, the requests and commit-message sentences behind each (each scoped to its own commit), validation dated against the edits, limits, and what not to claim.',
       '',
     );
-  if (outline)
+  if (brief)
     lines.push(
-      '## Evidence graph outline (`tracetoon query outline`)',
+      '## Evidence brief (`tracetoon query brief`)',
       '',
       '```',
-      outline,
+      brief,
       '```',
       '',
-      'Each file lists the prompts whose edits survive in it and the commits that touched it; commits marked with a body hold an explanation worth expanding. `tracetoon query why <path>` gives each hunk with whether a captured edit explains it.',
+      'Each row cites its evidence: diff refs for code, S#/P#/D# for requests, <sha>#n for one commit-message sentence, R#/V# for checks. `tracetoon query why <path>` drills into one file.',
       '',
     );
   const asks = included.flatMap((s) =>
@@ -206,7 +206,7 @@ export function evidenceNotes(
     if (traced.length > 15) lines.push(`- ${traced.length - 15} more files.`);
     lines.push(
       '',
-      'Ask `tracetoon query why <path>` for the turns, diff refs and commits behind a file, `tracetoon query unverified` for files no check followed, and `tracetoon query outline` for the whole map.',
+      'Ask `tracetoon query why <path>` for the turns, diff refs and commits behind a file, `tracetoon query unverified` for files no check followed, and `tracetoon query brief` for the whole picture.',
       '',
     );
   }

@@ -11,6 +11,8 @@ import type { PrTruth } from '../git/pr.ts';
 import { git } from '../util/exec.ts';
 import { readJson, writeJson, type Run } from '../run.ts';
 import { measured } from '../util/profile.ts';
+import { evidenceLine } from '../correlate/correlate.ts';
+import type { Run as DigestRun } from '../digest/build.ts';
 import { buildEvidenceGraph } from './build.ts';
 import { annotateDigest, deriveFromGraphJson, type GraphDerived } from './derive.ts';
 import type { EvidenceGraph } from './model.ts';
@@ -48,19 +50,72 @@ export function commitFiles(truth: PrTruth): Map<string, string[]> {
   return out;
 }
 
+/** Each commit's own added lines per file (normalized), from one `git log -p`. */
+export function commitLines(truth: PrTruth): Map<string, Map<string, string[]>> {
+  const out = new Map<string, Map<string, string[]>>();
+  if (truth.usedWorkingTree || !truth.commits.length) return out;
+  const head = truth.headSha ?? truth.commits.at(-1)!.sha;
+  const r = git(truth.toplevel, [
+    'log',
+    '--no-merges',
+    '--no-renames',
+    '--no-color',
+    '-p',
+    '-U0',
+    '--format=%x1e%H',
+    `${truth.mergeBase}..${head}`,
+  ]);
+  if (!r.ok) return out;
+  for (const rec of r.stdout.split('\x1e')) {
+    const lines = rec.split(/\r?\n/);
+    const sha = lines[0]?.trim();
+    if (!sha) continue;
+    const files = new Map<string, string[]>();
+    let file: string | undefined;
+    for (const line of lines.slice(1)) {
+      if (line.startsWith('+++ ')) {
+        const p = line.slice(4).trim();
+        // A deleted file keeps the path from its "--- a/…" line.
+        if (p !== '/dev/null') file = p.replace(/^b\//, '');
+        continue;
+      }
+      if (line.startsWith('diff --git ')) {
+        file = undefined;
+        continue;
+      }
+      if (line.startsWith('--- ')) {
+        const p = line.slice(4).trim();
+        if (p !== '/dev/null') file = p.replace(/^a\//, '');
+        continue;
+      }
+      if (file && (line.startsWith('+') || line.startsWith('-'))) {
+        const e = evidenceLine(line.slice(1));
+        if (e)
+          files.set(file, [...(files.get(file) ?? []), line[0] === '-' ? `-${e}` : e]);
+      }
+    }
+    out.set(sha, files);
+  }
+  return out;
+}
+
 /** The `enrich` hook for buildDigestPair: build, derive, annotate. */
 export function graphEnricher(
   truth: PrTruth,
   out: GraphOutcome,
+  /** Exact-content check receipts, so the graph can tell fresh checks from logged ones. */
+  verification?: DigestRun[],
 ): (full: TraceDigest, trails: SessionTrail[]) => Relevance | undefined {
   return (full, trails) => {
     try {
+      if (verification) full.verification = verification;
       const graph = measured('graph.build', () =>
         buildEvidenceGraph({
           full,
           trails,
           patch: submission(truth).patch,
           commitFiles: commitFiles(truth),
+          commitLines: commitLines(truth),
         }),
       );
       const derived = measured('graph.derive', () => deriveFromGraphJson(graph));
@@ -96,14 +151,14 @@ export function loadGraphReview(run: Run): GraphDerived['review'] | undefined {
 }
 
 /**
- * The `query outline` result as text, for places every drafter reads before
+ * The `query brief` result as text, for places every drafter reads before
  * writing (the `prepare` output, the top of evidence-notes.md). Agents that
- * draft inline often skip running queries, so they get the map anyway.
+ * draft inline often skip running queries, so they get it anyway.
  * Undefined when the graph can't be read; the digest never depends on it.
  */
-export function graphOutline(graph: EvidenceGraph, rowCap = 40): string | undefined {
+export function graphBrief(graph: EvidenceGraph, rowCap = 60): string | undefined {
   try {
-    const sections = withGraph(graph, (g) => findQuery('outline')!.run(g, []));
+    const sections = withGraph(graph, (g) => findQuery('brief')!.run(g, []));
     return toToon(sections, { rowCap }).trimEnd();
   } catch {
     return undefined;

@@ -148,6 +148,8 @@ export interface TraceDigest {
     /** PR commits made during the included sessions (catches shell-driven edits). */
     commitsMadeInSessions: number;
     commits: number;
+    /** How to read these numbers; they are Tracetoon's matching, not authorship. */
+    about?: string;
   };
   sessions: DigestSession[];
   files: {
@@ -987,6 +989,8 @@ function buildFullDigest(
       unmatchedPct: pct(unmatched),
       commitsMadeInSessions: commitsInSessions.size,
       commits: truth.commits.length,
+      about:
+        "Tracetoon's line matching between captured edits and the diff, for the trace section: not who wrote the code. Don't report these numbers as authorship in the description.",
     },
     sessions,
     files: attribution.map((f) => ({
