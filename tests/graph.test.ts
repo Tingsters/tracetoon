@@ -134,6 +134,22 @@ describe('evidence graph', () => {
       'turns[1]{prompt,pushback,edits,survivingLines,deadEndEdits,diff,facts,text}:',
     );
     expect(why.stdout).toMatch(/S2,null,2,\d+,0,diff:\d+/);
+    // Every hunk is listed, including one no captured edit explains.
+    const manual = cli(
+      repo.root,
+      '--json',
+      'query',
+      'why',
+      'src/manual.ts',
+      '--run',
+      run,
+    );
+    const hunks = manual.json.sections.find((x: any) => x.title === 'hunks').rows;
+    expect(hunks).toHaveLength(1);
+    expect(hunks[0].explained).toBe('no captured edit; read the patch');
+    expect(hunks[0].diff).toMatch(/^diff:\d+/);
+    const outlined = cli(repo.root, '--json', 'query', 'outline', '--run', run);
+    expect(outlined.json.sections.map((x: any) => x.title)).toEqual(['files', 'commits']);
     const unverified = cli(repo.root, '--json', 'query', 'unverified', '--run', run);
     expect(unverified.json.sections[0].rows.map((x: any) => x.file)).toEqual([
       'src/farewell.ts',
@@ -543,5 +559,10 @@ describe('ambiguous sessions', () => {
     expect(derived.review.unexplained.map((h) => h.diff)).toEqual(['diff:12-13']);
     const why = withGraph(graph, (g) => findQuery('why')!.run(g, ['src/b.ts']));
     expect(why[0]!.rows).toEqual([]);
+    // An edit from an ambiguous session doesn't explain its hunk.
+    expect(why[1]).toMatchObject({
+      title: 'hunks',
+      rows: [{ hunk: 'H2', explained: 'no captured edit; read the patch' }],
+    });
   });
 });

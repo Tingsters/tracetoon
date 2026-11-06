@@ -258,7 +258,11 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
   // Commits and the files they touched.
   for (const c of full.pr.commits) {
     const sha = c.sha.slice(0, 12);
-    node('Commit', sha, { subject: clip(c.subject, 120) });
+    node('Commit', sha, {
+      subject: clip(c.subject, 120),
+      // The message body often holds the motivation; keep it queryable.
+      body: c.body ? clip(c.body, 600) : null,
+    });
     const touched =
       input.commitFiles?.get(c.sha) ??
       [...(input.commitFiles?.entries() ?? [])].find(([k]) => k.startsWith(sha))?.[1] ??

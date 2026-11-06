@@ -244,7 +244,7 @@ export const QUERIES: NamedQuery[] = [
   {
     name: 'outline',
     args: '',
-    help: 'Every changed file: role, size, hunks, the prompts whose edits survive in it, the commits that touched it, and checks run after its last edit.',
+    help: 'Every changed file: role, size, hunks, the prompts whose edits survive in it, the commits that touched it, and checks run after its last edit; then every commit, marking those with a message body to expand.',
     run: (g) => {
       const rows = g.run(
         `MATCH (f:File {inPr: true})
@@ -294,13 +294,26 @@ export const QUERIES: NamedQuery[] = [
               };
             }),
         ),
+        section(
+          'commits',
+          ['commit', 'subject', 'hasBody'],
+          g
+            .run(
+              'MATCH (c:Commit) RETURN c.id AS commit, c.subject AS subject, c.body AS body',
+            )
+            .rows.sort((a, b) => String(a.commit).localeCompare(String(b.commit)))
+            .map((r) => ({
+              ...r,
+              hasBody: r.body ? `yes; tracetoon expand commit:${String(r.commit)}` : null,
+            })),
+        ),
       ];
     },
   },
   {
     name: 'why',
     args: '<path|path:line|H#|diff:N>',
-    help: 'Where a file or hunk came from: the prompts whose edits survive in it (with diff refs and the decisions/plans of that turn), and the commits that touched it.',
+    help: 'Where a file or hunk came from: the prompts whose edits survive in it (with diff refs and the decisions/plans of that turn), every hunk with whether a captured edit explains it, and the commits that touched it with their message bodies.',
     run: (g, [raw]) => {
       const t = target(g, raw);
       const file =
@@ -309,15 +322,42 @@ export const QUERIES: NamedQuery[] = [
           g.run('MATCH (h:Hunk {id: $id}) RETURN h.file AS f', { id: t.hunk }).rows[0]?.f,
         );
       const out = [turnsInto(g, t)];
+      // Every hunk of the target, not only those a captured edit explains: an
+      // unexplained hunk still has to be read in the patch.
+      out.push(
+        section(
+          'hunks',
+          ['hunk', 'diff', 'added', 'removed', 'prompts', 'explained'],
+          g
+            .run(
+              `MATCH (h:Hunk)-[:OF]->(:File {id: $file})
+               ${t.hunk ? 'WHERE h.id = $hunk' : ''}
+               OPTIONAL MATCH (h)<-[:SURVIVES_IN]-(e:Edit)-[:IN_SESSION]->(:Session {band: 'included'})
+               OPTIONAL MATCH (e)-[:IN_TURN]->(p:Prompt)
+               RETURN h.id AS hunk, h.diff AS diff, h.added AS added, h.removed AS removed,
+                      collect(DISTINCT p.id) AS prompts, count(e) AS edits`,
+              { file, hunk: t.hunk ?? null },
+            )
+            .rows.map((r): Record<string, unknown> => ({
+              ...r,
+              prompts: ((r.prompts as string[]) ?? []).sort(factOrder),
+              explained:
+                Number(r.edits) > 0
+                  ? 'captured edit'
+                  : 'no captured edit; read the patch',
+            }))
+            .sort((a, b) => byDiff(String(a.diff), String(b.diff))),
+        ),
+      );
       out.push(
         section(
           'commits',
-          ['commit', 'subject', 'madeInSession'],
+          ['commit', 'subject', 'madeInSession', 'body'],
           g
             .run(
               `MATCH (c:Commit)-[:TOUCHES]->(:File {id: $file})
                OPTIONAL MATCH (s:Session)-[:MADE]->(c)
-               RETURN c.id AS commit, c.subject AS subject, s.id AS madeInSession`,
+               RETURN c.id AS commit, c.subject AS subject, s.id AS madeInSession, c.body AS body`,
               { file },
             )
             .rows.sort((a, b) => String(a.commit).localeCompare(String(b.commit))),

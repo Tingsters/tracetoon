@@ -83,7 +83,7 @@ export const SCHEMA_DOC = {
     Edit: 'id (E#), t, file, added, removed, surviving (lines still in the PR), inPr, via (shell when made by a command), session',
     File: 'id (repo-relative path), role (behavior|tests|docs|config|generated|version), inPr, added, removed, unmatched',
     Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context',
-    Commit: 'id (short SHA), subject',
+    Commit: 'id (short SHA), subject, body (message body, clipped; null when none)',
   },
   relationships: {
     IN_SESSION: '(Prompt|Decision|Plan|Run|Edit)-[:IN_SESSION]->(Session)',

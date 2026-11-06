@@ -152,10 +152,12 @@ every role. Keep the researcher, drafter and independent reviewer separate.
    [contribution-workflow.md](references/contribution-workflow.md). It reads the
    trace evidence (using `tracetoon expand <refs...>` for batched detail) and writes `body.md`
    in the run folder following
-   [references/writing-guide.md](references/writing-guide.md). It navigates
-   with the evidence graph first: `tracetoon query outline --run <id>`, then
-   `query why <path>` for the turns and diff refs behind each main file, rather
-   than reading every fact and the whole patch. For a new PR,
+   [references/writing-guide.md](references/writing-guide.md). Whoever drafts,
+   a delegated drafter or you inline, starts from the evidence graph:
+   `tracetoon query outline --run <id>`, then `query why <path>` for each
+   behavior file. Use the graph as an index, not a substitute for reading: still
+   read every behavior hunk in the patch, expand every commit with a message
+   body, and read the decisions and plans the graph cites. For a new PR,
    also write a one-line `title.txt`, preserving an explicit user-supplied title,
    otherwise following the guide's "The title" section
    and `titleRules` from context. For an existing PR, keep its title unless the
@@ -255,6 +257,9 @@ every role. Keep the researcher, drafter and independent reviewer separate.
    The reviewer also checks the description's accuracy (`review.json.bodyReview`),
    using `review-input.json` `graphLeads` (files no passing check followed, hunks
    no captured edit explains) and `tracetoon query` to test attribution and freshness.
+   A lead is not a finding: before telling the drafter a check was not run,
+   expand the session's raw commands, since one shell command often chains
+   several checks.
    First, it reads only the title and body and records what it thinks changed.
    Then it checks each independent factual clause against the diff and source snapshots, including fallbacks and the owning symbols of review pointers, looking for counter-evidence,
    and lists behavior the body leaves out. Re-render to
