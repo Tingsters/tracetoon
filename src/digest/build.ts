@@ -314,12 +314,28 @@ export function commandRuns(
   const segments = splitCommands(cmd).map((x) =>
     x.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''),
   );
-  const tests = segments.filter((s) => TEST_RUNNERS.some((re) => re.test(s)));
-  const found: { seg: string; kind: Run['kind'] }[] = [];
+  // A segment that sends its stdout to a file leaves no result in the log unless
+  // a later segment reads that file back (`> out.log; grep pass out.log`); the
+  // output captured then belongs to the other segments.
+  const toFile = (s: string) => {
+    const target = /(?:^|[^0-9&>])>{1,2}\s*(?!&)(\S+)/.exec(s)?.[1];
+    if (!target) return false;
+    const later = segments.slice(segments.indexOf(s) + 1);
+    return !later.some((x) => x.includes(target));
+  };
+  const testSegments = segments.filter((s) => TEST_RUNNERS.some((re) => re.test(s)));
+  const logged = testSegments.filter((s) => !toFile(s));
+  const tests = logged.length ? logged : testSegments;
+  const found: { seg: string; kind: Run['kind']; unlogged?: boolean }[] = [];
   let testAdded = false;
   for (const seg of segments) {
     if (TEST_RUNNERS.some((re) => re.test(seg))) {
-      if (!testAdded) found.push({ seg, kind: 'test' });
+      if (!tests.includes(seg)) {
+        // Its results went to a file; record that it ran, not what it showed.
+        found.push({ seg, kind: 'test', unlogged: true });
+        continue;
+      }
+      if (!testAdded) found.push({ seg: tests[0]!, kind: 'test' });
       testAdded = true;
       continue;
     }
@@ -327,7 +343,9 @@ export function commandRuns(
     if (hit) found.push({ seg, kind: hit[0] });
   }
   const several = found.length > 1;
-  return found.map(({ seg, kind }) => {
+  return found.map(({ seg, kind, unlogged }) => {
+    if (unlogged)
+      return { cmd: seg, kind, outcome: 'unknown', basis: 'none', summary: [] };
     const own = several
       ? (output ?? '')
           .split(/\r?\n/)

@@ -312,6 +312,25 @@ describe('evidence graph', () => {
     ]);
   });
 
+  test('changed lines are credited to the definition they sit in, not the one git names', () => {
+    const patch = [
+      'diff --git a/src/b.ts b/src/b.ts',
+      '--- a/src/b.ts',
+      '+++ b/src/b.ts',
+      '@@ -10,6 +10,7 @@ export function testOutputFailed(out: string) {',
+      ' }',
+      ' ',
+      ' export function testSegment(cmd: string) {',
+      '-  return cmd;',
+      '+  const c = cmd.trim();',
+      '+  return c;',
+      ' }',
+    ].join('\n');
+    const [h] = patchHunks(patch);
+    expect(h!.scope).toBe('testOutputFailed');
+    expect(h!.touched).toEqual(['testSegment']);
+  });
+
   test('symbols are read from definitions in common languages', () => {
     expect(definedSymbol('export function chooseProvider(opts) {')).toBe(
       'chooseProvider',

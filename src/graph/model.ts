@@ -94,7 +94,7 @@ export const SCHEMA_DOC = {
       'id (V#), cmd, kind, outcome, summary, when: a check run on the submitted content',
     Edit: 'id (E#), t, file, added, removed, surviving (lines still in the PR), inPr, via (shell when made by a command), session',
     File: 'id (repo-relative path), role (behavior|tests|docs|config|generated|version), inPr, added, removed, unmatched',
-    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (enclosing symbol), symbols (defined on added lines), branches',
+    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (symbol git names after @@), symbols (defined on added lines), touched (symbols whose bodies the changed lines are in), branches',
     Commit: 'id (short SHA), subject, body (message body; null when none), t',
     CommitClaim:
       'id (<sha>#n), commit, text (one sentence of the commit message), assertsResult (reports a result: commit-message assertion, not a run)',

@@ -91,6 +91,24 @@ describe('verification runs', () => {
     });
   });
 
+  test("a test whose output goes to a file nobody reads doesn't take another run's results", () => {
+    const runs = commandRuns(
+      'bun test > /tmp/full.log 2>&1; CLI=dist bun test tests/flow.test.ts 2>&1 | tail -3',
+      false,
+      ' 20 pass\n 0 fail',
+    );
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({
+      cmd: 'bun test > /tmp/full.log 2>&1',
+      outcome: 'unknown',
+      summary: [],
+    });
+    expect(runs[1]).toMatchObject({
+      cmd: 'bun test tests/flow.test.ts 2>&1',
+      summary: ['20 pass', '0 fail'],
+    });
+  });
+
   test('every check in a chained command is its own run', () => {
     // Shape of a captured release check: bundle, tests into a log, then the eval.
     const runs = commandRuns(

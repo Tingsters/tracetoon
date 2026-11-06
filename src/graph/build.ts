@@ -31,6 +31,11 @@ export interface PatchHunk {
   scope?: string;
   /** Functions, classes, methods and types defined on added lines. */
   symbols: string[];
+  /**
+   * Symbols whose bodies the changed lines are in: the nearest definition above
+   * each changed line within the hunk, else the one git names after the @@.
+   */
+  touched: string[];
   /** Added lines that branch or fall back (if/else, ??, ||, catch, default…). */
   branches: number;
   /** Normalized added lines, for matching edits. Never written out. */
@@ -91,6 +96,10 @@ export function patchHunks(patch: string): PatchHunk[] {
   let oldLeft = 0;
   let newLeft = 0;
   let newLine = 0;
+  let current: string | undefined;
+  const touch = (h: PatchHunk) => {
+    if (current && !h.touched.includes(current)) h.touched.push(current);
+  };
   const close = () => {
     if (!cur) return;
     cur.diff = last > first ? `diff:${first}-${last}` : `diff:${first}`;
@@ -107,6 +116,9 @@ export function patchHunks(patch: string): PatchHunk[] {
     }
     if (cur && (oldLeft > 0 || newLeft > 0)) {
       const c = line[0];
+      const def = definedSymbol(line.slice(1));
+      if (def) current = def;
+      if (c === '+' || c === '-') touch(cur);
       if (c === '+') {
         newLeft--;
         cur.added++;
@@ -137,6 +149,7 @@ export function patchHunks(patch: string): PatchHunk[] {
       newLine = Number(h[2]);
       newLeft = h[3] === undefined ? 1 : Number(h[3]);
       first = last = n;
+      current = h[4]?.trim() ? definedSymbol(h[4]) : undefined;
       cur = {
         id: `H${hunks.length + 1}`,
         file,
@@ -148,6 +161,7 @@ export function patchHunks(patch: string): PatchHunk[] {
         ...(h[4]?.trim() ? { context: clip(h[4].trim(), 160) } : {}),
         ...(h[4]?.trim() && definedSymbol(h[4]) ? { scope: definedSymbol(h[4]) } : {}),
         symbols: [],
+        touched: [],
         branches: 0,
         lines: new Set(),
         gone: new Set(),
@@ -275,6 +289,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       context: h.context ?? null,
       scope: h.scope ?? null,
       symbols: h.symbols,
+      touched: h.touched,
       branches: h.branches,
     });
     rel('OF', ['Hunk', h.id], ['File', h.file]);
@@ -425,7 +440,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
   for (const trail of trails) {
     let turn: string | undefined;
     let previousPrompt: string | undefined;
-    const openRuns: string[] = [];
+    const openRuns: { id: string; t?: string }[] = [];
     for (const e of trail.events) {
       if (e.kind === 'prompt') {
         const id = e.fact.id;
@@ -441,7 +456,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
         const label =
           e.kind === 'decision' ? 'Decision' : e.kind === 'plan' ? 'Plan' : 'Run';
         if (turn) rel('IN_TURN', [label, id], ['Prompt', turn]);
-        if (e.kind === 'run') openRuns.push(id);
+        if (e.kind === 'run') openRuns.push({ id, t: e.fact.t });
         continue;
       }
       const id = `E${++editN}`;
@@ -487,9 +502,13 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       }
       if (turn && e.inPr && band.get(trail.ref) === 'included')
         fileTurns.set(e.file, (fileTurns.get(e.file) ?? new Set()).add(turn));
-      // Every earlier run in this session did not see this edit to a PR file.
+      // Every earlier run in this session did not see this edit to a PR file. A
+      // shell edit made by the run's own command (sed … && prettier --check)
+      // shares its timestamp and can't be ordered against it; it is not later.
       if (e.inPr)
-        for (const r of openRuns) rel('LATER_EDIT', ['Run', r], ['File', e.file]);
+        for (const r of openRuns)
+          if (!(e.via === 'shell' && r.t && r.t === e.t))
+            rel('LATER_EDIT', ['Run', r.id], ['File', e.file]);
     }
   }
 
@@ -542,9 +561,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
     const id = `CH${i + 1}`;
     const files = [...new Set(hs.map((h) => h.file))];
     const roles = [...new Set(files.map(roleOf))].sort();
-    const symbols = [
-      ...new Set(hs.flatMap((h) => [...h.symbols, ...(h.scope ? [h.scope] : [])])),
-    ].slice(0, 16);
+    const symbols = [...new Set(hs.flatMap((h) => h.touched))].slice(0, 16);
     node('Change', id, {
       key,
       files,

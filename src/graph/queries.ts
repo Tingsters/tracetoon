@@ -149,7 +149,9 @@ export function checksAfterLastEdit(
   const files = g.run(
     `MATCH (f:File {inPr: true}) ${file ? 'WHERE f.id = $file' : ''}
      OPTIONAL MATCH (f)<-[:EDITS]-(e:Edit)-[:IN_SESSION]->(:Session {band: 'included'})
-     RETURN f.id AS file, f.role AS role, max(e.t) AS lastEdit, count(e) AS edits`,
+     RETURN f.id AS file, f.role AS role, max(e.t) AS lastEdit, count(e) AS edits,
+            collect(CASE WHEN e.via = 'shell' THEN e.t END) AS shellTimes,
+            collect(CASE WHEN e.via IS NULL THEN e.t END) AS toolTimes`,
     { file: file ?? null },
   ).rows;
   const runs = g
@@ -180,7 +182,17 @@ export function checksAfterLastEdit(
       file: String(f.file),
       role: String(f.role),
       lastEdit,
-      after: lastEdit ? runs.filter((r) => r.t > lastEdit) : [],
+      // A run in the same command as a shell edit (sed … && bun test) shares its
+      // timestamp; chained after the edit, it saw it.
+      after: lastEdit
+        ? runs.filter(
+            (r) =>
+              r.t > lastEdit ||
+              (r.t === lastEdit &&
+                ((f.shellTimes as string[]) ?? []).includes(lastEdit) &&
+                !((f.toolTimes as string[]) ?? []).includes(lastEdit)),
+          )
+        : [],
     });
   }
   return [...out.values()]
@@ -238,7 +250,7 @@ export function brief(g: GraphEngine): Section[] {
      OPTIONAL MATCH (h)<-[:SURVIVES_IN]-(e:Edit)-[:IN_SESSION]->(:Session {band: 'included'})
      OPTIONAL MATCH (h)<-[:INTRODUCED]-(k:Commit)
      RETURN c.id AS change, h.id AS hunk, h.file AS file, h.diff AS diff, h.scope AS scope,
-            h.symbols AS symbols, h.branches AS branches, count(DISTINCT e) AS edits,
+            h.touched AS symbols, h.branches AS branches, count(DISTINCT e) AS edits,
             collect(DISTINCT k.id) AS commits`,
   ).rows;
   const fileRole = new Map(
@@ -278,12 +290,7 @@ export function brief(g: GraphEngine): Section[] {
     const files = (c.files as string[]) ?? [];
     const where = files.map((f) => {
       const syms = uniq(
-        hs
-          .filter((h) => h.file === f)
-          .flatMap((h) => [
-            ...((h.symbols as string[]) ?? []),
-            ...(h.scope ? [String(h.scope)] : []),
-          ]),
+        hs.filter((h) => h.file === f).flatMap((h) => (h.symbols as string[]) ?? []),
       ).slice(0, 6);
       return syms.length ? `${f} (${syms.join(', ')})` : f;
     });
@@ -456,7 +463,7 @@ export function brief(g: GraphEngine): Section[] {
         change: c.id,
         limit: freshPass.length
           ? `No logged passing check after the last captured edit of ${unchecked.join(', ')}; fresh ${freshPass.join(', ')} passed on the submitted code, which shows the suite passes, not that it exercises this change.`
-          : `No passing check after the last captured edit of ${unchecked.join(', ')}: don't call it tested or verified.`,
+          : `No passing test, build, lint or typecheck run after the last captured edit of ${unchecked.join(', ')}: don't call it tested or verified.`,
       });
     const unexplained = hs.filter(
       (h) =>
@@ -479,9 +486,7 @@ export function brief(g: GraphEngine): Section[] {
           const where = uniq(
             hs
               .filter((h) => Number(h.branches) > 0)
-              .map((h) =>
-                String(h.scope ?? ((h.symbols as string[]) ?? [])[0] ?? h.file),
-              ),
+              .map((h) => String(((h.symbols as string[]) ?? [])[0] ?? h.file)),
           ).slice(0, 5);
           return where.length ? ` (in ${where.join(', ')})` : '';
         })()}: describe each path, and don't say "always", "only", "no longer" or "all" unless every path does it.`,
@@ -499,6 +504,7 @@ export function brief(g: GraphEngine): Section[] {
     'Results that appear only in a commit message (validation rows marked "asserted") are not runs: attribute them to that commit message or leave them out.',
     "Checks listed with files edited after them did not see those edits: don't present them as testing the final code.",
     'Point reviewers at the symbol that owns a behavior (from changes.where), not at the largest file.',
+    "A commit message listing several changes doesn't say which file implements each: tie a sentence to a file or symbol only where the diff shows that behavior there.",
   ].map((rule) => ({ rule }));
 
   return [
