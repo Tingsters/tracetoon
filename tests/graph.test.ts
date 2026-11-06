@@ -433,7 +433,15 @@ describe('graph-derived evidence in checks, budgets, notes and review', () => {
     );
     expect(notes).toContain('## Where each change came from (evidence graph)');
     const prepared = cli(repo.root, '--json', 'prepare', '--offline');
-    expect(Object.keys(prepared.json).slice(0, 2)).toEqual(['run', 'next']);
+    expect(Object.keys(prepared.json).slice(0, 3)).toEqual([
+      'run',
+      'next',
+      'graphOutline',
+    ]);
+    // The outline itself is embedded, so a drafter that never queries still sees it.
+    expect(prepared.json.graphOutline).toContain('files[');
+    expect(prepared.json.graphOutline).toContain('src/greet.ts');
+    expect(notes).toContain('## Evidence graph outline (`tracetoon query outline`)');
     expect(prepared.json.next).toContain(
       `tracetoon query outline --run ${prepared.json.run}`,
     );

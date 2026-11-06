@@ -84,12 +84,24 @@ export function evidenceNotes(
     TraceDigest,
     'sessions' | 'files' | 'pr' | 'verification' | 'validation' | 'graph'
   >,
+  outline?: string,
 ): string {
   const included = digest.sessions.filter((s) => s.band === 'included');
   const lines: string[] = ['# Notes to write from', ''];
   if (digest.graph)
     lines.push(
       'Start with the evidence graph: `tracetoon query outline`, then `tracetoon query why <path>` for each behavior file. It maps every hunk to the request behind it and marks commits whose message explains them.',
+      '',
+    );
+  if (outline)
+    lines.push(
+      '## Evidence graph outline (`tracetoon query outline`)',
+      '',
+      '```',
+      outline,
+      '```',
+      '',
+      'Each file lists the prompts whose edits survive in it and the commits that touched it; commits marked with a body hold an explanation worth expanding. `tracetoon query why <path>` gives each hunk with whether a captured edit explains it.',
       '',
     );
   const asks = included.flatMap((s) =>

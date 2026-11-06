@@ -25,7 +25,12 @@ import { evidenceNotes } from '../digest/notes.ts';
 import { repository, workFingerprint } from '../workflow/state.ts';
 import type { Run } from '../run.ts';
 import { count } from '../util/profile.ts';
-import { graphEnricher, saveGraph, type GraphOutcome } from '../graph/evidence.ts';
+import {
+  graphEnricher,
+  graphOutline,
+  saveGraph,
+  type GraphOutcome,
+} from '../graph/evidence.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -169,7 +174,8 @@ export function digestCmd(
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
   saveGraph(run, graph);
-  writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full), 'utf8');
+  const outline = graph.graph ? graphOutline(graph.graph) : undefined;
+  writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full, outline), 'utf8');
   const captured = submissionSnapshot(truth);
   writeJson(run, 'submission.json', captured);
   const ambiguous = digest.sessions.filter((s) => s.band === 'ambiguous');
@@ -209,7 +215,7 @@ export function digestCmd(
           .filter(Boolean)
           .join('\n'),
     );
-  return { truth, run, digest, full, captured, graph: graph.graph };
+  return { truth, run, digest, full, captured, graph: graph.graph, outline };
 }
 
 export function expandCmd(
@@ -409,6 +415,8 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
     {
       run: prepared.run.id,
       ...(prepared.graph ? { next: graphNext(prepared.run.id) } : {}),
+      // One JSON line, so piping through `head` still shows the whole map.
+      ...(prepared.outline ? { graphOutline: prepared.outline } : {}),
       runDir: prepared.run.dir,
       rolePackets: join(prepared.run.dir, 'role-packets.json'),
       digestPath: join(prepared.run.dir, 'digest.json'),
@@ -419,6 +427,7 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
       [
         `Run ${prepared.run.id}: digest, context and role-packets.json prepared from one snapshot.`,
         prepared.graph ? `Next: ${graphNext(prepared.run.id)}` : '',
+        prepared.outline ? `Evidence graph outline:\n${prepared.outline}` : '',
       ]
         .filter(Boolean)
         .join('\n'),

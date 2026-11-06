@@ -14,6 +14,9 @@ import { measured } from '../util/profile.ts';
 import { buildEvidenceGraph } from './build.ts';
 import { annotateDigest, deriveFromGraphJson, type GraphDerived } from './derive.ts';
 import type { EvidenceGraph } from './model.ts';
+import { withGraph } from './engine.ts';
+import { findQuery } from './queries.ts';
+import { toToon } from './toon.ts';
 
 export const GRAPH_FILE = 'evidence-graph.json';
 export const GRAPH_REVIEW_FILE = 'graph-review.json';
@@ -90,4 +93,19 @@ export function loadGraph(run: Run): EvidenceGraph | undefined {
 
 export function loadGraphReview(run: Run): GraphDerived['review'] | undefined {
   return readJson<GraphDerived['review']>(run, GRAPH_REVIEW_FILE);
+}
+
+/**
+ * The `query outline` result as text, for places every drafter reads before
+ * writing (the `prepare` output, the top of evidence-notes.md). Agents that
+ * draft inline often skip running queries, so they get the map anyway.
+ * Undefined when the graph can't be read; the digest never depends on it.
+ */
+export function graphOutline(graph: EvidenceGraph, rowCap = 40): string | undefined {
+  try {
+    const sections = withGraph(graph, (g) => findQuery('outline')!.run(g, []));
+    return toToon(sections, { rowCap }).trimEnd();
+  } catch {
+    return undefined;
+  }
 }

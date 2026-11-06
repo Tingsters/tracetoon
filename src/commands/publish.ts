@@ -18,7 +18,7 @@ import {
   reviewSummary,
 } from '../contribution/review.ts';
 import type { GuidanceRequest, ReviewInput } from '../contribution/types.ts';
-import { loadGraphReview } from '../graph/evidence.ts';
+import { graphOutline, loadGraph, loadGraphReview } from '../graph/evidence.ts';
 import {
   existsSync,
   readdirSync,
@@ -434,7 +434,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const writeYourself =
     ctx.aiPolicy.text === 'prohibited' ||
     ctx.aiPolicy.text === 'author-written-recommended';
-  const outline = evidenceNotes(readJson<TraceDigest>(run, 'digest-full.json') ?? digest);
+  const storedGraph = loadGraph(run);
+  const outline = evidenceNotes(
+    readJson<TraceDigest>(run, 'digest-full.json') ?? digest,
+    storedGraph ? graphOutline(storedGraph) : undefined,
+  );
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
   writeJson(run, 'approval.json', approval);
   for (const legacy of ['preview.html', 'review-state.json'])
