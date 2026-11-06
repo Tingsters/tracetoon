@@ -446,6 +446,10 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   }
 
   const stale = digestStale(truth.toplevel, digest);
+  const graphHint =
+    digest.graph && !graphQueried(run)
+      ? 'The evidence graph was not queried in this run. Run `tracetoon query outline`, then `tracetoon query why <path>` for each behavior file, check the draft against what they show, and render again.'
+      : undefined;
   emit(
     opts,
     {
@@ -462,6 +466,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ...(leakBlocks(approval) ? { leakNotice: leakNotice(approval) } : {}),
       changeMap: changeMapFindings,
       ...(titleNote ? { titleNote } : {}),
+      ...(graphHint ? { graphHint } : {}),
       claims: {
         ...claimSummary(claims),
         findings: claims.filter(
@@ -487,6 +492,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         titleLine(titleFindings),
         claimLine(claims),
         graphLine(graphLeads),
+        graphHint ? `Evidence graph: ${graphHint}` : '',
         changeMapFindings.length
           ? `Change map (advisory):\n${changeMapFindings.map((f) => `  - ${f.text}`).join('\n')}`
           : '',
@@ -509,6 +515,21 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         .join('\n'),
   );
   return approval;
+}
+
+/** Whether any `tracetoon query` ran against this run (from its profile log). */
+function graphQueried(run: { dir: string }): boolean {
+  try {
+    return readFileSync(join(run.dir, 'profiles.jsonl'), 'utf8')
+      .split('\n')
+      .some((line) => {
+        if (!line.trim()) return false;
+        const p = JSON.parse(line) as { counters?: Record<string, number> };
+        return (p.counters?.['graph.queries'] ?? 0) > 0;
+      });
+  } catch {
+    return false;
+  }
 }
 
 /** What the repo's AI policy means for this PR, in a few lines. */

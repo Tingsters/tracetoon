@@ -427,7 +427,16 @@ describe('graph-derived evidence in checks, budgets, notes and review', () => {
     const { repo, cli } = scenario();
     const r = cli(repo.root, '--json', 'digest', '--offline');
     const notes = readFileSync(join(r.json.runDir, 'evidence-notes.md'), 'utf8');
+    // The first thing a drafter reads points it at the graph.
+    expect(notes.split('\n').slice(0, 4).join('\n')).toContain(
+      'Start with the evidence graph: `tracetoon query outline`',
+    );
     expect(notes).toContain('## Where each change came from (evidence graph)');
+    const prepared = cli(repo.root, '--json', 'prepare', '--offline');
+    expect(Object.keys(prepared.json).slice(0, 2)).toEqual(['run', 'next']);
+    expect(prepared.json.next).toContain(
+      `tracetoon query outline --run ${prepared.json.run}`,
+    );
     expect(notes).toContain(
       '- src/greet.ts: S1; checks after its last captured edit: R2:failed, R1:passed',
     );

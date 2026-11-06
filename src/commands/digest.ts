@@ -343,6 +343,15 @@ export function contextCmd(
 }
 
 /** One immutable preparation snapshot shared by digest and contributor research. */
+/**
+ * The first drafting step, printed where every drafter looks: agents that
+ * write the description themselves often go from `prepare` straight to the
+ * body, past the skill's drafter instructions.
+ */
+export function graphNext(run: string): string {
+  return `before drafting, map the change with the evidence graph: \`tracetoon query outline --run ${run}\`, then \`tracetoon query why <path> --run ${run}\` for each behavior file. Then read every behavior hunk it lists and expand commits marked with a message body.`;
+}
+
 export function prepareCmd(cwd: string, opts: DigestOpts) {
   const repo = repository(cwd);
   const before = workFingerprint(repo.root);
@@ -399,6 +408,7 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
     opts,
     {
       run: prepared.run.id,
+      ...(prepared.graph ? { next: graphNext(prepared.run.id) } : {}),
       runDir: prepared.run.dir,
       rolePackets: join(prepared.run.dir, 'role-packets.json'),
       digestPath: join(prepared.run.dir, 'digest.json'),
@@ -406,7 +416,12 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
       ...context.context.contribution,
     },
     () =>
-      `Run ${prepared.run.id}: digest, context and role-packets.json prepared from one snapshot.`,
+      [
+        `Run ${prepared.run.id}: digest, context and role-packets.json prepared from one snapshot.`,
+        prepared.graph ? `Next: ${graphNext(prepared.run.id)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
   );
   return prepared;
 }

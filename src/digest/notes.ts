@@ -80,10 +80,18 @@ export function contextNotes(
  * (or must, by the repo's policy). Facts only, grouped; no prose to copy.
  */
 export function evidenceNotes(
-  digest: Pick<TraceDigest, 'sessions' | 'files' | 'pr' | 'verification' | 'validation'>,
+  digest: Pick<
+    TraceDigest,
+    'sessions' | 'files' | 'pr' | 'verification' | 'validation' | 'graph'
+  >,
 ): string {
   const included = digest.sessions.filter((s) => s.band === 'included');
   const lines: string[] = ['# Notes to write from', ''];
+  if (digest.graph)
+    lines.push(
+      'Start with the evidence graph: `tracetoon query outline`, then `tracetoon query why <path>` for each behavior file. It maps every hunk to the request behind it and marks commits whose message explains them.',
+      '',
+    );
   const asks = included.flatMap((s) =>
     s.prompts.filter((p, i) => p.ledToEdits || p.pushback || i === 0),
   );
