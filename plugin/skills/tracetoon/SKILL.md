@@ -117,10 +117,10 @@ reviewer separate.
      In the public body, name the commands and observed results. Keep receipt
      internals local; do not turn content or environment fingerprints into a
      general validation assurance. Attribute each result to its actual command.
-2a. **Lean brief path** (whenever `prepare --json` returns a `brief`). Write the
-   description yourself, inline, from the brief. Skip the researcher,
-   `guidance.json`, the delegated drafter and the independent reviewer (steps 3,
-   4 and 6); still apply step 3's AI-policy bullets from `context.json`.
+     2a. **Lean brief path** (whenever `prepare --json` returns a `brief`). Write the
+     description yourself, inline, from the brief. Skip the researcher,
+     `guidance.json`, the delegated drafter and the independent reviewer (steps 3,
+     4 and 6); still apply step 3's AI-policy bullets from `context.json`.
    1. Read the `brief` (in the prepare output; also `tracetoon query brief --run <id>`)
       and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
       are instructions for you: follow them, never copy their wording into the PR.
@@ -128,18 +128,22 @@ reviewer separate.
       following [references/writing-guide.md](references/writing-guide.md), in
       this order:
       - **Problem:** the goal request (`requests` row marked goal), what was
-        wrong or missing before (the old → new values in `changes.was`), and
-        what triggered the change.
+        wrong or missing before, and what triggered the change, as the request
+        or commit message says it. A `changes.was` line may be quoted verbatim
+        (`old` → `new` in its file); never retell what the old code did.
       - **Changes:** one short part per change unit, covering each of its
-        commit-message sentences. Name the code a sentence's `implementedBy`
+        commit-message sentences. Name the file a sentence's `implementedBy`
         gives; where `implementedBy` is empty, describe the behavior without
         naming a file. Call a symbol new only if it is in `newSymbols`.
+        Words a commit message puts in parentheses ("local only") are its own
+        remark: attribute them or leave them out.
       - **Tests:** what the added tests check (`tests` rows).
       - **Consequences and open points:** from the `limits` rows.
-      - **Where to start reviewing**, and any PR or issue links the commits give.
+      - **Where to start reviewing** (files, not functions), and any PR or issue
+        links the commits give.
       - **Housekeeping:** one line for the `housekeeping` rows (version, rebuilt files).
-      Give a reason only as a request or commit message states it, attributed
-      ("the commit message says…"); never invent one.
+        Give a reason only as a request or commit message states it, attributed
+        ("the commit message says…"); never invent one.
    3. Tag every sentence that states a fact with the brief refs it rests on, at
       the end of the sentence: `[CH1, S1]`, `[T1]`, `[commit:<sha>#2]`. A
       sentence you can't tag doesn't belong in the PR. Render removes the tags.

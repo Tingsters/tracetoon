@@ -250,7 +250,7 @@ const proseWords = (text: string) =>
 /**
  * The hunks a sentence describes, among one commit's hunks: those whose changed
  * lines share the sentence's words, weighted by how few hunks share each word.
- * Returns `file (symbols)` entries, best first.
+ * Returns the files, best first.
  */
 export function describedHunks(hunks: Record<string, unknown>[], text: string): string[] {
   const words = proseWords(text);
@@ -296,26 +296,11 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
   if (code.length && !/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b/i.test(text))
     scored.splice(0, scored.length, ...code);
   const best = scored[0]!.score;
-  const byFile = new Map<string, string[]>();
-  // A hunk can touch several symbols; name only those whose own name shares
-  // the sentence's words (`earlierWorkCutoff` for "cutoff"), else just the file.
-  const named = (syms: string[]) =>
-    syms.filter((x) =>
-      proseWords(x.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ')).some((w) =>
-        words.includes(w),
-      ),
-    );
-  for (const x of scored.filter((x) => x.score >= best * 0.6).slice(0, 4))
-    byFile.set(
-      String(x.h.file),
-      uniq([
-        ...(byFile.get(String(x.h.file)) ?? []),
-        ...named((x.h.symbols as string[]) ?? []),
-      ]),
-    );
-  return [...byFile]
-    .slice(0, 3)
-    .map(([f, syms]) => (syms.length ? `${f} (${syms.slice(0, 4).join(', ')})` : f));
+  // Files only: naming symbols here led writers to pin behaviors on the
+  // wrong function (dev13); the file is what the diff shows reliably.
+  return uniq(
+    scored.filter((x) => x.score >= best * 0.6).map((x) => String(x.h.file)),
+  ).slice(0, 3);
 }
 
 /**
@@ -392,7 +377,12 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       return syms.length ? `${f} (${syms.join(', ')})` : f;
     });
     const fresh = uniq(hs.flatMap((h) => (h.fresh as string[]) ?? [])).slice(0, 8);
-    const was = uniq(hs.flatMap((h) => (h.pairs as string[]) ?? [])).slice(0, 4);
+    // Each pair with its file, to quote as a code change, not to retell.
+    const was = uniq(
+      hs.flatMap((h) =>
+        ((h.pairs as string[]) ?? []).map((p) => `${String(h.file)}: ${p}`),
+      ),
+    ).slice(0, 4);
     return {
       change: c.id,
       groupedBy: String(c.key).split(':')[0],
@@ -587,17 +577,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     editedAfter: r.editedAfter,
     cmd: r.cmd,
   }));
-  // How the session got there: earlier failures of the same kind of check.
-  for (const row of validation) {
-    const run = runs.find((r) => r.id === row.check);
-    if (!run) continue;
-    const earlier = runs.filter(
-      (r) => r.kind === run.kind && String(r.t ?? '') < String(run.t ?? ''),
-    );
-    const failed = earlier.filter((r) => r.outcome === 'failed').length;
-    if (failed)
-      row.history = `${failed} of ${earlier.length} earlier ${String(run.kind)} runs failed`;
-  }
+
   for (const m of g
     .run(
       'MATCH (m:CommitClaim {assertsResult: true}) RETURN m.id AS id, m.commit AS commit, m.text AS text',
@@ -695,10 +675,11 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     'A check dated after the last captured edit ran after the last edit the logs show, not necessarily on the final code: say that, and never "on the final code" or "after all changes".',
     'Absence of a recorded run is not evidence a check was never run or that code is untested: write "no recorded run", never "not tested", "not exercised" or "never ran".',
     'Quote run results exactly as the validation rows give them (command and counts); never add a count, suite or file the row does not show.',
-    'Point reviewers at the symbol that owns a behavior (from commitMessages.implementedBy or changes.where), not at the largest file.',
+    'Point reviewers at files (from commitMessages.implementedBy or changes.where), not at functions, and not at the largest file.',
     'Name a file or symbol for a commit-message sentence only from its implementedBy; when implementedBy is empty, describe the behavior without naming where it lives.',
     'Call a symbol new, added or introduced only if it is in newSymbols; others already existed and were changed.',
-    "Give the old behavior from changes.was (old → new values) when you say what changed; don't guess old values.",
+    'changes.was lines are code, not history: quote one only verbatim, as `old` → `new` in its file; never describe what the old code did or why beyond that.',
+    "Words a commit message puts in parentheses or asides ('local only', 'experimental', 'for now') are that commit's own remark: attribute them or leave them out; never turn them into claims about what the PR includes.",
   ].map((rule) => ({ rule }));
 
   // What the added tests check, by their titles.
@@ -769,7 +750,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     section('housekeeping', ['ref', 'what', 'files'], housekeeping),
     section(
       'validation',
-      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'history', 'cmd'],
+      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'cmd'],
       validation,
     ),
     section('limits', ['change', 'limit'], limits),

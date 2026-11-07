@@ -98,11 +98,11 @@ export function validationSection(b: BriefParts): string {
       : !String(r.when ?? '').startsWith('after the last edit') && r.when
         ? `ran ${String(r.when)}`
         : '';
-    const history = r.history ? `; ${String(r.history)}` : '';
+
     const order = KIND_ORDER.indexOf(String(r.kind));
     runs.push({
       order: order < 0 ? KIND_ORDER.length : order,
-      line: `- \`${cmd}\`: ${result}${when ? `; ${when}` : ''}${history}.`,
+      line: `- \`${cmd}\`: ${result}${when ? `; ${when}` : ''}.`,
     });
   }
   const lines = [

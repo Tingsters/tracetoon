@@ -385,10 +385,10 @@ describe('evidence graph', () => {
       { file: 'tests/a.test.ts', symbols: [], words: ['git', 'binary', 'repo', 'files'] },
     ];
     expect(describedHunks(hunks, 'Files under .git are not repo edits.')).toEqual([
-      'src/correlate.ts (repoRel)',
+      'src/correlate.ts',
     ]);
     expect(describedHunks(hunks, 'Binary changes in the diff count.')).toEqual([
-      'src/pr.ts (parseUnifiedDiff)',
+      'src/pr.ts',
     ]);
     expect(describedHunks(hunks, 'Unrelated wording here.')).toEqual([]);
   });
@@ -433,7 +433,7 @@ describe('evidence graph', () => {
       sections: [{ title: 'validation', rows }],
     } as any);
     expect(v.split('\n').filter((l) => l.startsWith('- '))).toEqual([
-      '- `bun test`: passed (96 pass; 0 fail); 2 of 3 earlier test runs failed.',
+      '- `bun test`: passed (96 pass; 0 fail).',
       '- `bun x tsc --noEmit`: passed.',
       "- Tracetoon can't tell whether these runs saw the final commit.",
     ]);
