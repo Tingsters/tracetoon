@@ -5,7 +5,8 @@
  *   the `<!-- tracetoon:validation -->` marker, so no writer restates (and
  *   rewords) run results;
  * - removes the writer's ref tags (`[CH1, S1]`) and reports sentences with no
- *   tag or an unknown ref, and run or test claims made outside that section.
+ *   tag or an unknown ref, tagged sentences naming code their refs don't
+ *   mention, and run or test claims made outside that section.
  *
  * The checks are advisory; the text is deterministic.
  */
@@ -29,6 +30,8 @@ export interface BriefApplied {
   untagged: string[];
   /** Run, test or check claims outside the generated Validation section. */
   validationClaims: string[];
+  /** Tagged sentences that name code (`fn`, a type, a file) no cited row mentions. */
+  unbackedNames: { sentence: string; names: string[] }[];
 }
 
 const rowsOf = (b: BriefParts, title: string) =>
@@ -116,6 +119,63 @@ export function briefRefs(b: BriefParts): Set<string> {
   return out;
 }
 
+/** The text of every row each ref names, for checking what a tagged sentence cites. */
+function refTexts(b: BriefParts): { key: string; text: string }[] {
+  const out: { key: string; text: string }[] = [];
+  for (const sec of b.sections)
+    for (const r of sec.rows)
+      for (const k of ['change', 'ref', 'check'])
+        if (typeof r[k] === 'string' && r[k])
+          out.push({
+            key: (r[k] as string).replace(/^commit:/, ''),
+            text: JSON.stringify(r),
+          });
+  return out;
+}
+
+const citedText = (rows: { key: string; text: string }[], refs: string[]) =>
+  refs
+    .map((ref) => ref.replace(/^commit:/, ''))
+    .flatMap((ref) =>
+      rows.filter((r) =>
+        /^[0-9a-f]{7,40}(#\d+)?$/.test(ref)
+          ? r.key.startsWith(ref.split('#')[0]!) || ref.startsWith(r.key.split('#')[0]!)
+          : r.key === ref,
+      ),
+    )
+    .map((r) => r.text)
+    .join('\n');
+
+/**
+ * Code a sentence names: backticked names shaped like code (`a_b`, `a.b`,
+ * `src/x.ts`, `fn()`, `camelCase`, `PascalCase`) and bare lowerCamel words.
+ * Plain words and product names (`pushd`, OpenAI) are not checked.
+ */
+function codeNames(sentence: string): string[] {
+  const names = new Set<string>();
+  for (const m of sentence.matchAll(/`([^`\s]+)`/g)) {
+    const raw = m[1]!;
+    const n = raw.replace(/\(\)$/, '');
+    if (!/^[A-Za-z_.][\w.$/-]*$/.test(n)) continue;
+    if (raw.endsWith('()') || /[_./]/.test(n) || /[a-z][A-Z]/.test(n)) names.add(n);
+  }
+  for (const m of sentence.replace(/`[^`]*`/g, ' ').matchAll(/\b([a-z]+[A-Z]\w*)\b/g))
+    names.add(m[1]!);
+  return [...names];
+}
+
+/** Known, or a 7+ character prefix of a known commit sha (`421ce02` for `commit:421ce024cc68`). */
+function knownRef(known: Set<string>, ref: string): boolean {
+  if (known.has(ref)) return true;
+  const m = /^(?:commit:)?([0-9a-f]{7,40})(#\d+)?$/.exec(ref);
+  if (!m) return false;
+  for (const k of known) {
+    const n = /^(?:commit:)?([0-9a-f]{7,40})(#\d+)?$/.exec(k);
+    if (n && n[1]!.startsWith(m[1]!) && (n[2] ?? '') === (m[2] ?? '')) return true;
+  }
+  return false;
+}
+
 const REF = String.raw`(?:[A-Z]{1,3}\d+|(?:commit:)?[0-9a-f]{7,40}(?:#\d+)?)`;
 const TAG = new RegExp(String.raw`\s?\[(${REF}(?:\s*[,;]\s*${REF})*)\](?!\()`, 'g');
 
@@ -155,12 +215,15 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
       unknownRefs: [],
       untagged: [],
       validationClaims: [],
+      unbackedNames: [],
     };
   const known = briefRefs(b);
   const unknown = new Set<string>();
   let tags = 0;
   const untagged: string[] = [];
   const validationClaims: string[] = [];
+  const unbackedNames: BriefApplied['unbackedNames'] = [];
+  const rows = refTexts(b);
   for (const unit of proseUnits(body)) {
     const found = [...unit.matchAll(TAG)];
     const clean = unit.replace(TAG, '').trim();
@@ -170,11 +233,17 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
       if (clean.split(/\s+/).length >= 5 && !clean.endsWith(':')) untagged.push(clean);
       continue;
     }
-    for (const m of found)
-      for (const ref of m[1]!.split(/\s*[,;]\s*/)) {
-        tags++;
-        if (!known.has(ref)) unknown.add(ref);
-      }
+    const refs = found.flatMap((m) => m[1]!.split(/\s*[,;]\s*/));
+    for (const ref of refs) {
+      tags++;
+      if (!knownRef(known, ref)) unknown.add(ref);
+    }
+    // A name the cited rows never mention is the writer's own attribution.
+    const cited = citedText(rows, refs);
+    const names = codeNames(clean).filter(
+      (n) => !cited.includes(n) && !cited.includes(n.split('/').pop()!),
+    );
+    if (names.length) unbackedNames.push({ sentence: clean, names });
   }
   let text = body.replace(TAG, '');
   // The section brings its own heading: drop a writer's heading right above the marker.
@@ -191,5 +260,6 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
     unknownRefs: [...unknown].sort(),
     untagged,
     validationClaims,
+    unbackedNames,
   };
 }

@@ -11,7 +11,7 @@ import { deriveFromGraphJson } from '../src/graph/derive.ts';
 import { GraphEngine, graphEngineAvailable, withGraph } from '../src/graph/engine.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
 import { findQuery } from '../src/graph/queries.ts';
-import { shownCommand } from '../src/graph/briefRender.ts';
+import { applyBrief, shownCommand } from '../src/graph/briefRender.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
 
@@ -333,6 +333,55 @@ describe('evidence graph', () => {
       'bun scripts/eval.ts',
     );
     expect(shownCommand('bun run bundle')).toBe('bun run bundle');
+  });
+
+  test('a tagged sentence may name only code its cited rows mention', () => {
+    const b = {
+      unchecked: [],
+      sections: [
+        {
+          title: 'changes',
+          rows: [
+            { change: 'CH1', where: ['src/comic/providers.ts (ImageJob, artPrompt)'] },
+            { change: 'CH2', where: ['src/comic/bible.ts'] },
+          ],
+        },
+        {
+          title: 'commitMessages',
+          rows: [
+            {
+              ref: 'commit:421ce024cc68',
+              text: 'fix(comic): match Codex images by its final reply',
+            },
+          ],
+        },
+      ],
+    } as any;
+    const r = applyBrief(
+      [
+        '`ImageJob` carries prompts to providers, and `SeriesBible` stores cast sheets. [CH1]',
+        'The cast lives in `src/comic/bible.ts` now. [CH2]',
+        'Codex images are matched to prompts by its final reply in `matchImages`. [421ce02]',
+        'This sentence has no tag and states something about the code.',
+      ].join('\n\n'),
+      b,
+    );
+    expect(r.unbackedNames).toEqual([
+      {
+        sentence:
+          '`ImageJob` carries prompts to providers, and `SeriesBible` stores cast sheets.',
+        names: ['SeriesBible'],
+      },
+      {
+        sentence:
+          'Codex images are matched to prompts by its final reply in `matchImages`.',
+        names: ['matchImages'],
+      },
+    ]);
+    expect(r.untagged).toEqual([
+      'This sentence has no tag and states something about the code.',
+    ]);
+    expect(r.unknownRefs).toEqual([]);
   });
 
   test('with several commits, changes follow commits and messages stay with their commit', () => {

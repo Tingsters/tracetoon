@@ -19,7 +19,12 @@ import {
 } from '../contribution/review.ts';
 import type { GuidanceRequest, ReviewInput } from '../contribution/types.ts';
 import { graphClaimFacts } from '../graph/claims.ts';
-import { graphBrief, graphBriefParts, loadGraph, loadGraphReview } from '../graph/evidence.ts';
+import {
+  graphBrief,
+  graphBriefParts,
+  loadGraph,
+  loadGraphReview,
+} from '../graph/evidence.ts';
 import { applyBrief, type BriefApplied } from '../graph/briefRender.ts';
 import {
   existsSync,
@@ -223,12 +228,14 @@ const briefCheckSummary = (b: BriefApplied) => ({
   unknownRefs: b.unknownRefs,
   untagged: b.untagged,
   validationClaims: b.validationClaims,
+  unbackedNames: b.unbackedNames,
 });
 
 /** What the brief check found, as instructions the writer can act on. */
 function briefCheckLines(b: BriefApplied): string {
   const out: string[] = [];
-  if (b.validation) out.push('Validation section: written by Tracetoon from the recorded checks.');
+  if (b.validation)
+    out.push('Validation section: written by Tracetoon from the recorded checks.');
   if (b.validationClaims.length)
     out.push(
       `Run or test claims outside the Validation section (remove them; ${b.validation ? 'the section already says' : 'put `<!-- tracetoon:validation -->` where the section belongs and render writes'} what ran):\n${b.validationClaims
@@ -237,13 +244,24 @@ function briefCheckLines(b: BriefApplied): string {
         .join('\n')}`,
     );
   if (b.unknownRefs.length)
-    out.push(`Ref tags not in the brief (fix the sentence or its tag): ${b.unknownRefs.join(', ')}`);
+    out.push(
+      `Ref tags not in the brief (fix the sentence or its tag): ${b.unknownRefs.join(', ')}`,
+    );
+  if (b.unbackedNames.length)
+    out.push(
+      `Sentences naming code their ref tags don't mention (the brief doesn't tie that code to this change: drop the name, or cite the row that names it; don't add a tag to keep the sentence):\n${b.unbackedNames
+        .slice(0, 8)
+        .map((u) => `  - ${u.names.map((n) => `\`${n}\``).join(', ')}: ${u.sentence}`)
+        .join('\n')}`,
+    );
   if (b.tags && b.untagged.length)
     out.push(
-      `Sentences with no ref tag (tag each with the brief refs it rests on, or delete it):\n${b.untagged
+      `Sentences with no ref tag. These say something no brief row states: delete each one, unless a row says the same thing, then reword it to that row and tag it. Adding a tag without a row that states it is not a fix:\n${b.untagged
         .slice(0, 8)
         .map((s) => `  - ${s}`)
-        .join('\n')}${b.untagged.length > 8 ? `\n  - …and ${b.untagged.length - 8} more` : ''}`,
+        .join(
+          '\n',
+        )}${b.untagged.length > 8 ? `\n  - …and ${b.untagged.length - 8} more` : ''}`,
     );
   return out.join('\n');
 }
@@ -280,7 +298,10 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   }
   // The brief's Validation section and ref tags: written and checked here.
   const storedGraph = loadGraph(run);
-  const briefCheck = applyBrief(bodyMd, storedGraph ? graphBriefParts(storedGraph) : undefined);
+  const briefCheck = applyBrief(
+    bodyMd,
+    storedGraph ? graphBriefParts(storedGraph) : undefined,
+  );
   const draft = briefCheck.text;
   // The title: a person's choice is kept. A title edited on GitHub since
   // Tracetoon posted it, or written by someone on a PR Tracetoon didn't title,
