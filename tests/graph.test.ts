@@ -435,7 +435,7 @@ describe('evidence graph', () => {
     expect(v.split('\n').filter((l) => l.startsWith('- '))).toEqual([
       '- `bun test`: passed (96 pass; 0 fail); 2 of 3 earlier test runs failed.',
       '- `bun x tsc --noEmit`: passed.',
-      "- These ran after the last edit the logs captured; the logs don't show a run on the final commit.",
+      "- Tracetoon can't tell whether these runs saw the final commit.",
     ]);
   });
 

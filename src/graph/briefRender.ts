@@ -118,9 +118,7 @@ export function validationSection(b: BriefParts): string {
       '- No test, build, lint or typecheck run was recorded in the captured sessions.',
     );
   if (predates)
-    lines.push(
-      "- These ran after the last edit the logs captured; the logs don't show a run on the final commit.",
-    );
+    lines.push("- Tracetoon can't tell whether these runs saw the final commit.");
   return [
     '## Validation',
     '',

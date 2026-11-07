@@ -297,12 +297,20 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
     scored.splice(0, scored.length, ...code);
   const best = scored[0]!.score;
   const byFile = new Map<string, string[]>();
+  // A hunk can touch several symbols; name only those whose own name shares
+  // the sentence's words (`earlierWorkCutoff` for "cutoff"), else just the file.
+  const named = (syms: string[]) =>
+    syms.filter((x) =>
+      proseWords(x.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ')).some((w) =>
+        words.includes(w),
+      ),
+    );
   for (const x of scored.filter((x) => x.score >= best * 0.6).slice(0, 4))
     byFile.set(
       String(x.h.file),
       uniq([
         ...(byFile.get(String(x.h.file)) ?? []),
-        ...((x.h.symbols as string[]) ?? []),
+        ...named((x.h.symbols as string[]) ?? []),
       ]),
     );
   return [...byFile]
