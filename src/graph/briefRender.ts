@@ -34,10 +34,11 @@ export interface BriefApplied {
 const rowsOf = (b: BriefParts, title: string) =>
   b.sections.find((s) => s.title === title)?.rows ?? [];
 
-/** A command as run, without trailing output redirections. */
-function shownCommand(cmd: unknown): string {
+/** A command as run, without output redirections (files, /dev/null, redacted paths). */
+export function shownCommand(cmd: unknown): string {
   return String(cmd ?? '')
-    .replace(/(\s+(\d?>>?|&>)\s*(\/dev\/null|&\d)|\s+2>&1)+\s*$/g, '')
+    .replace(/\s+(\d?>>?|&>)\s*(&\d|<[^>\s]+>|"[^"]*"|'[^']*'|[^\s;|&]+)/g, '')
+    .replace(/\s+([;|&]{1,2})\s*/g, ' $1 ')
     .trim();
 }
 
@@ -170,6 +171,11 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
       }
   }
   let text = body.replace(TAG, '');
+  // The section brings its own heading: drop a writer's heading right above the marker.
+  text = text.replace(
+    new RegExp(String.raw`^#{1,6}[^\n]*\n(\s*\n)*(?=${VALIDATION_MARKER})`, 'm'),
+    '',
+  );
   const validation = text.includes(VALIDATION_MARKER);
   if (validation) text = text.replace(VALIDATION_MARKER, validationSection(b));
   return {

@@ -11,6 +11,7 @@ import { deriveFromGraphJson } from '../src/graph/derive.ts';
 import { GraphEngine, graphEngineAvailable, withGraph } from '../src/graph/engine.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
 import { findQuery } from '../src/graph/queries.ts';
+import { shownCommand } from '../src/graph/briefRender.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
 
@@ -267,6 +268,8 @@ describe('evidence graph', () => {
         'The tests passed after every change.',
         'Reviewers can start at the farewell helper in its own file.',
         '',
+        '## Testing',
+        '',
         '<!-- tracetoon:validation -->',
         '',
       ].join('\n'),
@@ -277,6 +280,7 @@ describe('evidence graph', () => {
     expect(body).not.toContain('[CH');
     expect(body).not.toContain('tracetoon:validation');
     expect(body).toContain('## Validation');
+    expect(body).not.toContain('## Testing');
     // The section quotes the brief's row: the failing run, before farewell's last edit.
     expect(body).toContain('- `bun test`: failed (3 pass; 1 fail); ran before later edits to src/farewell.ts.');
     expect(body).toContain('No recorded passing test, build, lint or typecheck run after the last captured edit of src/farewell.ts');
@@ -291,6 +295,15 @@ describe('evidence graph', () => {
       ],
     });
     expect(r.json.contributionReview.status).toBe('skipped');
+  });
+
+  test('shown commands drop output redirections', () => {
+    expect(shownCommand('bun test > <outside-repo> 2>&1 ; bun test tests/a.ts')).toBe(
+      'bun test ; bun test tests/a.ts',
+    );
+    expect(shownCommand('bun x tsc --noEmit 2>&1')).toBe('bun x tsc --noEmit');
+    expect(shownCommand('bun scripts/eval.ts >/dev/null 2>&1')).toBe('bun scripts/eval.ts');
+    expect(shownCommand('bun run bundle')).toBe('bun run bundle');
   });
 
   test('with several commits, changes follow commits and messages stay with their commit', () => {
