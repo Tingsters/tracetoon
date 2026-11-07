@@ -247,6 +247,52 @@ describe('evidence graph', () => {
     expect(sec('avoid').length).toBeGreaterThan(3);
   });
 
+  test('lean render writes the Validation section and checks ref tags', () => {
+    const { repo, cli } = scenario();
+    const prepared = cli(repo.root, '--json', 'prepare', '--offline');
+    const run = prepared.json.run;
+    expect(prepared.json.next).toContain('render --lean');
+    expect(prepared.json.brief).not.toContain('branching or fallback line');
+    const b = cli(repo.root, '--json', 'query', 'brief', '--run', run);
+    const changes = b.json.sections.find((x: any) => x.title === 'changes').rows;
+    const id = (file: string) =>
+      changes.find((c: any) => c.where.some((w: string) => w.startsWith(file))).change;
+    const runDir = prepared.json.runDir;
+    writeFileSync(join(runDir, 'title.txt'), 'Add greet and farewell helpers');
+    writeFileSync(
+      join(runDir, 'body.md'),
+      [
+        `Adds a greet helper that says hello by name. [${id('src/greet.ts')}, S1]`,
+        `Adds a farewell helper that says goodbye. [${id('src/farewell.ts')}; S2, X9]`,
+        'The tests passed after every change.',
+        'Reviewers can start at the farewell helper in its own file.',
+        '',
+        '<!-- tracetoon:validation -->',
+        '',
+      ].join('\n'),
+    );
+    const r = cli(repo.root, '--json', 'render', '--run', run, '--no-comic', '--lean');
+    expect(r.code).toBe(0);
+    const body = readFileSync(join(runDir, 'final-body.md'), 'utf8');
+    expect(body).not.toContain('[CH');
+    expect(body).not.toContain('tracetoon:validation');
+    expect(body).toContain('## Validation');
+    // The section quotes the brief's row: the failing run, before farewell's last edit.
+    expect(body).toContain('- `bun test`: failed (3 pass; 1 fail); ran before later edits to src/farewell.ts.');
+    expect(body).toContain('No recorded passing test, build, lint or typecheck run after the last captured edit of src/farewell.ts');
+    expect(r.json.briefCheck).toMatchObject({
+      validationSection: true,
+      tags: 5,
+      unknownRefs: ['X9'],
+      validationClaims: ['The tests passed after every change.'],
+      untagged: [
+        'The tests passed after every change.',
+        'Reviewers can start at the farewell helper in its own file.',
+      ],
+    });
+    expect(r.json.contributionReview.status).toBe('skipped');
+  });
+
   test('with several commits, changes follow commits and messages stay with their commit', () => {
     const { claudeHome, cli } = setup();
     const repo = makeRepo();

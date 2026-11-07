@@ -238,6 +238,15 @@ const refs = (xs: string[], cap: number) =>
  * its evidence; nothing in it is inferred beyond the graph.
  */
 export function brief(g: GraphEngine): Section[] {
+  return briefParts(g).sections;
+}
+
+/**
+ * The brief plus what `render` needs to write the Validation section itself:
+ * behavior or test files with no recorded passing check after their last
+ * captured edit.
+ */
+export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: string[] } {
   const changes = g
     .run(
       `MATCH (c:Change)
@@ -447,6 +456,7 @@ export function brief(g: GraphEngine): Section[] {
     .filter((v) => v.outcome === 'passed')
     .map((v) => String(v.id));
   const limits: Record<string, unknown>[] = [];
+  const uncheckedAll: string[] = [];
   for (const c of changes) {
     const hs = hunkRows.filter((h) => h.change === c.id);
     const behavior = ((c.files as string[]) ?? []).filter((f) =>
@@ -458,6 +468,7 @@ export function brief(g: GraphEngine): Section[] {
       const t = committed.get(f);
       return !t || !passedAfter(t).length;
     });
+    uncheckedAll.push(...unchecked);
     if (unchecked.length)
       limits.push({
         change: c.id,
@@ -479,17 +490,19 @@ export function brief(g: GraphEngine): Section[] {
           4,
         ).join(' ')}): read them in the patch before describing them.`,
       });
+    // An instruction, not a fact: no count (the line test is rough) and no
+    // wording a writer could copy into the PR as a claim about the code.
     if (Number(c.branches) > 0)
       limits.push({
         change: c.id,
-        limit: `Adds ${String(c.branches)} branching or fallback line(s)${(() => {
+        limit: `Before writing "always", "only", "no longer" or "all" about ${(() => {
           const where = uniq(
             hs
               .filter((h) => Number(h.branches) > 0)
               .map((h) => String(((h.symbols as string[]) ?? [])[0] ?? h.file)),
           ).slice(0, 5);
-          return where.length ? ` (in ${where.join(', ')})` : '';
-        })()}: describe each path, and don't say "always", "only", "no longer" or "all" unless every path does it.`,
+          return where.length ? where.join(', ') : 'this change';
+        })()}, read its conditions in the patch; say it only if every path does it.`,
       });
     if (!asked.some((a) => a.change === c.id) && !said.some((x) => x.change === c.id))
       limits.push({
@@ -499,6 +512,9 @@ export function brief(g: GraphEngine): Section[] {
   }
 
   const avoid = [
+    'Limits and these rules are instructions for you, not content for the PR: never copy their wording into the description.',
+    "Don't write test, build, lint or typecheck results yourself: put the line `<!-- tracetoon:validation -->` where the validation section belongs, and `render` writes it from the validation rows.",
+    'Tag each sentence that states a fact with the refs it rests on, e.g. `[CH1, S1]` (any ref from the brief: changes, requests, commit messages, validation rows); `render` removes the tags and lists sentences with no tag or an unknown ref.',
     "Tracetoon's line matching (matched %, unmatched lines, commits made in sessions) is not authorship: don't report who wrote what as percentages or counts.",
     'A commit-message sentence speaks for its own commit only: never generalize it to other commits ("all of these were found while…").',
     'Results that appear only in a commit message (validation rows marked "asserted") are not runs: attribute them to that commit message or leave them out.',
@@ -510,7 +526,7 @@ export function brief(g: GraphEngine): Section[] {
     "A commit message listing several changes doesn't say which file implements each: tie a sentence to a file or symbol only where the diff shows that behavior there.",
   ].map((rule) => ({ rule }));
 
-  return [
+  const sections = [
     section(
       'changes',
       ['change', 'groupedBy', 'where', 'added', 'removed', 'diff', 'commits', 'requests'],
@@ -526,6 +542,7 @@ export function brief(g: GraphEngine): Section[] {
     section('limits', ['change', 'limit'], limits),
     section('avoid', ['rule'], avoid),
   ];
+  return { sections, unchecked: uniq(uncheckedAll).sort() };
 }
 
 export const QUERIES: NamedQuery[] = [

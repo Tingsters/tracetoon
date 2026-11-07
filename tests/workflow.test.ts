@@ -35,6 +35,7 @@ import {
   receipts,
 } from '../src/workflow/checks.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
+import { publishProblem } from '../src/workflow/readiness.ts';
 import { discoveryIndex } from '../src/trace/discovery.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
 import { git } from '../src/util/exec.ts';
@@ -683,6 +684,17 @@ describe('requested PR to publication rehearsal', () => {
     const state = join(dirname(config), 'gh-state.json');
     const gh = { FAKE_GH_LOG: log, FAKE_GH_STATE: state };
     // A managed task needs a current independent review before it is posted.
+    expect(cli(repo.root, ['publish', '--run', run.id], gh).json.error).toContain(
+      'independent review',
+    );
+    // ...unless it took the lean brief path, which has no separate reviewer.
+    const lean = ok(repo.root, 'render', '--run', run.id, '--no-comic', '--lean');
+    expect(lean.contributionReview.status).toBe('skipped');
+    expect(lean.contributionReview.mode).toBe('lean');
+    expect(
+      publishProblem(repo.root, run, readLocal(join(run.dir, 'approval.json'))!),
+    ).toBeUndefined();
+    ok(repo.root, 'render', '--run', run.id, '--no-comic');
     expect(cli(repo.root, ['publish', '--run', run.id], gh).json.error).toContain(
       'independent review',
     );

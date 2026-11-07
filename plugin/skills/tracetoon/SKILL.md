@@ -6,9 +6,11 @@ description: Create a GitHub PR with a description and optional comic written fr
 # Tracetoon: PR descriptions and comics from agent traces
 
 Tracetoon reads the session logs your agents already keep on disk, finds the
-sessions that produced the current branch, and gives you a redacted digest. You
-coordinate a researcher, a drafter and an independent reviewer; Tracetoon draws
-the comic, checks the result, and creates or updates the PR.
+sessions that produced the current branch, and gives you a redacted digest and
+an evidence brief. With a brief you write the description yourself from it (the
+lean path); without one you coordinate a researcher, a drafter and an
+independent reviewer. Tracetoon draws the comic, checks the result, and creates
+or updates the PR.
 
 ## The tool
 
@@ -47,7 +49,8 @@ that bypass on your own initiative.
 Keep the selected JSON run ID and artifact paths in every handoff. An explicit
 run failure must not switch to another run. Start with compact evidence and
 notes; expand individual facts when needed rather than loading full traces into
-every role. Keep the researcher, drafter and independent reviewer separate.
+every role. On the full path, keep the researcher, drafter and independent
+reviewer separate.
 
 0. **Initialize PR preparation.** Reuse the run from the hook redirect, or run
    `tracetoon task begin --json` now and keep its run ID. Use actual host session
@@ -114,7 +117,30 @@ every role. Keep the researcher, drafter and independent reviewer separate.
      In the public body, name the commands and observed results. Keep receipt
      internals local; do not turn content or environment fingerprints into a
      general validation assurance. Attribute each result to its actual command.
-3. **Context.** Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
+2a. **Lean brief path** (whenever `prepare --json` returns a `brief`). Write the
+   description yourself, inline, from the brief. Skip the researcher,
+   `guidance.json`, the delegated drafter and the independent reviewer (steps 3,
+   4 and 6); still apply step 3's AI-policy bullets from `context.json`.
+   1. Read the `brief` (in the prepare output; also `tracetoon query brief --run <id>`)
+      and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
+      are instructions for you: follow them, never copy their wording into the PR.
+   2. Write `title.txt` (one line; keep a title the user gave) and `body.md`
+      following [references/writing-guide.md](references/writing-guide.md): what
+      each change unit does at the symbols that own it, why (its requests and its
+      own commit's sentences), and where a reviewer should start.
+   3. Tag every sentence that states a fact with the brief refs it rests on, at
+      the end of the sentence: `[CH1, S1]`, `[R14]`, `[commit:<sha>#2]`. A
+      sentence you can't tag doesn't belong in the PR. Render removes the tags.
+   4. Write no test, build, lint or typecheck results yourself, anywhere. Put the
+      line `<!-- tracetoon:validation -->` where the validation section belongs;
+      render writes that section from the recorded checks.
+   5. `tracetoon render --lean --json --run <id>`. Fix what it lists (claims marked
+      contradicted, run or test claims outside the Validation section, untagged
+      sentences, unknown refs), then render again; at most two rounds.
+   6. Draw a comic if one is wanted (step 5, without a separate reviewer), then
+      publish (step 7).
+3. **Context** (full path; the lean path in 2a goes from step 2 to step 7).
+   Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).
    - **Researcher phase.** Launch a separate researcher with the host's native

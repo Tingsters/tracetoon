@@ -208,8 +208,9 @@ export interface ReviewInput {
 }
 
 export interface ReviewResult {
-  status: 'current' | 'incomplete' | 'missing' | 'stale' | 'invalid';
-  mode?: 'delegated' | 'inline';
+  /** `skipped`: the lean brief path, drafted inline with no separate review. */
+  status: 'current' | 'incomplete' | 'missing' | 'stale' | 'invalid' | 'skipped';
+  mode?: 'delegated' | 'inline' | 'lean';
   issues: string[];
   guidanceStatus: GuidanceResult['status'];
   assessments: Assessment[];

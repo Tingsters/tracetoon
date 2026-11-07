@@ -19,7 +19,8 @@ import {
 } from '../contribution/review.ts';
 import type { GuidanceRequest, ReviewInput } from '../contribution/types.ts';
 import { graphClaimFacts } from '../graph/claims.ts';
-import { graphBrief, loadGraph, loadGraphReview } from '../graph/evidence.ts';
+import { graphBrief, graphBriefParts, loadGraph, loadGraphReview } from '../graph/evidence.ts';
+import { applyBrief, type BriefApplied } from '../graph/briefRender.ts';
 import {
   existsSync,
   readdirSync,
@@ -209,6 +210,42 @@ export interface RenderOpts extends OutOpts {
   noComic?: boolean;
   /** Replace a title a person chose (only after the user agrees). */
   retitle?: boolean;
+  /**
+   * The lean brief path: drafted inline from the evidence brief, with no
+   * separate researcher or reviewer. Publishing then needs no review.json.
+   */
+  lean?: boolean;
+}
+
+const briefCheckSummary = (b: BriefApplied) => ({
+  validationSection: b.validation,
+  tags: b.tags,
+  unknownRefs: b.unknownRefs,
+  untagged: b.untagged,
+  validationClaims: b.validationClaims,
+});
+
+/** What the brief check found, as instructions the writer can act on. */
+function briefCheckLines(b: BriefApplied): string {
+  const out: string[] = [];
+  if (b.validation) out.push('Validation section: written by Tracetoon from the recorded checks.');
+  if (b.validationClaims.length)
+    out.push(
+      `Run or test claims outside the Validation section (remove them; ${b.validation ? 'the section already says' : 'put `<!-- tracetoon:validation -->` where the section belongs and render writes'} what ran):\n${b.validationClaims
+        .slice(0, 8)
+        .map((s) => `  - ${s}`)
+        .join('\n')}`,
+    );
+  if (b.unknownRefs.length)
+    out.push(`Ref tags not in the brief (fix the sentence or its tag): ${b.unknownRefs.join(', ')}`);
+  if (b.tags && b.untagged.length)
+    out.push(
+      `Sentences with no ref tag (tag each with the brief refs it rests on, or delete it):\n${b.untagged
+        .slice(0, 8)
+        .map((s) => `  - ${s}`)
+        .join('\n')}${b.untagged.length > 8 ? `\n  - …and ${b.untagged.length - 8} more` : ''}`,
+    );
+  return out.join('\n');
 }
 
 export function renderCmd(cwd: string, opts: RenderOpts): Approval {
@@ -241,6 +278,10 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   if (!bodyMd?.trim()) {
     throw new UserError(`Write the PR description to ${join(run.dir, 'body.md')} first.`);
   }
+  // The brief's Validation section and ref tags: written and checked here.
+  const storedGraph = loadGraph(run);
+  const briefCheck = applyBrief(bodyMd, storedGraph ? graphBriefParts(storedGraph) : undefined);
+  const draft = briefCheck.text;
   // The title: a person's choice is kept. A title edited on GitHub since
   // Tracetoon posted it, or written by someone on a PR Tracetoon didn't title,
   // stays unless the user agrees to replace it (--retitle).
@@ -283,11 +324,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
             ) ?? { state: 'none', detail: 'none was drawn for this PR' });
   // The description comes first; the comic is the closing beat, unless the
   // writer placed it with the marker. A short disclosure goes last.
-  let content = defuseMentions(bodyMd).replace(COMIC_MARKER, '');
+  let content = defuseMentions(draft).replace(COMIC_MARKER, '');
   if (comic && script) {
     const block = comicBlock(script);
-    content = bodyMd.includes(COMIC_MARKER)
-      ? defuseMentions(bodyMd).replace(COMIC_MARKER, block)
+    content = draft.includes(COMIC_MARKER)
+      ? defuseMentions(draft).replace(COMIC_MARKER, block)
       : `${content.trim()}\n\n${block}`;
   }
   const disclosureMode =
@@ -407,7 +448,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   else if (existsSync(join(run.dir, 'comic-observation-input.json')))
     unlinkSync(join(run.dir, 'comic-observation-input.json'));
   writeJson(run, 'review-input.json', reviewPacket);
-  const contributionReview = loadReview(
+  const reviewed = loadReview(
     run,
     reviewPacket,
     guidance,
@@ -415,23 +456,35 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     packet.patch,
     composition.issues,
   );
+  // On the lean path a review someone did write still counts; none is needed.
+  const contributionReview: typeof reviewed =
+    opts.lean && reviewed.status === 'missing'
+      ? {
+          ...reviewed,
+          status: 'skipped',
+          mode: 'lean',
+          issues: [
+            'Lean brief path: drafted inline from the evidence brief, with no separate researcher or reviewer.',
+          ],
+        }
+      : reviewed;
   writeJson(run, 'review-result.json', {
     ...contributionReview,
     inputFingerprint: reviewPacket.fingerprint,
     reportSha256: objectHash(readJson(run, 'review.json') ?? null),
   });
   // Advisory: check the description's claims against the captured evidence.
-  const storedGraph = loadGraph(run);
   const claims = checkClaims({
     title,
-    body: bodyMd,
+    body: draft,
     digest,
     root: truth.toplevel,
     authorText: readText(run, 'author.md'),
     graph: storedGraph ? graphClaimFacts(storedGraph) : undefined,
   });
   writeJson(run, 'claims.json', claims);
-  const notes = contextNotes(digest, bodyMd, claims);
+  writeJson(run, 'brief-check.json', briefCheckSummary(briefCheck));
+  const notes = contextNotes(digest, draft, claims);
   writeJson(run, 'notes.json', notes);
   // Authors who write the text themselves (or must, by policy) get the facts as an outline.
   const writeYourself =
@@ -473,6 +526,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       changeMap: changeMapFindings,
       ...(titleNote ? { titleNote } : {}),
       ...(graphHint ? { graphHint } : {}),
+      briefCheck: briefCheckSummary(briefCheck),
       claims: {
         ...claimSummary(claims),
         findings: claims.filter(
@@ -499,6 +553,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         claimLine(claims),
         graphLine(graphLeads),
         graphHint ? `Evidence graph: ${graphHint}` : '',
+        briefCheckLines(briefCheck),
         changeMapFindings.length
           ? `Change map (advisory):\n${changeMapFindings.map((f) => `  - ${f.text}`).join('\n')}`
           : '',

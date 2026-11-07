@@ -361,7 +361,7 @@ export function contextCmd(
  * body, past the skill's drafter instructions.
  */
 export function graphNext(run: string): string {
-  return `draft from the evidence brief below (\`tracetoon query brief --run ${run}\`): describe each change unit at the symbols that own it, give the reasons its requests and its own commit's sentences give, report validation as the brief dates it, state its limits, and follow its avoid rules. Read the diff refs it cites before describing a hunk; \`tracetoon query why <path> --run ${run}\` drills into one file.`;
+  return `take the lean path: write title.txt and body.md yourself from the evidence brief below (\`tracetoon query brief --run ${run}\`). Describe each change unit at the symbols that own it, with the reasons its requests and its own commit's sentences give. End every factual sentence with the brief refs it rests on, like [CH1, S1]. Write no test or check results: put the line <!-- tracetoon:validation --> where they belong and render writes them. Follow the limits and avoid rows; never copy their wording. Read the diff refs it cites before describing a hunk. Then \`tracetoon render --lean --json --run ${run}\`, fix what it lists, render again, and publish.`;
 }
 
 export function prepareCmd(cwd: string, opts: DigestOpts) {

@@ -17,7 +17,8 @@ import { buildEvidenceGraph } from './build.ts';
 import { annotateDigest, deriveFromGraphJson, type GraphDerived } from './derive.ts';
 import type { EvidenceGraph } from './model.ts';
 import { withGraph } from './engine.ts';
-import { findQuery } from './queries.ts';
+import { briefParts, findQuery } from './queries.ts';
+import type { BriefParts } from './briefRender.ts';
 import { toToon } from './toon.ts';
 
 export const GRAPH_FILE = 'evidence-graph.json';
@@ -156,6 +157,15 @@ export function loadGraphReview(run: Run): GraphDerived['review'] | undefined {
  * draft inline often skip running queries, so they get it anyway.
  * Undefined when the graph can't be read; the digest never depends on it.
  */
+/** The brief as data, for `render` to write the Validation section and check ref tags. */
+export function graphBriefParts(graph: EvidenceGraph): BriefParts | undefined {
+  try {
+    return withGraph(graph, (g) => briefParts(g));
+  } catch {
+    return undefined;
+  }
+}
+
 export function graphBrief(graph: EvidenceGraph, rowCap = 60): string | undefined {
   try {
     const sections = withGraph(graph, (g) => findQuery('brief')!.run(g, []));
