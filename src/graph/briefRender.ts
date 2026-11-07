@@ -41,11 +41,16 @@ function shownCommand(cmd: unknown): string {
     .trim();
 }
 
-const plain = (s: unknown) => String(s ?? '').replace(/\*\*|__|`/g, '').trim();
+const plain = (s: unknown) =>
+  String(s ?? '')
+    .replace(/\*\*|__|`/g, '')
+    .trim()
+    .replace(/[.!]+$/, '');
 
 const list = (xs: unknown) => {
   const a = (Array.isArray(xs) ? xs : []).map(String).filter(Boolean);
-  return a.join(', ');
+  const more = /^\+(\d+) more$/.exec(a.at(-1) ?? '');
+  return more ? `${a.slice(0, -1).join(', ')} and ${more[1]} more` : a.join(', ');
 };
 
 /** The Validation section, from the brief's validation rows only. */
