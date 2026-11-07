@@ -70,7 +70,7 @@ export function validationSection(b: BriefParts): string {
     const recorded = r.outcome === 'passed' || r.outcome === 'failed';
     const result = recorded
       ? `${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}`
-      : 'ran; its result is not in the logs';
+      : 'ran; Tracetoon could not read its result';
     const edited = list(r.editedAfter);
     const when = edited
       ? `the logs show later edits to ${edited}`
@@ -86,7 +86,9 @@ export function validationSection(b: BriefParts): string {
       `- No recorded passing test, build, lint or typecheck run after the last captured edit of ${b.unchecked.join(', ')}.`,
     );
   if (!lines.length)
-    lines.push('- No test, build, lint or typecheck run was recorded in the captured sessions.');
+    lines.push(
+      '- No test, build, lint or typecheck run was recorded in the captured sessions.',
+    );
   return [
     '## Validation',
     '',
@@ -133,7 +135,8 @@ function proseUnits(text: string): string[] {
     }
     if (fence || !line || /^(#|<|\||-{3,}|\*{3,})/.test(line)) continue;
     const body = line.replace(/^([-*+]|\d+[.)])\s+/, '');
-    for (const s of body.split(/(?<=[.!?])\s+(?=[A-Z`"(])/)) if (s.trim()) out.push(s.trim());
+    for (const s of body.split(/(?<=[.!?])\s+(?=[A-Z`"(])/))
+      if (s.trim()) out.push(s.trim());
   }
   return out;
 }

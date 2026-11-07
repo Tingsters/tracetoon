@@ -211,6 +211,29 @@ describe('evidence graph', () => {
     );
   });
 
+  test('with no run on the final code, the brief keeps the latest run of each kind', () => {
+    const { claudeHome, cli } = setup();
+    const repo = makeRepo();
+    new ClaudeLog(repo.root)
+      .prompt('Add a greet helper that says hello by name')
+      .write(join(repo.root, 'src/greet.ts'), GREET)
+      .bash('bun test', '3 pass\n0 fail')
+      .bash('bun test tests/greet.test.ts', '1 pass\n1 fail', true)
+      .bash('bun test', '4 pass\n0 fail')
+      .write(join(repo.root, 'src/farewell.ts'), FAREWELL)
+      .save(claudeHome, 'graph');
+    mkdirSync(join(repo.root, 'src'), { recursive: true });
+    writeFileSync(join(repo.root, 'src/greet.ts'), GREET);
+    writeFileSync(join(repo.root, 'src/farewell.ts'), FAREWELL);
+    git(repo.root, ['add', '.']);
+    git(repo.root, ['commit', '-q', '-m', 'feat: greet and farewell helpers']);
+    const r = cli(repo.root, '--json', 'digest', '--offline');
+    const b = cli(repo.root, '--json', 'query', 'brief', '--run', r.json.run);
+    const v = b.json.sections.find((x: any) => x.title === 'validation').rows;
+    // `bun test` ran first and last: its last run, not the focused one, is the latest test.
+    expect(v.map((x: any) => [x.cmd, x.outcome])).toEqual([['bun test', 'passed']]);
+  });
+
   test('the brief groups changes, scopes reasons and dates checks', () => {
     const { repo, cli } = scenario();
     const r = cli(repo.root, '--json', 'digest', '--offline');
@@ -282,8 +305,12 @@ describe('evidence graph', () => {
     expect(body).toContain('## Validation');
     expect(body).not.toContain('## Testing');
     // The section quotes the brief's row: the failing run, before farewell's last edit.
-    expect(body).toContain('- `bun test`: failed (3 pass; 1 fail); the logs show later edits to src/farewell.ts.');
-    expect(body).toContain('No recorded passing test, build, lint or typecheck run after the last captured edit of src/farewell.ts');
+    expect(body).toContain(
+      '- `bun test`: failed (3 pass; 1 fail); the logs show later edits to src/farewell.ts.',
+    );
+    expect(body).toContain(
+      'No recorded passing test, build, lint or typecheck run after the last captured edit of src/farewell.ts',
+    );
     expect(r.json.briefCheck).toMatchObject({
       validationSection: true,
       tags: 5,
@@ -302,7 +329,9 @@ describe('evidence graph', () => {
       'bun test ; bun test tests/a.ts',
     );
     expect(shownCommand('bun x tsc --noEmit 2>&1')).toBe('bun x tsc --noEmit');
-    expect(shownCommand('bun scripts/eval.ts >/dev/null 2>&1')).toBe('bun scripts/eval.ts');
+    expect(shownCommand('bun scripts/eval.ts >/dev/null 2>&1')).toBe(
+      'bun scripts/eval.ts',
+    );
     expect(shownCommand('bun run bundle')).toBe('bun run bundle');
   });
 

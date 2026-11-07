@@ -4,6 +4,7 @@
  * compact. Results are sections of rows, printed as TOON by `tracetoon query`.
  */
 import { GraphError, type GraphEngine } from './engine.ts';
+import { shownCommand } from './briefRender.ts';
 import { SCHEMA_DOC } from './model.ts';
 
 export interface Section {
@@ -392,8 +393,14 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     .rows.filter((r) => r.revision !== 'after later work')
     .sort((a, b) => String(a.t ?? '').localeCompare(String(b.t ?? '')));
   // The last run of each command is what the session ended on; earlier ones are history.
+  // Keyed by the command as shown, so `tsc` and `tsc 2>&1` are one command;
+  // re-inserted so the map's order is the order of each command's last run.
   const lastOf = new Map<string, Record<string, unknown>>();
-  for (const r of runs) lastOf.set(String(r.cmd), r);
+  for (const r of runs) {
+    const key = shownCommand(r.cmd);
+    lastOf.delete(key);
+    lastOf.set(key, r);
+  }
   // Runs that saw the final edits are what counts; an earlier, stale run is kept
   // only when no later run of its kind exists, as the best evidence there is.
   const current = (r: Record<string, unknown>) =>

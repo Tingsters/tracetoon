@@ -200,10 +200,13 @@ const TEST_RUNNERS = [
   /^make\s+(test|check)\b/,
 ];
 
+/** Leading `NAME=value` assignments, quoted values included (`X="$(pwd)/a b"`). */
+const ENV_PREFIX = /^([A-Z_][A-Z0-9_]*=("[^"]*"|'[^']*'|\S*)\s+)+/;
+
 /** The part of a chained command that runs tests, if any. */
 export function testSegment(cmd: string): string | undefined {
   return splitCommands(cmd)
-    .map((s) => s.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''))
+    .map((s) => s.replace(ENV_PREFIX, ''))
     .find((s) => TEST_RUNNERS.some((re) => re.test(s)));
 }
 
@@ -268,9 +271,7 @@ export function verificationSegment(
 ): { seg: string; kind: Run['kind'] } | undefined {
   const test = testSegment(cmd);
   if (test) return { seg: test, kind: 'test' };
-  for (const s of splitCommands(cmd).map((x) =>
-    x.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''),
-  )) {
+  for (const s of splitCommands(cmd).map((x) => x.replace(ENV_PREFIX, ''))) {
     for (const [kind, re] of VERIFY) if (re.test(s)) return { seg: s, kind };
   }
   return undefined;
@@ -311,9 +312,7 @@ export function commandRuns(
   isError: boolean | undefined,
   output: string | undefined,
 ): Omit<Run, 'id' | 't' | 'revision'>[] {
-  const segments = splitCommands(cmd).map((x) =>
-    x.replace(/^([A-Z_][A-Z0-9_]*=\S*\s+)+/, ''),
-  );
+  const segments = splitCommands(cmd).map((x) => x.replace(ENV_PREFIX, ''));
   // A segment that sends its stdout to a file leaves no result in the log unless
   // a later segment reads that file back (`> out.log; grep pass out.log`); the
   // output captured then belongs to the other segments.
@@ -358,15 +357,24 @@ export function commandRuns(
     // Several test commands' results are mixed in one output, so no count can
     // be pinned on either: list them with no result lines rather than let a
     // reader credit one suite with another's numbers.
-    if (kind === 'test' && tests.length > 1)
+    // The outcome is still clear when each of them reported zero failures.
+    if (kind === 'test' && tests.length > 1) {
+      // Every test command must have reported a failure count, all zero.
+      const counts =
+        (own ?? '').match(/\b\d+\s+(fail|failed|failing|failures?)\b/gi) ?? [];
+      const clean =
+        counts.length >= tests.length &&
+        counts.every((c) => /^0\s/.test(c)) &&
+        !testOutputFailed(own);
       return {
         cmd: tests.join(' ; '),
         kind,
         ...result,
-        outcome: 'unknown',
-        basis: 'none',
+        outcome: clean ? 'passed' : 'unknown',
+        basis: clean ? 'output' : 'none',
         summary: [],
       };
+    }
     return { cmd: seg, kind, ...result };
   });
 }
@@ -417,7 +425,7 @@ export function commandKey(cmd: string): string {
   const segments = splitCommands(cmd).filter((s) => !/^(cd|set|export|pushd)\b/.test(s));
   const first = segments[0] ?? cmd.trim();
   const tokens = first
-    .replace(/^[A-Z_][A-Z0-9_]*=\S*\s+/g, '')
+    .replace(ENV_PREFIX, '')
     .split(/\s+/)
     .filter((t) => !/^(-|<|>|\d>)/.test(t)); // flags, heredocs and redirections
   return tokens.slice(0, 2).join(' ') || first.slice(0, 40);

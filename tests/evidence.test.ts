@@ -99,9 +99,40 @@ describe('verification runs', () => {
       ' 0 fail\n 47 pass\n 0 fail',
     );
     const test = runs.find((r) => r.kind === 'test')!;
-    expect(test).toMatchObject({ outcome: 'unknown', summary: [] });
+    // Both reported zero failures, so they passed; which counts are whose is unknown.
+    expect(test).toMatchObject({ outcome: 'passed', summary: [] });
     expect(test.cmd).toContain('bun test tests/flow.test.ts');
     expect(runs.filter((r) => r.kind === 'test')).toHaveLength(1);
+    const short = commandRuns(
+      'bun test > /tmp/a.log 2>&1; grep -E " pass$| fail$" /tmp/a.log; CLI=x bun test tests/flow.test.ts > /tmp/b.log 2>&1; grep -E " pass$| fail$" /tmp/b.log',
+      false,
+      ' 47 pass\n 0 fail',
+    );
+    expect(short.find((r) => r.kind === 'test')).toMatchObject({
+      outcome: 'unknown',
+      summary: [],
+    });
+    const failing = commandRuns(
+      'bun test > /tmp/a.log 2>&1; grep -E " pass$| fail$" /tmp/a.log; bun test tests/flow.test.ts 2>&1 | tail -2',
+      false,
+      ' 76 pass\n 0 fail\n 7 pass\n 5 fail',
+    );
+    expect(failing.find((r) => r.kind === 'test')).toMatchObject({
+      outcome: 'unknown',
+      summary: [],
+    });
+  });
+
+  test('a quoted env assignment before a test command is skipped', () => {
+    const runs = commandRuns(
+      'bun test > /tmp/tt.log 2>&1; grep -E " pass$| fail$" /tmp/tt.log; CLI="$(pwd -W)/dist/x.mjs" bun test tests/comic.test.ts 2>&1 | grep -E " pass$| fail$"',
+      false,
+      ' 76 pass\n 0 fail\n 20 pass\n 0 fail',
+    );
+    const tests = runs.filter((r) => r.kind === 'test');
+    expect(tests).toHaveLength(1);
+    expect(tests[0]!.cmd).toContain('bun test tests/comic.test.ts');
+    expect(tests[0]).toMatchObject({ outcome: 'passed', summary: [] });
   });
 
   test("a test whose output goes to a file nobody reads doesn't take another run's results", () => {
