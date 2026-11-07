@@ -32,6 +32,10 @@ export interface BriefApplied {
   validationClaims: string[];
   /** Tagged sentences that name code (`fn`, a type, a file) no cited row mentions. */
   unbackedNames: { sentence: string; names: string[] }[];
+  /** Brief rows no tag cites: change units, commit sentences, tests, housekeeping, the goal. */
+  uncovered: string[];
+  /** Sentences that overstate what the brief backs, with what to fix. */
+  flags: { sentence: string; problem: string; severity: 'fix' | 'check' }[];
 }
 
 const rowsOf = (b: BriefParts, title: string) =>
@@ -57,40 +61,65 @@ const list = (xs: unknown) => {
   return more ? `${a.slice(0, -1).join(', ')} and ${more[1]} more` : a.join(', ');
 };
 
-/** The Validation section, from the brief's validation rows only. */
+/** Most a reader needs: the test runs first, then the other checks. */
+const KIND_ORDER = ['test', 'typecheck', 'lint', 'build', 'eval'];
+const MAX_LINES = 5;
+
+/**
+ * The Validation section, from the brief's validation rows only: at most five
+ * lines, test runs first. Rows with a withheld command, and non-test checks
+ * whose result Tracetoon couldn't read, say nothing a reviewer can use and are
+ * left out. The "may predate the final code" caveat is said once, at the end.
+ */
 export function validationSection(b: BriefParts): string {
-  const lines: string[] = [];
+  const runs: { order: number; line: string }[] = [];
+  const asserted: string[] = [];
+  let predates = false;
   for (const r of rowsOf(b, 'validation')) {
     if (r.kind === 'commit message') {
-      lines.push(
+      asserted.push(
         `- The message of commit ${String(r.when).replace(/^not a run: commit (\S+) says so$/, '$1')} says: "${plain(r.cmd)}" (not a recorded run).`,
       );
       continue;
     }
-    // Only what the logs establish: the result as recorded, and edits seen
-    // after the run. A run with no later edit in the logs may still predate
-    // the final code (later commits, edits outside the logs), so say so.
+    const cmd = shownCommand(r.cmd);
+    if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
     const recorded = r.outcome === 'passed' || r.outcome === 'failed';
+    if (!recorded && r.kind !== 'test') continue;
+    // Only what the logs establish: the result as recorded, and edits seen after the run.
     const result = recorded
       ? `${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}`
       : 'ran; Tracetoon could not read its result';
     const edited = list(r.editedAfter);
+    if (!edited && String(r.when ?? '').startsWith('after the last edit'))
+      predates = true;
     const when = edited
       ? `the logs show later edits to ${edited}`
-      : String(r.when ?? '').startsWith('after the last edit')
-        ? 'whether it ran on the final code is not recorded'
-        : r.when
-          ? `ran ${String(r.when)}`
-          : '';
-    lines.push(`- \`${shownCommand(r.cmd)}\`: ${result}${when ? `; ${when}` : ''}.`);
+      : !String(r.when ?? '').startsWith('after the last edit') && r.when
+        ? `ran ${String(r.when)}`
+        : '';
+    const history = r.history ? `; ${String(r.history)}` : '';
+    const order = KIND_ORDER.indexOf(String(r.kind));
+    runs.push({
+      order: order < 0 ? KIND_ORDER.length : order,
+      line: `- \`${cmd}\`: ${result}${when ? `; ${when}` : ''}${history}.`,
+    });
   }
+  const lines = [
+    ...runs.sort((x, y) => x.order - y.order).map((x) => x.line),
+    ...asserted,
+  ].slice(0, MAX_LINES);
   if (b.unchecked.length)
     lines.push(
-      `- No recorded passing test, build, lint or typecheck run after the last captured edit of ${b.unchecked.join(', ')}.`,
+      `- No recorded passing test, build, lint or typecheck run after the last captured edit of ${list(b.unchecked.length > 6 ? [...b.unchecked.slice(0, 6), `+${b.unchecked.length - 6} more`] : b.unchecked)}.`,
     );
   if (!lines.length)
     lines.push(
       '- No test, build, lint or typecheck run was recorded in the captured sessions.',
+    );
+  if (predates)
+    lines.push(
+      "- These ran after the last edit the logs captured; the logs don't show a run on the final commit.",
     );
   return [
     '## Validation',
@@ -156,7 +185,8 @@ function codeNames(sentence: string): string[] {
   for (const m of sentence.matchAll(/`([^`\s]+)`/g)) {
     const raw = m[1]!;
     const n = raw.replace(/\(\)$/, '');
-    if (!/^[A-Za-z_.][\w.$/-]*$/.test(n)) continue;
+    // Code, not URLs or versions (`file:///`, `v1.0.0-rc.10`).
+    if (!/^[A-Za-z_.][\w.$/-]*$/.test(n) || /^v?\d|:\/\/|^rc\.\d/i.test(n)) continue;
     if (raw.endsWith('()') || /[_./]/.test(n) || /[a-z][A-Z]/.test(n)) names.add(n);
   }
   for (const m of sentence.replace(/`[^`]*`/g, ' ').matchAll(/\b([a-z]+[A-Z]\w*)\b/g))
@@ -216,8 +246,47 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
       untagged: [],
       validationClaims: [],
       unbackedNames: [],
+      uncovered: [],
+      flags: [],
     };
   const known = briefRefs(b);
+  const flags: BriefApplied['flags'] = [];
+  const cites = new Set<string>();
+  const commitRows = rowsOf(b, 'commitMessages');
+  const commitRow = (ref: string) => {
+    const r = ref.replace(/^commit:/, '');
+    return commitRows.find((x) => {
+      const k = String(x.ref).replace(/^commit:/, '');
+      const [a, an] = k.split('#');
+      const [c, cn] = r.split('#');
+      return (an ?? '') === (cn ?? '') && (a!.startsWith(c!) || c!.startsWith(a!));
+    });
+  };
+  const changeRows = rowsOf(b, 'changes');
+  const symbolsOf = (where: unknown) =>
+    (Array.isArray(where) ? where : []).flatMap((w) => {
+      const m = /\(([^)]*)\)/.exec(String(w));
+      return m ? m[1]!.split(/,\s*/) : [];
+    });
+  // Files and symbols the brief places somewhere: naming one of these in the
+  // wrong place is a misattribution; an unlisted name (a JSON field) is not.
+  const placed = [
+    ...changeRows.flatMap((r) => (Array.isArray(r.where) ? r.where : [])),
+    ...commitRows.flatMap((r) => (Array.isArray(r.implementedBy) ? r.implementedBy : [])),
+  ].map(String);
+  const placedNames = new Set(
+    placed.flatMap((w) => {
+      const file = w.replace(/\s*\(.*$/, '');
+      return [file, file.split('/').pop()!, ...symbolsOf([w])];
+    }),
+  );
+  const fresh = new Set(changeRows.flatMap((r) => (r.newSymbols as string[]) ?? []));
+  const existing = new Set(
+    changeRows.flatMap((r) => symbolsOf(r.where)).filter((x) => !fresh.has(x)),
+  );
+  const limitText = rowsOf(b, 'limits')
+    .map((r) => String(r.limit ?? ''))
+    .join('\n');
   const unknown = new Set<string>();
   let tags = 0;
   const untagged: string[] = [];
@@ -237,14 +306,114 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
     for (const ref of refs) {
       tags++;
       if (!knownRef(known, ref)) unknown.add(ref);
+      cites.add(ref.replace(/^commit:/, ''));
     }
-    // A name the cited rows never mention is the writer's own attribution.
-    const cited = citedText(rows, refs);
-    const names = codeNames(clean).filter(
-      (n) => !cited.includes(n) && !cited.includes(n.split('/').pop()!),
-    );
-    if (names.length) unbackedNames.push({ sentence: clean, names });
+    // Where a cited commit sentence's code is known (implementedBy), names
+    // must come from there; otherwise from any cited row. Citing a broad
+    // change unit doesn't license pinning a commit's behavior on its files.
+    const located = refs
+      .map(commitRow)
+      .filter(
+        (r) =>
+          r && Array.isArray(r.implementedBy) && (r.implementedBy as string[]).length,
+      );
+    // Only a located commit sentence can show a name is in the wrong place;
+    // a name merely missing from the brief (its rows are capped) proves nothing.
+    if (located.length) {
+      const cited = located
+        .map((r) => (r!.implementedBy as string[]).join('\n'))
+        .join('\n');
+      const names = codeNames(clean).filter(
+        (n) =>
+          placedNames.has(n.split('/').pop()!) &&
+          !cited.includes(n) &&
+          !cited.includes(n.split('/').pop()!),
+      );
+      if (names.length) unbackedNames.push({ sentence: clean, names });
+    }
+    const named = codeNames(clean);
+    // "New" for code that already existed.
+    {
+      const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const old = named.filter(
+        (n) =>
+          existing.has(n) &&
+          (new RegExp(
+            `\\b(new|adds?|added|adding|introduc\\w*|creates?|created)\\s+(?:an?\\s+|the\\s+)?[^.,;:]{0,30}?\`?${esc(n)}\\b`,
+            'i',
+          ).test(clean) ||
+            new RegExp(`\`?${esc(n)}\`?\\s+(?:is|are)\\s+(?:a\\s+)?new\\b`, 'i').test(
+              clean,
+            )),
+      );
+      if (old.length)
+        flags.push({
+          sentence: clean,
+          severity: 'fix',
+          problem: `${old.map((n) => `\`${n}\``).join(', ')} already existed (not in newSymbols): say it changed, not that it is new.`,
+        });
+    }
+    // Universal words about code that branches.
+    const universal = /\b(only|always|all|every|no longer|never)\b/i.exec(clean)?.[1];
+    if (universal) {
+      const branchy = named.filter((n) => limitText.includes(n));
+      if (branchy.length)
+        flags.push({
+          sentence: clean,
+          severity: 'check',
+          problem: `"${universal}": ${branchy.join(', ')} has conditional paths; read them in the patch and keep "${universal}" only if every path does it, or attribute it ("the commit message says").`,
+        });
+    }
+    // PR or issue links, and scope statements, that only a commit message makes.
+    const commitOnly = refs.every((r) => /^(commit:)?[0-9a-f]{7,40}(#\d+)?$/.test(r));
+    if (
+      commitOnly &&
+      /(#\d+|\bPR\s*\d+|\bissue\b|not part of)/i.test(clean) &&
+      !/commit message/i.test(clean)
+    )
+      flags.push({
+        sentence: clean,
+        severity: 'fix',
+        problem:
+          'only a commit message says this: write "the commit message says…" or leave it out.',
+      });
   }
+  // Brief rows nothing cites: each deserves a sentence.
+  const cited = (ref: unknown) => {
+    const r = String(ref ?? '').replace(/^commit:/, '');
+    return [...cites].some((c) => {
+      if (c === r) return true;
+      const [a, an] = c.split('#');
+      const [x, xn] = r.split('#');
+      return (
+        /^[0-9a-f]{7,}$/.test(a!) &&
+        (an ?? '') === (xn ?? '') &&
+        (x!.startsWith(a!) || a!.startsWith(x!))
+      );
+    });
+  };
+  const uncovered: string[] = [];
+  for (const r of changeRows)
+    if (!cited(r.change)) uncovered.push(`${String(r.change)}: ${list(r.where)}`);
+  for (const r of commitRows) {
+    const text = String(r.text ?? '');
+    if (
+      !String(r.ref).includes('#') ||
+      text.split(/\s+/).length < 4 ||
+      text.endsWith(':')
+    )
+      continue;
+    // A sentence is covered by its own ref or by citing the whole commit.
+    const whole = String(r.ref).split('#')[0];
+    if (!cited(r.ref) && !cited(whole))
+      uncovered.push(`${String(r.ref)}: ${clipped(text)}`);
+  }
+  for (const r of [...rowsOf(b, 'tests'), ...rowsOf(b, 'housekeeping')])
+    if (!cited(r.ref))
+      uncovered.push(`${String(r.ref)}: ${String(r.file ?? r.what ?? '')}`);
+  for (const r of rowsOf(b, 'requests'))
+    if (String(r.kind ?? '').startsWith('goal') && !cited(r.ref))
+      uncovered.push(`${String(r.ref)} (the goal): ${clipped(String(r.text ?? ''))}`);
   let text = body.replace(TAG, '');
   // The section brings its own heading: drop a writer's heading right above the marker.
   text = text.replace(
@@ -261,5 +430,9 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
     untagged,
     validationClaims,
     unbackedNames,
+    uncovered,
+    flags,
   };
 }
+
+const clipped = (s: string) => (s.length > 100 ? `${s.slice(0, 99)}…` : s);

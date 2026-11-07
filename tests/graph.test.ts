@@ -5,13 +5,19 @@ import { join, resolve } from 'node:path';
 import { reviewInput } from '../src/contribution/review.ts';
 import { compactDigest, type Run, type TraceDigest } from '../src/digest/build.ts';
 import { checkClaims, type ClaimInput } from '../src/digest/claims.ts';
-import { commitSentences, definedSymbol, patchHunks } from '../src/graph/build.ts';
+import {
+  commitSentences,
+  definedSymbol,
+  patchHunks,
+  testTitles,
+  valuePairs,
+} from '../src/graph/build.ts';
 import { toToon } from '../src/graph/toon.ts';
 import { deriveFromGraphJson } from '../src/graph/derive.ts';
 import { GraphEngine, graphEngineAvailable, withGraph } from '../src/graph/engine.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
-import { findQuery } from '../src/graph/queries.ts';
-import { applyBrief, shownCommand } from '../src/graph/briefRender.ts';
+import { describedHunks, findQuery } from '../src/graph/queries.ts';
+import { applyBrief, shownCommand, validationSection } from '../src/graph/briefRender.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
 
@@ -244,6 +250,8 @@ describe('evidence graph', () => {
       'changes',
       'requests',
       'commitMessages',
+      'tests',
+      'housekeeping',
       'validation',
       'limits',
       'avoid',
@@ -324,6 +332,113 @@ describe('evidence graph', () => {
     expect(r.json.contributionReview.status).toBe('skipped');
   });
 
+  test('hunks: symbols end with their body, imports define nothing, values and tests are read', () => {
+    const patch = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,8 +1,12 @@ function includesPath(hay: string): boolean {',
+      " import { detect, type Interop } from './interop.ts';",
+      '+import { split } from "./shell.ts";',
+      '   return false;',
+      ' }',
+      ' ',
+      '+/** The directory a command runs in. */',
+      '+export function leadingCd(cmd: string) {',
+      '+  return cmd;',
+      '+}',
+      ' function windowFor() {',
+      '-  return last + 30 * 60_000;',
+      '+  return last + 5 * 60_000;',
+      ' }',
+      '',
+    ].join('\n');
+    const [h] = patchHunks(patch);
+    // includesPath closed before the new lines; the import line names no symbol.
+    expect(h!.touched).toEqual(['leadingCd', 'windowFor']);
+    expect(h!.fresh).toEqual(['leadingCd']);
+    expect(h!.pairs).toEqual(['return last + 30 * 60_000; → return last + 5 * 60_000;']);
+    expect(
+      definedSymbol("import { detect, type Interop } from './interop.ts';"),
+    ).toBeUndefined();
+    expect(valuePairs(['  return items.some(x);'], ['  return items.find(x);'])).toEqual(
+      [],
+    );
+    expect(testTitles("  test('splits chains and pipes', () => {")).toEqual([
+      'splits chains and pipes',
+    ]);
+    expect(testTitles('def test_quiet_commits():')).toEqual(['test_quiet_commits']);
+  });
+
+  test('a commit sentence is placed at the hunks that share its rarer words', () => {
+    const hunks = [
+      {
+        file: 'src/correlate.ts',
+        symbols: ['repoRel'],
+        words: ['git', 'repo', 'rel', 'path', 'files'],
+      },
+      {
+        file: 'src/pr.ts',
+        symbols: ['parseUnifiedDiff'],
+        words: ['binary', 'diff', 'files', 'parse'],
+      },
+      { file: 'tests/a.test.ts', symbols: [], words: ['git', 'binary', 'repo', 'files'] },
+    ];
+    expect(describedHunks(hunks, 'Files under .git are not repo edits.')).toEqual([
+      'src/correlate.ts (repoRel)',
+    ]);
+    expect(describedHunks(hunks, 'Binary changes in the diff count.')).toEqual([
+      'src/pr.ts (parseUnifiedDiff)',
+    ]);
+    expect(describedHunks(hunks, 'Unrelated wording here.')).toEqual([]);
+  });
+
+  test('the Validation section is short: tests first, unreadable non-tests and withheld commands out', () => {
+    const rows = [
+      {
+        check: 'R1',
+        kind: 'build',
+        outcome: 'unknown',
+        cmd: 'bun run bundle',
+        editedAfter: [],
+      },
+      {
+        check: 'R2',
+        kind: 'eval',
+        outcome: 'passed',
+        cmd: 'python "‹withheld›"',
+        editedAfter: [],
+      },
+      {
+        check: 'R3',
+        kind: 'typecheck',
+        outcome: 'passed',
+        cmd: 'bun x tsc --noEmit',
+        when: 'after the last edit the logs captured',
+        editedAfter: [],
+      },
+      {
+        check: 'R4',
+        kind: 'test',
+        outcome: 'passed',
+        result: '96 pass; 0 fail',
+        cmd: 'bun test',
+        when: 'after the last edit the logs captured',
+        editedAfter: [],
+        history: '2 of 3 earlier test runs failed',
+      },
+    ];
+    const v = validationSection({
+      unchecked: [],
+      sections: [{ title: 'validation', rows }],
+    } as any);
+    expect(v.split('\n').filter((l) => l.startsWith('- '))).toEqual([
+      '- `bun test`: passed (96 pass; 0 fail); 2 of 3 earlier test runs failed.',
+      '- `bun x tsc --noEmit`: passed.',
+      "- These ran after the last edit the logs captured; the logs don't show a run on the final commit.",
+    ]);
+  });
+
   test('shown commands drop output redirections', () => {
     expect(shownCommand('bun test > <outside-repo> 2>&1 ; bun test tests/a.ts')).toBe(
       'bun test ; bun test tests/a.ts',
@@ -335,53 +450,75 @@ describe('evidence graph', () => {
     expect(shownCommand('bun run bundle')).toBe('bun run bundle');
   });
 
-  test('a tagged sentence may name only code its cited rows mention', () => {
+  test('the brief check flags misplaced names, false "new" claims and uncovered rows', () => {
     const b = {
       unchecked: [],
       sections: [
         {
           title: 'changes',
           rows: [
-            { change: 'CH1', where: ['src/comic/providers.ts (ImageJob, artPrompt)'] },
-            { change: 'CH2', where: ['src/comic/bible.ts'] },
+            {
+              change: 'CH1',
+              where: ['src/comic/providers.ts (ImageJob, artPrompt, matchImages)'],
+              newSymbols: ['matchImages'],
+            },
+            {
+              change: 'CH2',
+              where: ['src/comic/bible.ts (SeriesBible)'],
+              newSymbols: [],
+            },
           ],
         },
         {
           title: 'commitMessages',
           rows: [
             {
-              ref: 'commit:421ce024cc68',
-              text: 'fix(comic): match Codex images by its final reply',
+              ref: '421ce024cc68#1',
+              text: 'Codex images are matched to prompts by its final reply.',
+              implementedBy: ['src/comic/providers.ts (matchImages)'],
+            },
+            {
+              ref: '421ce024cc68#2',
+              text: 'This closes the gap noted in PR #8 for good.',
+              implementedBy: [],
             },
           ],
+        },
+        {
+          title: 'tests',
+          rows: [{ ref: 'T1', file: 'tests/units.test.ts', titles: ['x'] }],
         },
       ],
     } as any;
     const r = applyBrief(
       [
-        '`ImageJob` carries prompts to providers, and `SeriesBible` stores cast sheets. [CH1]',
-        'The cast lives in `src/comic/bible.ts` now. [CH2]',
-        'Codex images are matched to prompts by its final reply in `matchImages`. [421ce02]',
+        '`SeriesBible` matches Codex images to prompts by the final reply. [421ce02#1]',
+        '`matchImages` matches Codex images to prompts by the final reply. [421ce02#1, CH1]',
+        'The new `ImageJob` type carries prompts and the `previewUrl` field. [CH1]',
+        'This closes the gap noted in PR #8. [421ce02#2]',
         'This sentence has no tag and states something about the code.',
       ].join('\n\n'),
       b,
     );
+    // Misplaced: the cited sentence's code is in providers.ts, and SeriesBible lives elsewhere.
     expect(r.unbackedNames).toEqual([
       {
-        sentence:
-          '`ImageJob` carries prompts to providers, and `SeriesBible` stores cast sheets.',
+        sentence: '`SeriesBible` matches Codex images to prompts by the final reply.',
         names: ['SeriesBible'],
       },
-      {
-        sentence:
-          'Codex images are matched to prompts by its final reply in `matchImages`.',
-        names: ['matchImages'],
-      },
+    ]);
+    expect(r.flags.map((f) => [f.severity, f.problem.slice(0, 30)])).toEqual([
+      ['fix', '`ImageJob` already existed (no'],
+      ['fix', 'only a commit message says thi'],
     ]);
     expect(r.untagged).toEqual([
       'This sentence has no tag and states something about the code.',
     ]);
     expect(r.unknownRefs).toEqual([]);
+    expect(r.uncovered).toEqual([
+      'CH2: src/comic/bible.ts (SeriesBible)',
+      'T1: tests/units.test.ts',
+    ]);
   });
 
   test('with several commits, changes follow commits and messages stay with their commit', () => {

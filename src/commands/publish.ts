@@ -229,7 +229,17 @@ const briefCheckSummary = (b: BriefApplied) => ({
   untagged: b.untagged,
   validationClaims: b.validationClaims,
   unbackedNames: b.unbackedNames,
+  uncovered: b.uncovered,
+  flags: b.flags,
+  /** Sentences the writer must fix before publishing (coverage gaps are counted apart). */
+  open: openProblems(b),
 });
+
+const openProblems = (b: BriefApplied) =>
+  b.flags.filter((f) => f.severity === 'fix').length +
+  b.untagged.length +
+  b.validationClaims.length +
+  b.unknownRefs.length;
 
 /** What the brief check found, as instructions the writer can act on. */
 function briefCheckLines(b: BriefApplied): string {
@@ -247,9 +257,25 @@ function briefCheckLines(b: BriefApplied): string {
     out.push(
       `Ref tags not in the brief (fix the sentence or its tag): ${b.unknownRefs.join(', ')}`,
     );
+  const fix = b.flags.filter((f) => f.severity === 'fix');
+  const check = b.flags.filter((f) => f.severity === 'check');
+  if (fix.length)
+    out.push(
+      `Sentences that say more than the evidence shows (fix the wording; a tag doesn't fix these):\n${fix
+        .slice(0, 8)
+        .map((f) => `  - ${f.sentence}\n    → ${f.problem}`)
+        .join('\n')}`,
+    );
+  if (check.length)
+    out.push(
+      `Check these against the patch (keep them if every path does what they say):\n${check
+        .slice(0, 6)
+        .map((f) => `  - ${f.sentence}\n    → ${f.problem}`)
+        .join('\n')}`,
+    );
   if (b.unbackedNames.length)
     out.push(
-      `Sentences naming code their ref tags don't mention (the brief doesn't tie that code to this change: drop the name, or cite the row that names it; don't add a tag to keep the sentence):\n${b.unbackedNames
+      `Sentences that name code outside where the cited commit sentence's implementedBy places it (check the patch: move the sentence to the code that does it, or drop the name):\n${b.unbackedNames
         .slice(0, 8)
         .map((u) => `  - ${u.names.map((n) => `\`${n}\``).join(', ')}: ${u.sentence}`)
         .join('\n')}`,
@@ -263,6 +289,23 @@ function briefCheckLines(b: BriefApplied): string {
           '\n',
         )}${b.untagged.length > 8 ? `\n  - …and ${b.untagged.length - 8} more` : ''}`,
     );
+  if (b.uncovered.length)
+    out.push(
+      `Brief rows the description doesn't cover yet (add one sentence for each, in the brief's words, tagged with its ref):\n${b.uncovered
+        .slice(0, 12)
+        .map((u) => `  - ${u}`)
+        .join(
+          '\n',
+        )}${b.uncovered.length > 12 ? `\n  - …and ${b.uncovered.length - 12} more` : ''}`,
+    );
+  if (b.tags) {
+    const open = openProblems(b);
+    out.push(
+      open || b.uncovered.length
+        ? `${open} sentence(s) to fix and ${b.uncovered.length} brief row(s) to cover: edit body.md and render again before publishing.`
+        : 'Brief check: nothing left to fix.',
+    );
+  }
   return out.join('\n');
 }
 

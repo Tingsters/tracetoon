@@ -111,6 +111,19 @@ describe('verification claims', () => {
     expect(f[0]?.state).toBe('observed');
   });
 
+  test('a sentence about what the code does with tests is not a run result', () => {
+    const passing = digest([run({})]);
+    for (const body of [
+      'Test failures are read from test output, so piped runs count, and a session whose tests went from failing to passing is recorded.',
+      'The digest now counts chained test commands by their runner.',
+    ])
+      expect(check(body, passing)).toEqual([]);
+    // A result is still a result.
+    expect(states(check('The tests failed after the change.', passing))).toEqual([
+      'verification:contradicted',
+    ]);
+  });
+
   test('a passing run with no later edits: observed', () => {
     const f = check('`bun test` passed (96 pass, 0 fail).', digest([run({})]));
     expect(states(f)).toEqual(['verification:observed']);

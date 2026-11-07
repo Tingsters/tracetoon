@@ -77,6 +77,10 @@ const CHECK_SUBJECT =
 const FAILED = /\b(fail(?:ed|s|ing|ures?)?|errors?)\b/i;
 const RESULT =
   /\b(pass(?:ed|es|ing)?|succeed\w*|failed|fails|failing|clean|green|reports?\b[^.]{0,60}\bfailures?)\b/i;
+const CODE_BEHAVIOR =
+  /\b(?:is|are|now|gets?|get)\s+(?:read|counted|recorded|detected|label(?:l)?ed|parsed|treated|judged|recognized|matched|reported|classified|ignored)\b|\b(?:counts?|detects?|parses?|labels?|records?|recognizes?|classif(?:y|ies)|ignores?)\b[^.]{0,40}\b(?:tests?|runs?|failures?|commands?)\b/i;
+const RAN =
+  /\b(?:ran|was run|were run|passed|failed|succeeded|pass(?:es)? (?:locally|on))\b/i;
 const HISTORICAL =
   /\b(before (?:the )?(?:(?:last|final|later) )?(?:edits|changes|commit)|during (?:development|implementation)|(?:earlier|historical|recorded|captured) (?:implementation )?(?:session|run)|previously)\b/i;
 
@@ -144,6 +148,9 @@ function checkVerification(
   const prose = bare.replace(/`([^`]+)`/g, (code, text: string) =>
     commandCode(text.trim()) ? ' '.repeat(code.length) : code,
   );
+  // A sentence about what the code does with tests ("failures are read from
+  // test output", "the digest counts piped runs") reports no run.
+  if (CODE_BEHAVIOR.test(prose) && !RAN.test(prose)) return undefined;
   const hit =
     VERIFY.exec(prose) ?? (CHECK_SUBJECT.test(bare) ? RESULT.exec(prose) : null);
   const freshness =

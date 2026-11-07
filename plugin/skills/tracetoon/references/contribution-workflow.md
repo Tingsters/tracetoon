@@ -135,7 +135,8 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > symbol, not the largest file. `requests` and `commitMessages` give the reasons:
 > a commit-message sentence speaks for its own commit only, so never stretch it
 > over other changes ("all of these were found while…"), and where a change has
-> no captured reason, say what it does, not why. `validation` dates every check
+> no captured request, give only a reason its commit message states, attributed
+> to it. `validation` dates every check
 > against the edits: report a check that ran before later edits as a result
 > from before them, and a result only a commit message reports as the message's
 > claim, not a run. State its `limits` honestly and follow its `avoid` rules.

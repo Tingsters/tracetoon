@@ -125,18 +125,31 @@ reviewer separate.
       and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
       are instructions for you: follow them, never copy their wording into the PR.
    2. Write `title.txt` (one line; keep a title the user gave) and `body.md`
-      following [references/writing-guide.md](references/writing-guide.md): what
-      each change unit does at the symbols that own it, why (its requests and its
-      own commit's sentences), and where a reviewer should start.
+      following [references/writing-guide.md](references/writing-guide.md), in
+      this order:
+      - **Problem:** the goal request (`requests` row marked goal), what was
+        wrong or missing before (the old → new values in `changes.was`), and
+        what triggered the change.
+      - **Changes:** one short part per change unit, covering each of its
+        commit-message sentences. Name the code a sentence's `implementedBy`
+        gives; where `implementedBy` is empty, describe the behavior without
+        naming a file. Call a symbol new only if it is in `newSymbols`.
+      - **Tests:** what the added tests check (`tests` rows).
+      - **Consequences and open points:** from the `limits` rows.
+      - **Where to start reviewing**, and any PR or issue links the commits give.
+      - **Housekeeping:** one line for the `housekeeping` rows (version, rebuilt files).
+      Give a reason only as a request or commit message states it, attributed
+      ("the commit message says…"); never invent one.
    3. Tag every sentence that states a fact with the brief refs it rests on, at
-      the end of the sentence: `[CH1, S1]`, `[R14]`, `[commit:<sha>#2]`. A
+      the end of the sentence: `[CH1, S1]`, `[T1]`, `[commit:<sha>#2]`. A
       sentence you can't tag doesn't belong in the PR. Render removes the tags.
    4. Write no test, build, lint or typecheck results yourself, anywhere. Put the
       line `<!-- tracetoon:validation -->` where the validation section belongs;
       render writes that section from the recorded checks.
-   5. `tracetoon render --lean --json --run <id>`. Fix what it lists (claims marked
-      contradicted, run or test claims outside the Validation section, untagged
-      sentences, unknown refs), then render again; at most two rounds.
+   5. `tracetoon render --lean --json --run <id>`. Fix every sentence it lists
+      (rewording it; adding a tag doesn't fix a flagged sentence) and add one
+      sentence for each uncovered brief row, then render again. Repeat, up to
+      three rounds, until it reports nothing left to fix.
    6. Draw a comic if one is wanted (step 5, without a separate reviewer), then
       publish (step 7).
 3. **Context** (full path; the lean path in 2a goes from step 2 to step 7).

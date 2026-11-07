@@ -232,6 +232,84 @@ const clipText = (s: unknown, n: number) => {
 const refs = (xs: string[], cap: number) =>
   xs.length > cap ? [...xs.slice(0, cap), `+${xs.length - cap} more`] : xs;
 
+const VERSION_PAIR = /\b\d+\.\d+\.\d+(?:-[\w.]+)?\b.*→.*\b\d+\.\d+\.\d+/;
+
+/** Words too common in prose or code to tie a sentence to a hunk. */
+const STOP = new Set(
+  "the and for with that this from into when then than only now not are was were has have had its it's also each more most some any all can cannot will would should could does did done use used uses using make makes made add adds added new old instead so they them their there here which what who how why one two three per via over under about after before still just like same other others way ways get gets set sets run runs ran code file files line lines test tests change changes changed fix fixes fixed update updates updated but out off own our you yet too see may due end let".split(
+    ' ',
+  ),
+);
+const proseWords = (text: string) =>
+  uniq(
+    (text.match(/[A-Za-z][a-z]+|[A-Z]+(?![a-z])|\d+/g) ?? [])
+      .map((w) => w.toLowerCase())
+      .filter((w) => (w.length >= 3 || /^\d+$/.test(w)) && !STOP.has(w)),
+  );
+
+/**
+ * The hunks a sentence describes, among one commit's hunks: those whose changed
+ * lines share the sentence's words, weighted by how few hunks share each word.
+ * Returns `file (symbols)` entries, best first.
+ */
+export function describedHunks(hunks: Record<string, unknown>[], text: string): string[] {
+  const words = proseWords(text);
+  if (!words.length || !hunks.length) return [];
+  const has = hunks.map((h) => new Set((h.words as string[]) ?? []));
+  const idf = new Map(
+    words.map((w) => {
+      const df = has.filter((x) => x.has(w)).length;
+      return [w, df ? Math.log(1 + hunks.length / df) : 0];
+    }),
+  );
+  // Long hunks (a file of prompt text, a fixture) share some word with any
+  // sentence; scale by size, as BM25 does, so they don't win by bulk.
+  const avg = has.reduce((n, x) => n + x.size, 0) / has.length || 1;
+  const scored = hunks
+    .map((h, i) => ({
+      h,
+      score:
+        words.reduce((n, w) => n + (has[i]!.has(w) ? idf.get(w)! : 0), 0) /
+        (0.5 + (0.5 * has[i]!.size) / avg),
+      hits: words.filter((w) => has[i]!.has(w)).length,
+    }))
+    .filter((x) => x.hits >= Math.min(2, words.length))
+    .sort((a, b) => b.score - a.score);
+  if (!scored.length) return [];
+  // Tests and docs describe behavior too; the code that does it comes first.
+  const isCode = (f: unknown) =>
+    !/(^|\/)(tests?|__tests__|spec|docs?)\/|\.(test|spec)\.\w+$|\.(md|mdx|txt)$/.test(
+      String(f),
+    );
+  // Version files match any sentence with a number; they belong only to version sentences.
+  if (!/\bversion|\bbump/i.test(text)) {
+    const versionless = scored.filter(
+      (x) =>
+        !/(^|\/)(VERSION|package\.json|plugin\.json|version\.\w+)$/.test(
+          String(x.h.file),
+        ),
+    );
+    scored.splice(0, scored.length, ...versionless);
+    if (!scored.length) return [];
+  }
+  const code = scored.filter((x) => isCode(x.h.file));
+  if (code.length && !/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b/i.test(text))
+    scored.splice(0, scored.length, ...code);
+  const best = scored[0]!.score;
+  const byFile = new Map<string, string[]>();
+  for (const x of scored.filter((x) => x.score >= best * 0.6).slice(0, 4))
+    byFile.set(
+      String(x.h.file),
+      uniq([
+        ...(byFile.get(String(x.h.file)) ?? []),
+        ...((x.h.symbols as string[]) ?? []),
+      ]),
+    );
+  return [...byFile]
+    .slice(0, 3)
+    .map(([f, syms]) => (syms.length ? `${f} (${syms.slice(0, 4).join(', ')})` : f));
+}
+
 /**
  * Everything a description needs, in the order it is written: the change units
  * (with the symbols that own them), why each was made, what checked it and when,
@@ -260,7 +338,8 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
      OPTIONAL MATCH (h)<-[:SURVIVES_IN]-(e:Edit)-[:IN_SESSION]->(:Session {band: 'included'})
      OPTIONAL MATCH (h)<-[:INTRODUCED]-(k:Commit)
      RETURN c.id AS change, h.id AS hunk, h.file AS file, h.diff AS diff, h.scope AS scope,
-            h.touched AS symbols, h.branches AS branches, count(DISTINCT e) AS edits,
+            h.touched AS symbols, h.branches AS branches, h.fresh AS fresh, h.pairs AS pairs,
+            h.tests AS tests, h.words AS words, count(DISTINCT e) AS edits,
             collect(DISTINCT k.id) AS commits`,
   ).rows;
   const fileRole = new Map(
@@ -304,10 +383,14 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       ).slice(0, 6);
       return syms.length ? `${f} (${syms.join(', ')})` : f;
     });
+    const fresh = uniq(hs.flatMap((h) => (h.fresh as string[]) ?? [])).slice(0, 8);
+    const was = uniq(hs.flatMap((h) => (h.pairs as string[]) ?? [])).slice(0, 4);
     return {
       change: c.id,
       groupedBy: String(c.key).split(':')[0],
       where,
+      newSymbols: fresh,
+      was,
       added: c.added,
       removed: c.removed,
       diff: refs(
@@ -329,7 +412,9 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     seen.add(String(a.id));
     requests.push({
       ref: a.id,
-      kind: a.pushback ? 'user request (pushback)' : 'user request',
+      kind: a.pushback
+        ? 'user pushback typed in the turn that made these edits (not necessarily why they were made)'
+        : 'user request',
       text: clipText(a.text, 600),
     });
     for (const f of ((a.facts as string[]) ?? []).sort(factOrder))
@@ -342,6 +427,61 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         });
       }
   }
+  // The session's opening request is the goal even when no surviving edit is
+  // in its turn (a later turn often makes the edits); plans and decisions
+  // record how the approach was chosen.
+  const opening = g.run(
+    `MATCH (p:Prompt)-[:IN_SESSION]->(:Session {band: 'included'})
+     RETURN p.id AS id, p.text AS text, p.t AS t ORDER BY p.t LIMIT 1`,
+  ).rows[0];
+  if (opening && !seen.has(String(opening.id))) {
+    seen.add(String(opening.id));
+    requests.unshift({
+      ref: opening.id,
+      kind: 'goal: the first request of the session',
+      text: clipText(opening.text, 600),
+    });
+  } else if (opening)
+    for (const r of requests)
+      if (r.ref === opening.id)
+        r.kind = `goal: the first request of the session; ${String(r.kind)}`;
+  for (const x of g
+    .run(
+      `MATCH (x)-[:IN_SESSION]->(:Session {band: 'included'}) WHERE x:Plan OR x:Decision
+     RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved,
+            coalesce(x.excerpt, x.text) AS text, x.t AS t ORDER BY x.t`,
+    )
+    // From this PR's work only: a shared session also holds earlier PRs' plans.
+    .rows.filter((x) => opening && String(x.t ?? '') >= String(opening.t ?? ''))
+    .slice(0, 4)) {
+    if (seen.has(String(x.id))) continue;
+    seen.add(String(x.id));
+    requests.push({
+      ref: x.id,
+      kind:
+        x.label === 'Plan'
+          ? x.approved === true
+            ? 'plan (approved)'
+            : x.approved === false
+              ? 'plan (not approved as written)'
+              : 'plan'
+          : 'decision (question asked and the answer)',
+      text: clipText(x.text, 400),
+    });
+  }
+
+  // Which hunks each commit sentence describes: the commit's own hunks whose
+  // changed lines share the sentence's rarer words. A commit listing several
+  // changes doesn't say which file does what; this does, from the diff.
+  const commitHunks = new Map<string, Record<string, unknown>[]>();
+  for (const r of g.run(
+    `MATCH (k:Commit)-[:INTRODUCED]->(h:Hunk)
+     RETURN k.id AS commit, h.id AS id, h.file AS file, h.touched AS symbols, h.words AS words`,
+  ).rows)
+    commitHunks.set(String(r.commit), [...(commitHunks.get(String(r.commit)) ?? []), r]);
+  const implementedBy = (commit: string, text: unknown): string[] =>
+    describedHunks(commitHunks.get(commit) ?? [], String(text ?? ''));
+
   const commitText: Record<string, unknown>[] = [];
   const commitsSeen = new Set<string>();
   for (const k of [...said].sort((x, y) =>
@@ -350,7 +490,12 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     if (commitsSeen.has(String(k.commit))) continue;
     commitsSeen.add(String(k.commit));
     const scope = (commitScope.get(String(k.commit)) ?? []).sort().join(' ');
-    commitText.push({ ref: `commit:${String(k.commit)}`, about: scope, text: k.subject });
+    commitText.push({
+      ref: `commit:${String(k.commit)}`,
+      about: scope,
+      text: k.subject,
+      implementedBy: implementedBy(String(k.commit), k.subject),
+    });
     for (const m of ((k.claims as { id: string; text: string; result: boolean }[]) ?? [])
       .filter((m) => m.id && !m.result)
       .sort((x, y) => Number(x.id.split('#')[1]) - Number(y.id.split('#')[1])))
@@ -358,6 +503,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         ref: m.id,
         about: `commit ${String(k.commit)} only`,
         text: m.text,
+        implementedBy: implementedBy(String(k.commit), m.text),
       });
   }
   for (const r of changeRows) {
@@ -371,7 +517,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       );
     if (!links.length && !(r.commits as string[]).length)
       (r as Record<string, unknown>).requests = [
-        'none captured: say what it does, not why',
+        'none captured: give only a reason a commit message states, attributed to it',
       ];
   }
 
@@ -433,6 +579,17 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     editedAfter: r.editedAfter,
     cmd: r.cmd,
   }));
+  // How the session got there: earlier failures of the same kind of check.
+  for (const row of validation) {
+    const run = runs.find((r) => r.id === row.check);
+    if (!run) continue;
+    const earlier = runs.filter(
+      (r) => r.kind === run.kind && String(r.t ?? '') < String(run.t ?? ''),
+    );
+    const failed = earlier.filter((r) => r.outcome === 'failed').length;
+    if (failed)
+      row.history = `${failed} of ${earlier.length} earlier ${String(run.kind)} runs failed`;
+  }
   for (const m of g
     .run(
       'MATCH (m:CommitClaim {assertsResult: true}) RETURN m.id AS id, m.commit AS commit, m.text AS text',
@@ -514,7 +671,8 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     if (!asked.some((a) => a.change === c.id) && !said.some((x) => x.change === c.id))
       limits.push({
         change: c.id,
-        limit: 'No captured motivation: do not supply one (e.g. "found while testing").',
+        limit:
+          'No captured request: give only a reason a commit message states, attributed to it ("the commit message says…"); don\'t invent one.',
       });
   }
 
@@ -529,21 +687,81 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     'A check dated after the last captured edit ran after the last edit the logs show, not necessarily on the final code: say that, and never "on the final code" or "after all changes".',
     'Absence of a recorded run is not evidence a check was never run or that code is untested: write "no recorded run", never "not tested", "not exercised" or "never ran".',
     'Quote run results exactly as the validation rows give them (command and counts); never add a count, suite or file the row does not show.',
-    'Point reviewers at the symbol that owns a behavior (from changes.where), not at the largest file.',
-    "A commit message listing several changes doesn't say which file implements each: tie a sentence to a file or symbol only where the diff shows that behavior there.",
+    'Point reviewers at the symbol that owns a behavior (from commitMessages.implementedBy or changes.where), not at the largest file.',
+    'Name a file or symbol for a commit-message sentence only from its implementedBy; when implementedBy is empty, describe the behavior without naming where it lives.',
+    'Call a symbol new, added or introduced only if it is in newSymbols; others already existed and were changed.',
+    "Give the old behavior from changes.was (old → new values) when you say what changed; don't guess old values.",
   ].map((rule) => ({ rule }));
+
+  // What the added tests check, by their titles.
+  const tests: Record<string, unknown>[] = [];
+  const testsByFile = new Map<string, string[]>();
+  for (const h of [...hunkRows].sort((a, b) => byDiff(String(a.diff), String(b.diff))))
+    for (const t of (h.tests as string[]) ?? [])
+      testsByFile.set(
+        String(h.file),
+        uniq([...(testsByFile.get(String(h.file)) ?? []), t]),
+      );
+  for (const [file, titles] of testsByFile)
+    tests.push({ ref: `T${tests.length + 1}`, file, titles: refs(titles, 6) });
+
+  // Version bumps and generated files: one sentence covers them.
+  const housekeeping: Record<string, unknown>[] = [];
+  const versionFiles = uniq(
+    hunkRows
+      .filter(
+        (h) =>
+          fileRole.get(String(h.file)) === 'version' ||
+          ((h.pairs as string[]) ?? []).some((x) => VERSION_PAIR.test(x)),
+      )
+      .map((h) => String(h.file)),
+  ).sort();
+  const bump = uniq(
+    hunkRows.flatMap((h) =>
+      ((h.pairs as string[]) ?? []).filter((x) => VERSION_PAIR.test(x)),
+    ),
+  ).sort((a, b) => a.length - b.length); // the shortest reads best: `1.0.0-rc.5 → 1.0.0-rc.6`
+  if (versionFiles.length)
+    housekeeping.push({
+      ref: 'HK1',
+      what: bump.length ? `version ${bump[0]}` : 'version files changed',
+      files: refs(versionFiles, 6),
+    });
+  const generated = [...fileRole]
+    .filter(([, r]) => r === 'generated')
+    .map(([f]) => f)
+    .sort();
+  if (generated.length)
+    housekeeping.push({
+      ref: `HK${housekeeping.length + 1}`,
+      what: 'generated or built files rebuilt (not hand-edited)',
+      files: refs(generated, 6),
+    });
 
   const sections = [
     section(
       'changes',
-      ['change', 'groupedBy', 'where', 'added', 'removed', 'diff', 'commits', 'requests'],
+      [
+        'change',
+        'groupedBy',
+        'where',
+        'newSymbols',
+        'was',
+        'added',
+        'removed',
+        'diff',
+        'commits',
+        'requests',
+      ],
       changeRows,
     ),
     section('requests', ['ref', 'kind', 'text'], requests),
-    section('commitMessages', ['ref', 'about', 'text'], commitText),
+    section('commitMessages', ['ref', 'about', 'text', 'implementedBy'], commitText),
+    section('tests', ['ref', 'file', 'titles'], tests),
+    section('housekeeping', ['ref', 'what', 'files'], housekeeping),
     section(
       'validation',
-      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'cmd'],
+      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'history', 'cmd'],
       validation,
     ),
     section('limits', ['change', 'limit'], limits),

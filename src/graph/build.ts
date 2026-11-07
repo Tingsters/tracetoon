@@ -38,6 +38,14 @@ export interface PatchHunk {
   touched: string[];
   /** Added lines that branch or fall back (if/else, ??, ||, catch, default…). */
   branches: number;
+  /** Symbols defined on added lines and on no removed line of the patch: new code. */
+  fresh: string[];
+  /** Changed values: a removed line and its closest added line, as `old → new` tokens. */
+  pairs: string[];
+  /** Test titles added in this hunk (`test('…')`, `def test_…`, `func Test…`). */
+  tests: string[];
+  /** Lowercased words of the changed lines (identifiers split, strings), for matching prose to code. */
+  words: string[];
   /** Normalized added lines, for matching edits. Never written out. */
   lines: Set<string>;
   /** Normalized removed lines, for matching commits that only delete. Never written out. */
@@ -70,6 +78,13 @@ const DEFINITIONS = [
 ];
 /** The name a line of code defines, if it defines one. */
 export function definedSymbol(line: string): string | undefined {
+  // Imports name types (`import { type X }`) without defining them.
+  if (
+    /^\s*(import\b|from\s+\S+\s+import\b|use\s|using\s|#\s*include\b|export\s*\{|export\s+\*)/.test(
+      line,
+    )
+  )
+    return undefined;
   for (const re of DEFINITIONS) {
     const m = re.exec(line);
     if (m?.[1] && !KEYWORDS.has(m[1])) return m[1];
@@ -97,6 +112,10 @@ export function patchHunks(patch: string): PatchHunk[] {
   let newLeft = 0;
   let newLine = 0;
   let current: string | undefined;
+  // Indent of the line that defined `current`; a later line at or left of it ends its body.
+  let currentIndent = -1;
+  const removedDefs = new Set<string>();
+  const changed = new Map<PatchHunk, { minus: string[]; plus: string[] }>();
   const touch = (h: PatchHunk) => {
     if (current && !h.touched.includes(current)) h.touched.push(current);
   };
@@ -116,9 +135,28 @@ export function patchHunks(patch: string): PatchHunk[] {
     }
     if (cur && (oldLeft > 0 || newLeft > 0)) {
       const c = line[0];
-      const def = definedSymbol(line.slice(1));
-      if (def) current = def;
-      if (c === '+' || c === '-') touch(cur);
+      const text = line.slice(1);
+      const indent = /^\s*/.exec(text)![0].replace(/\t/g, '    ').length;
+      const def = definedSymbol(text);
+      // A line back at the definition's indent ends its body: a closing brace
+      // still belongs to it, anything else (the next function, a comment) doesn't.
+      let closes = false;
+      if (current && text.trim() && !def && indent <= currentIndent) {
+        if (/^\s*[}\])]/.test(text)) closes = true;
+        else current = undefined;
+      }
+      if (def) {
+        current = def;
+        currentIndent = indent;
+      }
+      if (c === '+' || c === '-') {
+        touch(cur);
+        const ch = changed.get(cur) ?? { minus: [], plus: [] };
+        (c === '+' ? ch.plus : ch.minus).push(text);
+        changed.set(cur, ch);
+        if (c === '-' && def) removedDefs.add(def);
+      }
+      if (closes) current = undefined;
       if (c === '+') {
         newLeft--;
         cur.added++;
@@ -150,6 +188,7 @@ export function patchHunks(patch: string): PatchHunk[] {
       newLeft = h[3] === undefined ? 1 : Number(h[3]);
       first = last = n;
       current = h[4]?.trim() ? definedSymbol(h[4]) : undefined;
+      currentIndent = current ? /^\s*/.exec(h[4]!)![0].replace(/\t/g, '    ').length : -1;
       cur = {
         id: `H${hunks.length + 1}`,
         file,
@@ -163,6 +202,10 @@ export function patchHunks(patch: string): PatchHunk[] {
         symbols: [],
         touched: [],
         branches: 0,
+        fresh: [],
+        pairs: [],
+        tests: [],
+        words: [],
         lines: new Set(),
         gone: new Set(),
       };
@@ -184,7 +227,79 @@ export function patchHunks(patch: string): PatchHunk[] {
     }
   }
   close();
+  for (const h of hunks) {
+    h.fresh = h.symbols.filter((x) => !removedDefs.has(x));
+    const ch = changed.get(h) ?? { minus: [], plus: [] };
+    h.pairs = valuePairs(ch.minus, ch.plus);
+    h.tests = uniqStrings(ch.plus.flatMap(testTitles)).slice(0, 8);
+    h.words = uniqStrings([...ch.minus, ...ch.plus].flatMap(wordsOf)).slice(0, 400);
+  }
   return hunks;
+}
+
+const uniqStrings = (xs: string[]) => [...new Set(xs)];
+const CODE_TOKEN =
+  /'[^']*'|"[^"]*"|`[^`]*`|\d[\d_.]*\w*|[A-Za-z_$][\w$]*(?:[.:/-][A-Za-z_$][\w$]*)*/g;
+const isComment = (l: string) => /^\s*(\/\/|#(?!\[)|\*|\/\*|--\s)/.test(l);
+
+/**
+ * Old → new values: each removed line paired with its most similar added line,
+ * kept when a few tokens differ and one of them is a number or string literal
+ * (`last + 30 * 60_000 → last + 5 * 60_000`).
+ */
+export function valuePairs(minus: string[], plus: string[]): string[] {
+  const toks = (l: string): string[] => l.match(CODE_TOKEN) ?? [];
+  const out: string[] = [];
+  const used = new Set<number>();
+  for (const r of minus) {
+    if (isComment(r) || r.trim().length < 4) continue;
+    const rt = toks(r);
+    if (!rt.length) continue;
+    let best = -1;
+    let score = 0;
+    plus.forEach((a, i) => {
+      if (used.has(i) || isComment(a)) return;
+      const at = toks(a);
+      const inter = rt.filter((t) => at.includes(t)).length;
+      const j = inter / new Set([...rt, ...at]).size;
+      if (j > score) {
+        score = j;
+        best = i;
+      }
+    });
+    if (best < 0 || score < 0.4 || score >= 1) continue;
+    const added = plus[best]!;
+    const at = toks(added);
+    const was = rt.filter((t) => !at.includes(t));
+    const now = at.filter((t) => !rt.includes(t));
+    // A changed value, not a rename or a rewrite: few tokens differ, and a
+    // number or string literal is among them.
+    const literal = (t: string) => /^(\d|['"`])/.test(t);
+    if (!was.length || !now.length || was.length > 4 || now.length > 4) continue;
+    if (!was.some(literal) && !now.some(literal)) continue;
+    used.add(best);
+    out.push(`${clip(r.trim(), 80)} → ${clip(added.trim(), 80)}`);
+  }
+  return uniqStrings(out).slice(0, 4);
+}
+
+/** Test titles a line adds: `test('…')`, `it("…")`, `describe(…)`, `def test_x`, `func TestX`. */
+export function testTitles(line: string): string[] {
+  const m =
+    /\b(?:test|it|describe|context)(?:\.\w+)?\s*\(\s*(['"`])((?:(?!\1).){3,140})\1/.exec(
+      line,
+    ) ??
+    /\bdef\s+(test_\w+)/.exec(line) ??
+    /\bfunc\s+(Test\w+)/.exec(line);
+  if (!m) return [];
+  return [String(m[2] ?? m[1])];
+}
+
+/** Lowercased words of a code line: identifiers split at case and underscores, string contents. */
+export function wordsOf(line: string): string[] {
+  return (line.match(/[A-Za-z][a-z]+|[A-Z]+(?![a-z])|\d+/g) ?? [])
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length >= 3 || /^\d+$/.test(w));
 }
 
 const firstLine = (s: string) =>
@@ -229,7 +344,8 @@ export function commitSentences(body: string): string[] {
 
 const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.');
 const RUN_WHEN: Record<string, string> = {
-  'no later edits seen': 'after the last edit the logs captured (edits outside the logs are not ruled out)',
+  'no later edits seen':
+    'after the last edit the logs captured (edits outside the logs are not ruled out)',
   'before later edits': 'before later edits (stale for the files edited after it)',
   'after later work': 'after later work (tested code that is not this PR)',
   unknown: 'unknown',
@@ -291,6 +407,10 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       symbols: h.symbols,
       touched: h.touched,
       branches: h.branches,
+      fresh: h.fresh,
+      pairs: h.pairs,
+      tests: h.tests,
+      words: h.words,
     });
     rel('OF', ['Hunk', h.id], ['File', h.file]);
   }
