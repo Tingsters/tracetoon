@@ -229,7 +229,7 @@ export function commitSentences(body: string): string[] {
 
 const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.');
 const RUN_WHEN: Record<string, string> = {
-  'no later edits seen': 'after the last captured edit',
+  'no later edits seen': 'after the last edit the logs captured (edits outside the logs are not ruled out)',
   'before later edits': 'before later edits (stale for the files edited after it)',
   'after later work': 'after later work (tested code that is not this PR)',
   unknown: 'unknown',

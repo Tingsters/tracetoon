@@ -463,7 +463,7 @@ export function brief(g: GraphEngine): Section[] {
         change: c.id,
         limit: freshPass.length
           ? `No logged passing check after the last captured edit of ${unchecked.join(', ')}; fresh ${freshPass.join(', ')} passed on the submitted code, which shows the suite passes, not that it exercises this change.`
-          : `No passing test, build, lint or typecheck run after the last captured edit of ${unchecked.join(', ')}: don't call it tested or verified.`,
+          : `No recorded passing test, build, lint or typecheck run after the last captured edit of ${unchecked.join(', ')}: say "no recorded run", not "untested" or "not exercised".`,
       });
     const unexplained = hs.filter(
       (h) =>
@@ -503,6 +503,9 @@ export function brief(g: GraphEngine): Section[] {
     'A commit-message sentence speaks for its own commit only: never generalize it to other commits ("all of these were found while…").',
     'Results that appear only in a commit message (validation rows marked "asserted") are not runs: attribute them to that commit message or leave them out.',
     "Checks listed with files edited after them did not see those edits: don't present them as testing the final code.",
+    'A check dated after the last captured edit ran after the last edit the logs show, not necessarily on the final code: say that, and never "on the final code" or "after all changes".',
+    'Absence of a recorded run is not evidence a check was never run or that code is untested: write "no recorded run", never "not tested", "not exercised" or "never ran".',
+    'Quote run results exactly as the validation rows give them (command and counts); never add a count, suite or file the row does not show.',
     'Point reviewers at the symbol that owns a behavior (from changes.where), not at the largest file.',
     "A commit message listing several changes doesn't say which file implements each: tie a sentence to a file or symbol only where the diff shows that behavior there.",
   ].map((rule) => ({ rule }));

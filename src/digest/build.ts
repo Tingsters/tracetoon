@@ -355,6 +355,9 @@ export function commandRuns(
     const result = runOutcome(cmd, seg, isError, own, kind);
     if (several && result.basis === 'exit status' && result.outcome === 'failed')
       Object.assign(result, { outcome: 'unknown', basis: 'none' });
+    // Several test commands' results are mixed in one output, so no count can
+    // be pinned on either: list them with no result lines rather than let a
+    // reader credit one suite with another's numbers.
     if (kind === 'test' && tests.length > 1)
       return {
         cmd: tests.join(' ; '),
@@ -362,6 +365,7 @@ export function commandRuns(
         ...result,
         outcome: 'unknown',
         basis: 'none',
+        summary: [],
       };
     return { cmd: seg, kind, ...result };
   });

@@ -85,10 +85,23 @@ describe('verification runs', () => {
     expect(r).toMatchObject({ kind: 'test', outcome: 'unknown', basis: 'none' });
     expect(r!.cmd).toContain('bun test tests/a.test.ts');
     expect(r!.cmd).toContain(' ; bun test');
+    expect(r!.summary).toEqual([]);
     expect(commandRun('bun test', false, '96 pass\n0 fail')).toMatchObject({
       cmd: 'bun test',
       outcome: 'passed',
     });
+  });
+
+  test('test commands whose files are each read back share one output: no counts for either', () => {
+    const runs = commandRuns(
+      'bun run bundle | tail -1 && bun test > /tmp/a.log 2>&1; grep -E " pass$| fail$" /tmp/a.log; CLI=x bun test tests/flow.test.ts > /tmp/b.log 2>&1; grep -E " pass$| fail$" /tmp/b.log',
+      false,
+      ' 0 fail\n 47 pass\n 0 fail',
+    );
+    const test = runs.find((r) => r.kind === 'test')!;
+    expect(test).toMatchObject({ outcome: 'unknown', summary: [] });
+    expect(test.cmd).toContain('bun test tests/flow.test.ts');
+    expect(runs.filter((r) => r.kind === 'test')).toHaveLength(1);
   });
 
   test("a test whose output goes to a file nobody reads doesn't take another run's results", () => {
