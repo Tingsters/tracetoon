@@ -282,7 +282,7 @@ describe('evidence graph', () => {
     expect(body).toContain('## Validation');
     expect(body).not.toContain('## Testing');
     // The section quotes the brief's row: the failing run, before farewell's last edit.
-    expect(body).toContain('- `bun test`: failed (3 pass; 1 fail); ran before later edits to src/farewell.ts.');
+    expect(body).toContain('- `bun test`: failed (3 pass; 1 fail); the logs show later edits to src/farewell.ts.');
     expect(body).toContain('No recorded passing test, build, lint or typecheck run after the last captured edit of src/farewell.ts');
     expect(r.json.briefCheck).toMatchObject({
       validationSection: true,

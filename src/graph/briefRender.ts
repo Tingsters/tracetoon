@@ -64,19 +64,22 @@ export function validationSection(b: BriefParts): string {
       );
       continue;
     }
-    const outcome =
-      r.outcome === 'passed' || r.outcome === 'failed'
-        ? String(r.outcome)
-        : 'outcome not recorded';
-    const result = r.result ? ` (${plain(r.result)})` : '';
+    // Only what the logs establish: the result as recorded, and edits seen
+    // after the run. A run with no later edit in the logs may still predate
+    // the final code (later commits, edits outside the logs), so say so.
+    const recorded = r.outcome === 'passed' || r.outcome === 'failed';
+    const result = recorded
+      ? `${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}`
+      : 'ran; its result is not in the logs';
     const edited = list(r.editedAfter);
-    const when =
-      edited && String(r.when).startsWith('before later edits')
-        ? `ran before later edits to ${edited}`
+    const when = edited
+      ? `the logs show later edits to ${edited}`
+      : String(r.when ?? '').startsWith('after the last edit')
+        ? 'whether it ran on the final code is not recorded'
         : r.when
           ? `ran ${String(r.when)}`
           : '';
-    lines.push(`- \`${shownCommand(r.cmd)}\`: ${outcome}${result}${when ? `; ${when}` : ''}.`);
+    lines.push(`- \`${shownCommand(r.cmd)}\`: ${result}${when ? `; ${when}` : ''}.`);
   }
   if (b.unchecked.length)
     lines.push(
