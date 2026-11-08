@@ -117,8 +117,13 @@ reviewer separate.
      In the public body, name the commands and observed results. Keep receipt
      internals local; do not turn content or environment fingerprints into a
      general validation assurance. Attribute each result to its actual command.
-     2a. **Brief path** (whenever `prepare --json` returns a `brief`): draft →
-     check → review → final render → publish. Write the description yourself,
+     When `prepare --json` returns a `brief`, take the **full path with the
+     brief** (steps 3–7): the researcher, drafter and independent reviewer each
+     use the brief as described in references/contribution-workflow.md, and the
+     review gets at most one correction round. Use the quick brief path below
+     only when the user's own message asks for the cheapest or quickest PR.
+     2a. **Quick brief path** (only on that request): draft → check → review →
+     final render → publish. Write the description yourself,
      inline, from the brief, then have one fresh reviewer check it. Skip the
      researcher, `guidance.json`, the delegated drafter and the full independent
      review (steps 3, 4 and 6); still apply step 3's AI-policy bullets from
@@ -186,7 +191,7 @@ reviewer separate.
       message asks for the cheapest run (an unattended run is not that) may you
       skip steps 7–8 and publish with `--no-review`; `--accept-open` likewise
       needs the user's agreement in their own words.
-3. **Context** (full path; the brief path in 2a goes from step 2 to step 7).
+3. **Context** (full path, with or without a brief; the quick brief path in 2a goes from step 2 to step 7).
    Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).
@@ -340,7 +345,7 @@ reviewer separate.
    and lists behavior the body leaves out. Re-render to
    validate and display the assessment. Return draftable findings, including
    claims that aren't `supported` and omissions, to the drafter
-   for up to **two correction rounds**, each followed by a render and fresh review.
+   for up to **two correction rounds** (one when the run has a brief), each followed by a render and fresh review.
    Findings show in `render` output and `--json`; mention remaining ones briefly
    after publishing. Never manufacture human attestations or test evidence.
    Guidance and review findings are advisory.

@@ -129,17 +129,27 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > draft concrete commands and results without general verification assurances.
 >
 > Draft from the run's evidence brief (`tracetoon query brief --run <id>`, also
-> printed by `prepare` and at the top of `evidence-notes.md`). `changes` groups
-> the diff into change units and names the files and symbols that own each one:
-> describe each unit there, behavior first, and point reviewers at the owning
-> symbol, not the largest file. `requests` and `commitMessages` give the reasons:
-> a commit-message sentence speaks for its own commit only, so never stretch it
-> over other changes ("all of these were found while…"), and where a change has
-> no captured request, give only a reason its commit message states, attributed
-> to it. `validation` dates every check
-> against the edits: report a check that ran before later edits as a result
-> from before them, and a result only a commit message reports as the message's
-> claim, not a run. State its `limits` honestly and follow its `avoid` rules.
+> printed by `prepare` and at the top of `evidence-notes.md`); read all of it,
+> never cut with `head` or `tail`. Its `avoid` and `limits` rows come first and
+> are instructions, never PR text. `changes` groups the diff into change units;
+> `commitMessages` gives each commit sentence and, in `implementedBy`, the file
+> that carries it: name that file for the behavior, and where `implementedBy`
+> is empty describe the behavior without naming a file. Call code new only if
+> it is in `newSymbols`. State plainly what the patch shows; attribute only
+> reasons, results and scope remarks the patch can't show to the request or
+> commit message that says them, and never invent a motive. Say what the code
+> did before only where the removed lines, `changes.was` or the request show
+> it, quoting values. Write the consequences (what changes for users or
+> callers, the riskiest part, what is deliberately left alone), every `limits`
+> row of kind `open` as an open point, what the added tests check (`tests`
+> rows; no test counts or helper names) and one line for `housekeeping`. No
+> blanket negatives ("no X was run") unless an open limit states one; give
+> mechanism claims their conditions instead of "always" or "any". Group by
+> behavior, not file by file, and say each thing once. In the review path,
+> name the files to start with, the riskiest change and the feedback wanted.
+> Validation follows the rules above (receipts and dated log runs, exact
+> commands and counts); a check the repository requires with no current
+> receipt is run once with `tracetoon check`.
 > Read every behavior hunk the brief cites (diff refs like `diff:120-141`) and
 > cite them as behaviorChecks evidence. `query why <path>` drills into one file
 > and `query turn <S#>` into one request, including dead-end edits. Do not
@@ -320,6 +330,13 @@ MSR 2026). The review has three passes:
    `inferredStart` (where you would start reviewing). This checks whether the
    text alone gets the change across. A reader who can't tell what changed
    has learned little from the description.
+   With an evidence brief, also read it (`tracetoon query brief --run <id>`)
+   and render's brief check (open sentences, uncovered rows). Flag a file or
+   function named for a behavior the patch places elsewhere (`implementedBy`),
+   "new" for code not in `newSymbols`, "always/only/no longer" where a branch
+   differs, old behavior the removed lines don't show, blanket negatives no
+   open limit states, a result or remark only a commit message makes stated as
+   fact, and any `limits` row of kind `open` the body leaves out.
 2. **Claim audit, after reading the diff.** For each independent factual clause in the title or body that
    makes a factual claim (behavior, scope, cause, result, example), record a
    verdict:

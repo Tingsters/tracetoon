@@ -283,8 +283,9 @@ describe('evidence graph', () => {
     const { repo, cli } = scenario();
     const prepared = cli(repo.root, '--json', 'prepare', '--offline');
     const run = prepared.json.run;
-    expect(prepared.json.next).toContain('render --check');
-    expect(prepared.json.next).toContain('render --reviewed');
+    // With a brief, the default is the full path; the quick path is opt-in.
+    expect(prepared.json.next).toContain('full path with the evidence brief');
+    expect(prepared.json.next).toContain('quick brief path');
     expect(prepared.json.brief).not.toContain('branching or fallback line');
     const b = cli(repo.root, '--json', 'query', 'brief', '--run', run);
     const changes = b.json.sections.find((x: any) => x.title === 'changes').rows;
