@@ -76,33 +76,53 @@ export function validationSection(b: BriefParts): string {
   // focused test run, then a typecheck or lint. Commit-message results, runs with
   // no captured result and files with no passing run after their last edit are
   // open points the prose covers (limits rows), so they aren't repeated here.
-  const shown: { kind: string; line: string; when: string }[] = [];
+  // Every check Tracetoon ran on the submitted content (V receipts) is shown,
+  // whatever its kind (a dropped `bun run bundle` receipt cost a dev19 pair);
+  // session-log runs fill the rest, up to three lines in all.
+  const shown: { kind: string; line: string; when: string; current: boolean }[] = [];
   const perKind = new Map<string, number>();
-  for (const r of rowsOf(b, 'validation')) {
-    const kind = String(r.kind);
-    if (!['test', 'typecheck', 'lint', 'build'].includes(kind)) continue;
-    if (r.outcome !== 'passed' && r.outcome !== 'failed') continue;
+  const rows = rowsOf(b, 'validation').filter(
+    (r) => r.outcome === 'passed' || r.outcome === 'failed',
+  );
+  const receipts = rows.filter((r) => /^V\d/.test(String(r.check ?? '')));
+  const logRuns = rows.filter((r) => !/^V\d/.test(String(r.check ?? '')));
+  for (const r of receipts.slice(0, 5)) {
     const cmd = shownCommand(r.cmd);
     if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
+    shown.push({
+      kind: String(r.kind),
+      line: `- \`${cmd}\`: ${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}, run by \`tracetoon check\` on the submitted content.`,
+      when: 'fresh',
+      current: true,
+    });
+  }
+  for (const r of logRuns) {
+    if (shown.length >= MAX_LINES) break;
+    const kind = String(r.kind);
+    if (!['test', 'typecheck', 'lint', 'build'].includes(kind)) continue;
+    const cmd = shownCommand(r.cmd);
+    if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
+    // A receipt for the same command already says more.
+    if (shown.some((x) => x.current && x.line.startsWith(`- \`${cmd}\`:`))) continue;
     const n = perKind.get(kind) ?? 0;
     if (n >= (kind === 'test' ? 2 : 1)) continue;
     perKind.set(kind, n + 1);
-    // Say where each result comes from: a check Tracetoon ran on the submitted
-    // content (a V receipt) is current, with its counts; a run from the session
-    // logs is history, with no counts a reader can't check (dev17 judges).
-    const current = /^V\d/.test(String(r.check ?? ''));
+    // A run from the session logs is history, with no counts a reader can't check.
     const editedAll = (Array.isArray(r.editedAfter) ? r.editedAfter : []).map(String);
     const edited = editedAll.length > 2 ? `${editedAll.length} files` : list(editedAll);
-    const line = current
-      ? `- \`${cmd}\`: ${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}, run by \`tracetoon check\` on the submitted content.`
-      : `- \`${cmd}\`: ${String(r.outcome)} in the session logs${edited ? `, before later edits to ${edited}` : ''}.`;
-    shown.push({ kind, line, when: current ? 'fresh' : String(r.when ?? '') });
+    shown.push({
+      kind,
+      line: `- \`${cmd}\`: ${String(r.outcome)} in the session logs${edited ? `, before later edits to ${edited}` : ''}.`,
+      when: String(r.when ?? ''),
+      current: false,
+    });
   }
-  const order = (k: string) => KIND_ORDER.indexOf(k);
-  const lines = shown
-    .sort((x, y) => order(x.kind) - order(y.kind))
-    .slice(0, MAX_LINES)
-    .map((x) => x.line);
+  const order = (k: string) =>
+    KIND_ORDER.indexOf(k) < 0 ? KIND_ORDER.length : KIND_ORDER.indexOf(k);
+  const lines = [
+    ...shown.filter((x) => x.current),
+    ...shown.filter((x) => !x.current).sort((x, y) => order(x.kind) - order(y.kind)),
+  ].map((x) => x.line);
   if (!lines.length)
     lines.push(
       '- No passing or failing test, typecheck or lint run was recorded in the captured sessions.',

@@ -591,6 +591,47 @@ describe('evidence graph', () => {
     expect(v).not.toContain("can't tell whether");
   });
 
+  test('every tracetoon check receipt is listed, a bundle check included', () => {
+    const r = (
+      check: string,
+      kind: string,
+      cmd: string,
+      result: string | null = null,
+    ) => ({
+      check,
+      kind,
+      outcome: 'passed',
+      result,
+      cmd,
+      when: 'fresh: run on the submitted content',
+      editedAfter: [],
+    });
+    const v = validationSection({
+      unchecked: [],
+      sections: [
+        {
+          title: 'validation',
+          rows: [
+            r('V1', 'typecheck', 'bun x tsc --noEmit'),
+            r('V2', 'test', 'bun test', '96 pass; 0 fail'),
+            r('V3', 'build', 'bun run bundle'),
+            r('V4', 'lint', 'bun x prettier --check .'),
+            {
+              ...r('R9', 'test', 'bun test tests/a.test.ts'),
+              when: 'after the last edit the logs captured',
+            },
+          ],
+        },
+      ],
+    } as any);
+    const lines = v.split('\n').filter((l) => l.startsWith('- '));
+    expect(lines).toHaveLength(4);
+    expect(v).toContain(
+      '- `bun run bundle`: passed, run by `tracetoon check` on the submitted content.',
+    );
+    expect(v).not.toContain('tests/a.test.ts');
+  });
+
   test('shown commands drop output redirections', () => {
     expect(shownCommand('bun test > <outside-repo> 2>&1 ; bun test tests/a.ts')).toBe(
       'bun test ; bun test tests/a.ts',

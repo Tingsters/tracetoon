@@ -150,6 +150,11 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > Validation follows the rules above (receipts and dated log runs, exact
 > commands and counts); a check the repository requires with no current
 > receipt is run once with `tracetoon check`.
+> Keep the concrete values a brief row gives (model names, counts, versions,
+> output shapes) rather than a vaguer paraphrase; cover changed defaults, JSON
+> shapes and error paths as consequences; name each added test file and what
+> it checks in the prose. Write "per the commit message" only for reasons and
+> results the diff can't show.
 > Read every behavior hunk the brief cites (diff refs like `diff:120-141`) and
 > cite them as behaviorChecks evidence. `query why <path>` drills into one file
 > and `query turn <S#>` into one request, including dead-end edits. Do not
@@ -336,7 +341,8 @@ MSR 2026). The review has three passes:
    "new" for code not in `newSymbols`, "always/only/no longer" where a branch
    differs, old behavior the removed lines don't show, blanket negatives no
    open limit states, a result or remark only a commit message makes stated as
-   fact, and any `limits` row of kind `open` the body leaves out.
+   fact, any `limits` row of kind `open` the body leaves out, and any concrete
+   value or consequence a brief row states that the body dropped or blurred.
 2. **Claim audit, after reading the diff.** For each independent factual clause in the title or body that
    makes a factual claim (behavior, scope, cause, result, example), record a
    verdict:
