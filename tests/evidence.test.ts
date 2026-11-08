@@ -1,4 +1,5 @@
 /** The evidence record: decisions as recorded, runs with honest outcomes, file roles. */
+import { shellJoin } from '../src/workflow/checks.ts';
 import { describe, expect, test } from 'bun:test';
 import {
   commandRun,
@@ -275,4 +276,14 @@ describe('plans', () => {
     parseClaudeLines(log.text(), s);
     expect(s.records.find((r: any) => r.kind === 'plan')?.markdown).toBe('# Final plan');
   });
+});
+
+test('receipt commands keep their shell quoting', () => {
+  expect(shellJoin(['bash', '-c', 'bun run typecheck && bun test'])).toBe(
+    "bash -c 'bun run typecheck && bun test'",
+  );
+  expect(shellJoin(['env', 'CLI=<repo>/dist/x.mjs', 'bun', 'test'])).toBe(
+    'env CLI=<repo>/dist/x.mjs bun test',
+  );
+  expect(shellJoin(['echo', "it's"])).toBe("echo 'it'\\''s'");
 });

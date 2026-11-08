@@ -1,7 +1,7 @@
 /** Explicit verification receipts; raw output and environment values are never persisted. */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { contentFingerprint } from './state.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
@@ -256,7 +256,7 @@ function prepareCheck(
   const running: CheckReceipt = {
     v: 1,
     name: safeName,
-    command: opts.command.map((c) => scrub.text(c)),
+    command: opts.command.map((c) => scrub.text(atRepo(c, root))),
     commandSha256: hash(opts.command),
     cwd: rel,
     kind: checkKind(`${opts.name} ${opts.command.join(' ')}`),
@@ -281,7 +281,7 @@ function prepareCheck(
       const receipt: CheckReceipt = {
         v: 1,
         name: safeName,
-        command: opts.command.map((c) => scrub.text(c)),
+        command: opts.command.map((c) => scrub.text(atRepo(c, root))),
         commandSha256: hash(opts.command),
         cwd: rel,
         kind: checkKind(`${opts.name} ${opts.command.join(' ')}`),
@@ -346,6 +346,34 @@ export function checkReport(root: string, run: Run) {
     })(),
   }));
 }
+/**
+ * Paths inside the repository written as `<repo>/…`, so an absolute path the
+ * command used stays distinguishable from a relative one (the scrubber alone
+ * strips the root, which made a passing absolute-path retry read as the failed
+ * relative-path attempt; conf21 pr12).
+ */
+function atRepo(arg: string, root: string): string {
+  const roots = [root];
+  try {
+    const real = realpathSync(root);
+    if (real !== root) roots.push(real);
+  } catch {
+    /* the root as given */
+  }
+  let out = arg;
+  for (const r of roots) out = out.split(`${r}/`).join('<repo>/').split(r).join('<repo>');
+  return out;
+}
+
+/** argv as a shell would need it typed: arguments with spaces or shell characters quoted. */
+export function shellJoin(argv: string[]): string {
+  return argv
+    .map((a) =>
+      a === '' ? "''" : /[^\w@%+=:,./<>-]/.test(a) ? `'${a.replace(/'/g, `'\\''`)}'` : a,
+    )
+    .join(' ');
+}
+
 export function receiptEvidence(
   root: string,
   run: Run,
@@ -356,7 +384,7 @@ export function receiptEvidence(
     .filter((c) => c.current && ['passed', 'failed'].includes(c.outcome))
     .map((c, i) => ({
       id: `V${i + 1}`,
-      cmd: c.command.join(' '),
+      cmd: shellJoin(c.command),
       kind: c.kind,
       outcome: c.outcome as 'passed' | 'failed',
       basis: 'exit status',
