@@ -158,27 +158,33 @@ reviewer separate.
    4. Write no test, build, lint or typecheck results yourself, anywhere. Put the
       line `<!-- tracetoon:validation -->` where the validation section belongs;
       render writes that section from the recorded checks.
-   5. **Check.** `tracetoon render --check --json --run <id>`. Fix every sentence
+   5. **Required checks.** If `context.json` or the repository's contributing
+      guide names checks contributors must run (tests, typecheck, lint), and the
+      brief's validation rows have no `tracetoon check` receipt (a `V` row) for
+      them, run each once with `tracetoon check --run <id> --name <check> -- <command>`
+      (one at a time; this records the result on the submitted content, as the
+      full path does). Don't run anything else to fill gaps.
+   6. **Check.** `tracetoon render --check --json --run <id>`. Fix every sentence
       it lists (rewording it; adding a tag doesn't fix a flagged sentence) and
       add one sentence for each uncovered brief row, then check again. Repeat, up
       to three rounds, until it reports nothing left to fix. This is not the
       final render.
-   6. **Review (always).** Start one fresh subagent, not a fork of this
+   7. **Review (always).** Start one fresh subagent, not a fork of this
       conversation, with [references/reviewer-brief.md](references/reviewer-brief.md)
       as its whole instruction and the run folder's path. It checks each
       sentence against the patch and writes `reviewer-notes.md`. If your host
       can't start a subagent, do that pass yourself, re-reading only what the
       reviewer brief lists.
-   7. **Apply and final render.** Check each note against the patch before
+   8. **Apply and final render.** Check each note against the patch before
       applying it, and skip a note the patch doesn't support. For a scope
       finding, qualify the sentence rather than list every case; add each
       MISSING item as one clause. Then `tracetoon render --reviewed --json --run <id>`
       until it reports nothing left to fix.
-   8. Draw a comic if one is wanted (step 5, without a separate reviewer), then
+   9. Draw a comic if one is wanted (step 5, without a separate reviewer), then
       publish (step 7). Publish refuses a draft that was only checked, and one
       with sentences to fix or brief rows to cover. Only if the user's own
       message asks for the cheapest run (an unattended run is not that) may you
-      skip steps 6–7 and publish with `--no-review`; `--accept-open` likewise
+      skip steps 7–8 and publish with `--no-review`; `--accept-open` likewise
       needs the user's agreement in their own words.
 3. **Context** (full path; the brief path in 2a goes from step 2 to step 7).
    Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,

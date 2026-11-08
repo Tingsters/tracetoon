@@ -87,15 +87,16 @@ export function validationSection(b: BriefParts): string {
     const n = perKind.get(kind) ?? 0;
     if (n >= (kind === 'test' ? 2 : 1)) continue;
     perKind.set(kind, n + 1);
-    const result = `${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}`;
+    // Say where each result comes from: a check Tracetoon ran on the submitted
+    // content (a V receipt) is current, with its counts; a run from the session
+    // logs is history, with no counts a reader can't check (dev17 judges).
+    const current = /^V\d/.test(String(r.check ?? ''));
     const editedAll = (Array.isArray(r.editedAfter) ? r.editedAfter : []).map(String);
     const edited = editedAll.length > 2 ? `${editedAll.length} files` : list(editedAll);
-    const when = edited ? `before later edits to ${edited}` : '';
-    shown.push({
-      kind,
-      line: `- \`${cmd}\`: ${result}${when ? `, ${when}` : ''}.`,
-      when: String(r.when ?? ''),
-    });
+    const line = current
+      ? `- \`${cmd}\`: ${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}, run by \`tracetoon check\` on the submitted content.`
+      : `- \`${cmd}\`: ${String(r.outcome)} in the session logs${edited ? `, before later edits to ${edited}` : ''}.`;
+    shown.push({ kind, line, when: current ? 'fresh' : String(r.when ?? '') });
   }
   const order = (k: string) => KIND_ORDER.indexOf(k);
   const lines = shown

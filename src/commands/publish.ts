@@ -545,7 +545,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           mode: briefMode,
           issues: [
             briefMode === 'lean'
-              ? 'Brief path, checked draft: the slim review (step 2a.6) comes next, then render --reviewed.'
+              ? 'Brief path, checked draft: the slim review (step 2a.7) comes next, then render --reviewed.'
               : existsSync(join(run.dir, 'reviewer-notes.md'))
                 ? 'Reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md).'
                 : 'Reviewed brief path: no reviewer-notes.md found; run the slim reviewer before publishing.',
@@ -659,7 +659,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         findings.length && !approval.allowFindings
           ? 'Not ready to publish: fix what the leak scan found (above), then render again.'
           : briefMode === 'lean'
-            ? `Next: start one fresh reviewer subagent with the skill's references/reviewer-brief.md (step 2a.6), apply its reviewer-notes.md, then tracetoon render --reviewed --run ${run.id}.`
+            ? `Next: start one fresh reviewer subagent with the skill's references/reviewer-brief.md (step 2a.7), apply its reviewer-notes.md, then tracetoon render --reviewed --run ${run.id}.`
             : `Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)
@@ -863,7 +863,7 @@ export function briefPathUnreviewed(run: { dir: string }): string | undefined {
   if (review?.mode !== 'lean') return undefined;
   if (existsSync(join(run.dir, 'reviewer-notes.md')))
     return 'reviewer-notes.md exists but the last render was the pre-review check: apply the notes and run tracetoon render --reviewed.';
-  return 'This draft was only checked (render --check), not reviewed. Start one fresh reviewer subagent with references/reviewer-brief.md (step 2a.6), apply its reviewer-notes.md, then run tracetoon render --reviewed. Pass --no-review only if the user asked for the cheapest run.';
+  return 'This draft was only checked (render --check), not reviewed. Start one fresh reviewer subagent with references/reviewer-brief.md (step 2a.7), apply its reviewer-notes.md, then run tracetoon render --reviewed. Pass --no-review only if the user asked for the cheapest run.';
 }
 
 /** What the last render on a brief path left open, or undefined when nothing is. */

@@ -315,7 +315,7 @@ describe('evidence graph', () => {
     expect(body).not.toContain('## Testing');
     // The section quotes the brief's row: the failing run, before farewell's last edit.
     expect(body).toContain(
-      '- `bun test`: failed (3 pass; 1 fail), before later edits to src/farewell.ts.',
+      '- `bun test`: failed in the session logs, before later edits to src/farewell.ts.',
     );
     // The unchecked file is an open point for the prose, not repeated in the section.
     expect(body).not.toContain('No recorded passing test');
@@ -433,8 +433,8 @@ describe('evidence graph', () => {
       sections: [{ title: 'validation', rows }],
     } as any);
     expect(v.split('\n').filter((l) => l.startsWith('- '))).toEqual([
-      '- `bun test`: passed (96 pass; 0 fail).',
-      '- `bun x tsc --noEmit`: passed.',
+      '- `bun test`: passed in the session logs.',
+      '- `bun x tsc --noEmit`: passed in the session logs.',
       "- Tracetoon can't tell whether these runs saw the final commit.",
     ]);
   });
@@ -531,7 +531,7 @@ describe('evidence graph', () => {
     expect(r.uncovered).toEqual([
       'L1 (open point): Only commit abc1234\'s message reports "50/50"; no captured run shows that result.',
     ]);
-    expect(r.text).toContain('- `bun test`: passed (9 pass; 0 fail).');
+    expect(r.text).toContain('- `bun test`: passed in the session logs.');
     expect(r.text).not.toContain('eval.ts');
   });
 
@@ -552,6 +552,42 @@ describe('evidence graph', () => {
     expect(applyBrief('The shell tests cover chains and pipes. [T1]', b).flags).toEqual(
       [],
     );
+  });
+
+  test('a current tracetoon check receipt keeps its counts; log runs do not', () => {
+    const v = validationSection({
+      unchecked: [],
+      sections: [
+        {
+          title: 'validation',
+          rows: [
+            {
+              check: 'V1',
+              kind: 'test',
+              outcome: 'passed',
+              result: '96 pass; 0 fail',
+              cmd: 'bun test',
+              when: 'fresh: run on the submitted content',
+              editedAfter: [],
+            },
+            {
+              check: 'R4',
+              kind: 'typecheck',
+              outcome: 'passed',
+              result: null,
+              cmd: 'bun x tsc --noEmit',
+              when: 'after the last edit the logs captured',
+              editedAfter: [],
+            },
+          ],
+        },
+      ],
+    } as any);
+    expect(v).toContain(
+      '- `bun test`: passed (96 pass; 0 fail), run by `tracetoon check` on the submitted content.',
+    );
+    expect(v).toContain('- `bun x tsc --noEmit`: passed in the session logs.');
+    expect(v).not.toContain("can't tell whether");
   });
 
   test('shown commands drop output redirections', () => {

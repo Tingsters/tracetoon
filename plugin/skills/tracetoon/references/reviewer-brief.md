@@ -36,6 +36,8 @@ don't edit `body.md`.
    only", "closes the gap from #8") is attributed to it.
 7. **Unrecorded.** A claim nothing in the brief or patch records ("rebuilt",
    "runs in CI", "wasn't discussed") is WRONG.
+   So is a blanket negative ("no X was run", "nothing tests Y") that no
+   `limits` row of kind `open` states.
 8. **No run results.** The prose states no test, build, lint or typecheck
    results; Tracetoon writes the Validation section.
 
