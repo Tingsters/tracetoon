@@ -84,17 +84,19 @@ export interface EvidenceGraph {
 /** The schema as agents see it (`tracetoon query schema`). */
 export const SCHEMA_DOC = {
   nodes: {
-    Session: 'id (hashed ref), agent, band (included|ambiguous), score, title',
+    Session:
+      'id (hashed ref), agent, band (included|ambiguous), score, title, failedCommands (failed non-check commands), failedCommand (the most frequent of them)',
     Prompt:
       'id (S#), t, text (up to 1500 chars; expand for full), pushback, ledToEdits, session',
-    Decision: 'id (D#), t, text, session',
+    Decision:
+      'id (D#), t, text, answers (each question = "answer"), truncated (the record itself is cut off), session',
     Plan: 'id (P#), t, approved, text (first line), excerpt, session',
     Run: 'id (R#), t, cmd, kind (test|build|lint|typecheck|eval|other), outcome (passed|failed|unknown), revision, summary (result lines), when (relative to the edits), session',
     Receipt:
       'id (V#), cmd, kind, outcome, summary, when: a check run on the submitted content',
     Edit: 'id (E#), t, file, added, removed, surviving (lines still in the PR), inPr, via (shell when made by a command), session',
     File: 'id (repo-relative path), role (behavior|tests|docs|config|generated|version), inPr, added, removed, unmatched',
-    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (symbol git names after @@), symbols (defined on added lines), touched (symbols whose bodies the changed lines are in), branches',
+    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (symbol git names after @@), symbols (defined on added lines), touched (symbols whose bodies the changed lines are in), branches, pairs (old → new values), conds (changed conditions old → new, + added branch or fallback, - removed condition)',
     Commit: 'id (short SHA), subject, body (message body; null when none), t',
     CommitClaim:
       'id (<sha>#n), commit, text (one sentence of the commit message), assertsResult (reports a result: commit-message assertion, not a run)',

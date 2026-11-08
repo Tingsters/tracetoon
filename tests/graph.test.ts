@@ -7,6 +7,7 @@ import { compactDigest, type Run, type TraceDigest } from '../src/digest/build.t
 import { checkClaims, type ClaimInput } from '../src/digest/claims.ts';
 import {
   commitSentences,
+  conditionFacts,
   definedSymbol,
   patchHunks,
   testTitles,
@@ -16,7 +17,13 @@ import { toToon } from '../src/graph/toon.ts';
 import { deriveFromGraphJson } from '../src/graph/derive.ts';
 import { GraphEngine, graphEngineAvailable, withGraph } from '../src/graph/engine.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
-import { describedHunks, findQuery, listsSeveral } from '../src/graph/queries.ts';
+import {
+  behaviorOf,
+  briefParts,
+  describedHunks,
+  findQuery,
+  listsSeveral,
+} from '../src/graph/queries.ts';
 import { applyBrief, shownCommand, validationSection } from '../src/graph/briefRender.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
@@ -247,9 +254,9 @@ describe('evidence graph', () => {
     expect(b.code).toBe(0);
     const sec = (t: string) => b.json.sections.find((x: any) => x.title === t).rows;
     expect(b.json.sections.map((x: any) => x.title)).toEqual([
-      'avoid',
       'limits',
       'changes',
+      'process',
       'requests',
       'commitMessages',
       'tests',
@@ -276,7 +283,22 @@ describe('evidence graph', () => {
       .join('\n');
     expect(limits).toContain('src/farewell.ts');
     expect(limits).not.toContain('src/greet.ts:');
-    expect(sec('avoid').length).toBeGreaterThan(3);
+    // Only open points: no instructions to the writer.
+    expect(sec('limits').every((x: any) => x.kind === 'open')).toBe(true);
+    // The hand-written file came with no request of its own turn's.
+    expect(sec('process').map((x: any) => [x.ref, x.kind, x.fact])).toEqual([
+      [
+        'PR1',
+        'session',
+        "Claude Code session, edits survive: 4 edit(s) captured, 3 with lines in the PR; turns that produced this PR's edits or commits: S1, S2.",
+      ],
+      ['PR2', 'plan', 'No plan or decision was recorded.'],
+      [
+        'PR3',
+        'test',
+        '2 test run(s); 1 failed (R2); last R2 failed; no passing run recorded after the last commit.',
+      ],
+    ]);
   });
 
   test('lean render writes the Validation section and checks ref tags', () => {
@@ -764,7 +786,10 @@ describe('evidence graph', () => {
     const dogfood = msgs.find((m: any) => m.text === 'Found while dogfooding.');
     const greetCommit = changes.find((c: any) => c.where[0].startsWith('src/greet.ts'))
       .commits[0];
-    expect(dogfood.about).toBe(`commit ${greetCommit} only`);
+    // Each sentence is its commit's; the subject is a row of its own, ref'd by the sha.
+    expect(dogfood.ref).toBe(`${greetCommit}#1`);
+    expect(msgs.find((m: any) => m.ref === greetCommit).text).toBe('feat: greet');
+    expect(msgs.some((m: any) => String(m.ref).startsWith('commit:'))).toBe(false);
     // A result reported only in the message is listed as asserted, not run.
     const asserted = sec('validation').find((v: any) => v.kind === 'commit message');
     expect(asserted).toMatchObject({
@@ -1052,7 +1077,8 @@ describe('graph-derived evidence in checks, budgets, notes and review', () => {
     // The brief itself is embedded, so a drafter that never queries still sees it.
     expect(prepared.json.brief).toContain('changes[');
     expect(prepared.json.brief).toContain('src/greet.ts (greet)');
-    expect(prepared.json.brief).toContain('avoid[');
+    expect(prepared.json.brief).not.toContain('avoid[');
+    expect(prepared.json.brief).toContain('process[');
     expect(notes).toContain('## Evidence brief (`tracetoon query brief`)');
     expect(prepared.json.next).toContain(
       `tracetoon query brief --run ${prepared.json.run}`,
@@ -1194,4 +1220,345 @@ describe('ambiguous sessions', () => {
       rows: [{ hunk: 'H2', explained: 'no captured edit; read the patch' }],
     });
   });
+});
+
+describe('the brief states recorded process and behavior', () => {
+  const N = (label: any, id: string, props: Record<string, any>) => ({
+    label,
+    id,
+    props,
+  });
+  const R = (type: any, from: [any, string], to: [any, string], props?: any) => ({
+    type,
+    from: { label: from[0], id: from[1] },
+    to: { label: to[0], id: to[1] },
+    ...(props ? { props } : {}),
+  });
+  const t = (n: number) => `2026-01-01T00:00:${String(n).padStart(2, '0')}.000Z`;
+  const run = (id: string, n: number, kind: string, outcome: string, revision: string) =>
+    N('Run', id, {
+      t: t(n),
+      cmd: kind === 'test' ? 'bun test' : 'bun x tsc --noEmit',
+      kind,
+      outcome,
+      revision,
+      summary: [],
+      when: revision,
+      session: 'h:s',
+    });
+  const file = (id: string) =>
+    N('File', id, { role: 'behavior', inPr: true, added: 2, removed: 1, unmatched: 0 });
+  const hunk = (id: string, f: string, diff: string, conds: string[]) =>
+    N('Hunk', id, {
+      file: f,
+      start: 1,
+      end: 2,
+      added: 2,
+      removed: 1,
+      diff,
+      context: null,
+      touched: [],
+      branches: conds.length,
+      fresh: [],
+      pairs: [],
+      conds,
+      tests: [],
+      words: [],
+    });
+  /**
+   * S1 is an earlier PR's turn (a dead-end edit, a decision); S2 sets up the
+   * work (a plan sent back); S3 makes it (a second plan approved, a decision
+   * whose recorded answer is cut off, a surviving edit), then a commit and a
+   * passing test after it. A typecheck receipt replaces the typecheck log run.
+   */
+  const graph: EvidenceGraph = {
+    schema: GRAPH_SCHEMA,
+    nodes: [
+      N('Session', 'h:s', {
+        band: 'included',
+        agent: 'Claude Code',
+        score: 1,
+        title: null,
+        failedCommands: 2,
+        failedCommand: 'git push',
+      }),
+      N('Prompt', 'S1', {
+        t: t(1),
+        text: 'Earlier work',
+        pushback: false,
+        session: 'h:s',
+      }),
+      N('Prompt', 'S2', {
+        t: t(2),
+        text: 'Plan the limit',
+        pushback: false,
+        session: 'h:s',
+      }),
+      N('Prompt', 'S3', { t: t(3), text: 'Go ahead', pushback: false, session: 'h:s' }),
+      N('Decision', 'D0', { t: t(1), text: 'Old question', session: 'h:s' }),
+      N('Decision', 'D1', {
+        t: t(3),
+        text: 'Which limit? = "12, unless the…"',
+        answers: 'Which limit? = "12, unless the…"',
+        truncated: true,
+        session: 'h:s',
+      }),
+      N('Plan', 'P1', {
+        t: t(2),
+        approved: false,
+        text: 'Limit v1',
+        excerpt: 'Limit v1',
+        session: 'h:s',
+      }),
+      N('Plan', 'P2', {
+        t: t(3),
+        approved: true,
+        text: 'Limit v2',
+        excerpt: 'Limit v2',
+        session: 'h:s',
+      }),
+      file('src/a.ts'),
+      file('src/b.ts'),
+      hunk('H1', 'src/a.ts', 'diff:5-9', [
+        '+ if (!cmd) return;',
+        'if (n >= 10) → if (n >= 12)',
+        '- if (legacy)',
+      ]),
+      hunk('H2', 'src/b.ts', 'diff:12-14', []),
+      N('Edit', 'E0', {
+        t: t(1),
+        file: 'src/old.ts',
+        added: 1,
+        removed: 0,
+        surviving: 0,
+        inPr: false,
+        via: null,
+        session: 'h:s',
+      }),
+      N('Edit', 'E1', {
+        t: t(3),
+        file: 'src/a.ts',
+        added: 2,
+        removed: 1,
+        surviving: 2,
+        inPr: true,
+        via: null,
+        session: 'h:s',
+      }),
+      N('Commit', 'abc123def456', { subject: 'feat: limit', body: null, t: t(4) }),
+      run('R1', 3, 'test', 'failed', 'before later edits'),
+      run('R2', 5, 'test', 'passed', 'no later edits seen'),
+      run('R3', 5, 'typecheck', 'passed', 'no later edits seen'),
+      N('Receipt', 'V1', {
+        cmd: 'bun x tsc --noEmit',
+        kind: 'typecheck',
+        outcome: 'passed',
+        summary: [],
+        when: 'fresh: run on the submitted content',
+      }),
+      N('Change', 'CH1', {
+        key: 'prompt:S3',
+        files: ['src/a.ts'],
+        roles: ['behavior'],
+        symbols: [],
+        added: 2,
+        removed: 1,
+        branches: 2,
+      }),
+      N('Change', 'CH2', {
+        key: 'dir:src',
+        files: ['src/b.ts'],
+        roles: ['behavior'],
+        symbols: [],
+        added: 2,
+        removed: 1,
+        branches: 0,
+      }),
+    ],
+    rels: [
+      ...['S1', 'S2', 'S3'].map((p) =>
+        R('IN_SESSION', ['Prompt', p], ['Session', 'h:s']),
+      ),
+      ...['E0', 'E1'].map((e) => R('IN_SESSION', ['Edit', e], ['Session', 'h:s'])),
+      ...['R1', 'R2', 'R3'].map((r) => R('IN_SESSION', ['Run', r], ['Session', 'h:s'])),
+      R('IN_TURN', ['Edit', 'E0'], ['Prompt', 'S1']),
+      R('IN_TURN', ['Decision', 'D0'], ['Prompt', 'S1']),
+      R('IN_TURN', ['Plan', 'P1'], ['Prompt', 'S2']),
+      R('IN_TURN', ['Plan', 'P2'], ['Prompt', 'S3']),
+      R('IN_TURN', ['Decision', 'D1'], ['Prompt', 'S3']),
+      R('IN_TURN', ['Edit', 'E1'], ['Prompt', 'S3']),
+      R('IN_TURN', ['Run', 'R1'], ['Prompt', 'S3']),
+      R('IN_TURN', ['Run', 'R2'], ['Prompt', 'S3']),
+      R('IN_TURN', ['Run', 'R3'], ['Prompt', 'S3']),
+      R('MADE', ['Session', 'h:s'], ['Commit', 'abc123def456']),
+      R('EDITS', ['Edit', 'E1'], ['File', 'src/a.ts']),
+      R('TOUCHES', ['Commit', 'abc123def456'], ['File', 'src/b.ts']),
+      R('OF', ['Hunk', 'H1'], ['File', 'src/a.ts']),
+      R('OF', ['Hunk', 'H2'], ['File', 'src/b.ts']),
+      R('SURVIVES_IN', ['Edit', 'E1'], ['Hunk', 'H1'], { lines: 2 }),
+      R('HAS', ['Change', 'CH1'], ['Hunk', 'H1']),
+      R('HAS', ['Change', 'CH2'], ['Hunk', 'H2']),
+      R('ASKED_BY', ['Change', 'CH1'], ['Prompt', 'S3'], {
+        how: 'its edits survive here',
+      }),
+    ],
+    stats: { nodes: 0, rels: 0, hunks: 2, linkedHunks: 1, edits: 2, deadEndEdits: 1 },
+  };
+  const b = withGraph(graph, (g) => briefParts(g));
+  const sec = (title: string) => b.sections.find((s) => s.title === title)!.rows;
+
+  test('no avoid rules and no instructions: only open limits, one for unrequested changes', () => {
+    expect(b.sections.map((s) => s.title)).toEqual([
+      'limits',
+      'changes',
+      'process',
+      'requests',
+      'commitMessages',
+      'tests',
+      'housekeeping',
+      'validation',
+    ]);
+    expect(sec('limits').map((l) => [l.kind, l.change, l.limit])).toEqual([
+      ['open', ['CH2'], 'No user request was recorded for CH2.'],
+    ]);
+  });
+
+  test("requests are this PR's turns only; a cut-off record is marked", () => {
+    expect(sec('requests').map((r) => [r.ref, r.truncated])).toEqual([
+      ['S3', null],
+      ['D1', true],
+      ['P2', null],
+    ]);
+    expect(sec('requests')[2]!.kind).toBe('plan (approved) in the turn of S3');
+  });
+
+  test('process rows: session role, plan history, test trajectory, failed commands', () => {
+    expect(sec('process').map((r) => [r.ref, r.kind, r.fact])).toEqual([
+      [
+        'PR1',
+        'session',
+        "Claude Code session, made commits (abc123def456): 2 edit(s) captured, 1 with lines in the PR; turns that produced this PR's edits or commits: S3.",
+      ],
+      [
+        'PR2',
+        'plan',
+        'Plans, in order: P1 "Limit v1" not approved as written → P2 "Limit v2" approved.',
+      ],
+      [
+        'PR3',
+        'decision',
+        '1 question(s) answered by the user: D1 (turn S3), record cut off.',
+      ],
+      [
+        'PR4',
+        'test',
+        '2 test run(s); 1 failed (R1); last R2 passed; a passing run came after the last commit (R2).',
+      ],
+      [
+        'PR5',
+        'typecheck',
+        '1 typecheck run(s); none failed; last R3 passed; a passing run came after the last commit (R3).',
+      ],
+      [
+        'PR6',
+        'commands',
+        '2 failed non-check command(s) recorded in the Claude Code session, e.g. `git push`.',
+      ],
+    ]);
+  });
+
+  test('a receipt replaces log runs of its kind; the behavior line quotes conditions', () => {
+    expect(sec('validation').map((r) => r.check)).toEqual(['V1', 'R2']);
+    expect(sec('changes')[0]!.behavior).toEqual([
+      'a.ts: if (n >= 10) → if (n >= 12)',
+      'a.ts: + if (!cmd) return;',
+      'a.ts: - if (legacy)',
+    ]);
+    expect(sec('commitMessages')).toEqual([]);
+    expect(b.branchy).toEqual(['src/a.ts']);
+  });
+
+  test('render flags universal words about branching code without instruction rows', () => {
+    const r = applyBrief('The `src/a.ts` guard always returns early. [CH1]', b);
+    expect(r.flags.map((f) => f.severity)).toEqual(['check']);
+  });
+});
+
+test('condition facts: changed conditions, added branches and fallbacks, removed conditions', () => {
+  expect(
+    conditionFacts(
+      ['  if (n >= 10) return;', '  if (legacy) x();', '  if (a) run(1);'],
+      [
+        '  if (n >= 12) return;',
+        '  const k = opts.limit ?? 20;',
+        '  if (a) run(1, 2);',
+        '  } catch {',
+        '    return undefined;',
+        '  const s = `${ok ? "yes" : "no"}`;',
+      ],
+    ),
+  ).toEqual([
+    'if (n >= 10) return; → if (n >= 12) return;',
+    '+ const k = opts.limit ?? 20;',
+    '+ } catch { return undefined;',
+    '- if (legacy) x();',
+  ]);
+  // Comparison values `pairs` already show aren't repeated; prose files have none.
+  expect(
+    conditionFacts(
+      ['if (n >= 10) {'],
+      ['if (n >= 12) {'],
+      ['if (n >= 10) { → if (n >= 12) {'],
+    ),
+  ).toEqual([]);
+  const [md] = patchHunks(
+    [
+      'diff --git a/a.md b/a.md',
+      '--- a/a.md',
+      '+++ b/a.md',
+      '@@ -1 +1 @@',
+      '-x',
+      '+if (the user asks) say so',
+      '',
+    ].join('\n'),
+  );
+  expect(md!.conds).toEqual([]);
+  expect(
+    behaviorOf([
+      { file: 'src/x.ts', diff: 'diff:9', conds: ['- if (a)', '+ if (b)'] },
+      {
+        file: 'src/y.ts',
+        diff: 'diff:3',
+        conds: ['+ const n = o.n ?? 5;', 'if (c) → if (d)'],
+      },
+    ]),
+  ).toEqual([
+    'y.ts: if (c) → if (d)',
+    'y.ts: + const n = o.n ?? 5;',
+    'x.ts: + if (b)',
+    'x.ts: - if (a)',
+  ]);
+});
+
+test('a commit sentence naming one of its files is placed there; weak or test-only matches nowhere', () => {
+  const hunks = [
+    { file: 'src/util/shell.ts', symbols: ['splitCommands'], words: ['quote', 'split'] },
+    { file: 'src/digest/build.ts', symbols: ['commandKey'], words: ['key', 'group'] },
+    { file: 'tests/shell.test.ts', symbols: [], words: ['heredoc', 'splitter', 'quote'] },
+  ];
+  expect(
+    describedHunks(
+      hunks,
+      'A new splitter (src/util/shell.ts) feeds detection, grouping and commits.',
+    ),
+  ).toEqual(['src/util/shell.ts']);
+  // Two shared words out of many is a weak match.
+  expect(
+    describedHunks(
+      hunks,
+      'Quote and split handling changed for heredoc bodies in long pasted scripts.',
+    ),
+  ).toEqual([]);
+  // Only the test file matches, and the sentence isn't about tests.
+  expect(describedHunks(hunks, 'Heredoc splitter quote handling.')).toEqual([]);
 });

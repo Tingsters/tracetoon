@@ -4,7 +4,13 @@
  * Deterministic: the same inputs give byte-identical JSON.
  */
 import { evidenceLine } from '../correlate/correlate.ts';
-import { fileRole, type SessionTrail, type TraceDigest } from '../digest/build.ts';
+import {
+  commandKey,
+  fileRole,
+  testSegment,
+  type SessionTrail,
+  type TraceDigest,
+} from '../digest/build.ts';
 import { clip } from '../digest/sanitize.ts';
 import {
   GRAPH_SCHEMA,
@@ -42,6 +48,11 @@ export interface PatchHunk {
   fresh: string[];
   /** Changed values: a removed line and its closest added line, as `old → new` tokens. */
   pairs: string[];
+  /**
+   * Conditions, quoted from code files: a changed condition as `old → new`, an
+   * added branch or fallback as `+ line`, a removed condition as `- line`.
+   */
+  conds: string[];
   /** Test titles added in this hunk (`test('…')`, `def test_…`, `func Test…`). */
   tests: string[];
   /** Lowercased words of the changed lines (identifiers split, strings), for matching prose to code. */
@@ -204,6 +215,7 @@ export function patchHunks(patch: string): PatchHunk[] {
         branches: 0,
         fresh: [],
         pairs: [],
+        conds: [],
         tests: [],
         words: [],
         lines: new Set(),
@@ -231,6 +243,7 @@ export function patchHunks(patch: string): PatchHunk[] {
     h.fresh = h.symbols.filter((x) => !removedDefs.has(x));
     const ch = changed.get(h) ?? { minus: [], plus: [] };
     h.pairs = valuePairs(ch.minus, ch.plus);
+    h.conds = PROSE_FILE.test(h.file) ? [] : conditionFacts(ch.minus, ch.plus, h.pairs);
     h.tests = uniqStrings(ch.plus.flatMap(testTitles)).slice(0, 8);
     h.words = uniqStrings([...ch.minus, ...ch.plus].flatMap(wordsOf)).slice(0, 400);
   }
@@ -281,6 +294,117 @@ export function valuePairs(minus: string[], plus: string[]): string[] {
     out.push(`${clip(r.trim(), 80)} → ${clip(added.trim(), 80)}`);
   }
   return uniqStrings(out).slice(0, 4);
+}
+
+/** Files whose lines are prose or data, not code: an "if" there is a word. */
+const PROSE_FILE =
+  /\.(md|mdx|txt|rst|adoc|json|jsonc|ya?ml|toml|lock|csv|svg|html?|xml|ini|cfg)$|(^|\/)VERSION$/i;
+/** A line's code with string contents blanked, so an "if" or "??" in a string doesn't count. */
+const codeOnly = (l: string) =>
+  l.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`[^`]*`/g, '""');
+const CONDITION = /^\s*(?:\}\s*)?(?:else\s+)?(?:if|elif|while|unless)\b\s*[(\w!]/;
+const FALLBACK = /\?\?|\s\?\s[^:]+\s:\s|\|\|\s*(?:\d|['"`[{]|null|undefined|true|false)/;
+const BARE =
+  /^\s*(?:\}\s*)?(?:else|catch|except|finally|default\s*:)\b[^;]*$|^\s*\}?\s*catch\s*(?:\([^)]*\))?\s*\{?\s*$/;
+const CATCH = /^\s*(?:\}\s*)?(?:catch|except)\b|^\s*default\s*:|^\s*case\s+[^:]+:/;
+const CONDITION_TOKEN =
+  /'[^']*'|"[^"]*"|`[^`]*`|\d[\d_.]*\w*|[A-Za-z_$][\w$]*(?:[.:/-][A-Za-z_$][\w$]*)*|[<>!=]=?=?|&&|\|\||\?\?/g;
+const CONDITION_WORDS = new Set(
+  'if elif else while unless return const let var await new catch except case default'.split(
+    ' ',
+  ),
+);
+/** The condition an `if`/`while` line tests (balanced parentheses, or up to a Python colon). */
+function testOf(l: string): string {
+  const c = codeOnly(l);
+  const m = /\b(?:if|elif|while|unless)\b\s*/.exec(c);
+  if (!m) return c.trim();
+  const rest = c.slice(m.index + m[0].length);
+  if (!rest.startsWith('(')) return rest.replace(/:\s*$/, '').trim();
+  let depth = 0;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '(') depth++;
+    else if (rest[i] === ')' && --depth === 0) return rest.slice(0, i + 1);
+  }
+  return rest.trim();
+}
+const tidy = (l: string) =>
+  l
+    .trim()
+    .replace(/\s*\{\s*$/, '')
+    .replace(/\s+/g, ' ');
+
+/**
+ * What changed in a hunk's conditions, quoted from its lines: conditions whose
+ * comparison or operands changed (`if (n >= 10) → if (n >= 12)`), added
+ * branches and fallbacks (`+ if (!cmd) return;`, `+ const n = opts.limit ?? 20;`)
+ * and removed conditions (`- if (legacy)`). Value changes already in `pairs`
+ * are not repeated. At most six, in diff order within each kind.
+ */
+export function conditionFacts(
+  minus: string[],
+  plus: string[],
+  pairs: string[] = [],
+): string[] {
+  // Keywords match any two conditions; only operands and operators tell them apart.
+  const toks = (l: string): string[] =>
+    (codeOnly(l).match(CONDITION_TOKEN) ?? []).filter((t) => !CONDITION_WORDS.has(t));
+  const kind = (l: string) => {
+    // Conditions inside template text (`${a ? b : c}`) render output; they aren't control flow.
+    if (isComment(l) || !l.trim() || l.includes('${')) return undefined;
+    const c = codeOnly(l);
+    if (CONDITION.test(c)) return 'if';
+    if (CATCH.test(c)) return 'catch';
+    // A fallback whose line breaks mid-call is a fragment, not a fact.
+    if (FALLBACK.test(c) && !/[([]\s*$/.test(c)) return 'fallback';
+    return undefined;
+  };
+  const gone = minus.map((l, i) => ({ l, i, k: kind(l) })).filter((x) => x.k);
+  const added = plus.map((l, i) => ({ l, i, k: kind(l) })).filter((x) => x.k);
+  const inPairs = (l: string) => pairs.some((p) => p.startsWith(clip(l.trim(), 80)));
+  const changed: string[] = [];
+  const used = new Set<number>();
+  const paired = new Set<number>();
+  for (const r of gone) {
+    const rt = new Set(toks(r.l));
+    let best = -1;
+    let score = 0;
+    for (const a of added) {
+      if (used.has(a.i) || a.k !== r.k) continue;
+      const at = new Set(toks(a.l));
+      const j = [...rt].filter((t) => at.has(t)).length / new Set([...rt, ...at]).size;
+      if (j > score) {
+        score = j;
+        best = a.i;
+      }
+    }
+    if (best < 0 || score < 0.4) continue;
+    used.add(best);
+    paired.add(r.i);
+    // Same condition, different body: not a change of condition.
+    if (score >= 1 || inPairs(r.l) || testOf(r.l) === testOf(plus[best]!)) continue;
+    changed.push(`${clip(tidy(r.l), 75)} → ${clip(tidy(plus[best]!), 75)}`);
+  }
+  const line = (l: string, i: number) => {
+    // A bare `else`, `catch` or `default:` says little alone: quote what it does.
+    if (!BARE.test(codeOnly(l))) return tidy(l);
+    const next = plus.slice(i + 1).find((x) => x.trim() && !isComment(x));
+    return next ? `${tidy(l)} { ${tidy(next)}` : tidy(l);
+  };
+  const literal = (l: string) =>
+    /[<>]=?\s*-?\d|[=!]==?\s*(?:-?\d|['"`])|\?\?\s*(?:-?\d|['"`])/.test(l);
+  const fresh = added.filter((a) => !used.has(a.i));
+  const order = [
+    ...fresh.filter((a) => literal(a.l)),
+    ...fresh.filter((a) => !literal(a.l) && a.k !== 'if'),
+    ...fresh.filter((a) => !literal(a.l) && a.k === 'if'),
+  ];
+  const removed = gone.filter((r) => !paired.has(r.i) && r.k === 'if');
+  return uniqStrings([
+    ...changed,
+    ...order.map((a) => `+ ${clip(line(a.l, a.i), 150)}`),
+    ...removed.map((r) => `- ${clip(tidy(r.l), 150)}`),
+  ]).slice(0, 6);
 }
 
 /** Test titles a line adds: `test('…')`, `it("…")`, `describe(…)`, `def test_x`, `func TestX`. */
@@ -339,6 +463,25 @@ export function commitSentences(body: string): string[] {
       .filter(
         (x) => x.length > 3 && !/^[A-Za-z][\w-]*-[Bb]y:\s|^[A-Z][\w-]+:\s*\S+@/.test(x),
       )
+  );
+}
+
+/** A record that ends cut off: an ellipsis or a truncation marker at its end. */
+const RECORD_TRUNCATED = /(?:…|\.\.\.|\[(?:truncated|…)\]|<truncated>)\s*["'”)]*\s*$/i;
+
+/** Each question with its answer, without the questions repeated: `Q? = "A"` joined by ` / `. */
+function decisionAnswers(
+  d: TraceDigest['sessions'][number]['decisions'][number],
+): string | null {
+  if (!d.questions?.length) return null;
+  return clip(
+    d.questions
+      .map(
+        (q) =>
+          `${clip(q.question.replace(/\s+/g, ' '), 200)} = ${q.answer === undefined ? '(no answer recorded)' : `"${clip(q.answer.replace(/\s+/g, ' '), 300)}"`}${q.ownWords ? ' (own words)' : ''}`,
+      )
+      .join(' / '),
+    1200,
   );
 }
 
@@ -409,6 +552,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       branches: h.branches,
       fresh: h.fresh,
       pairs: h.pairs,
+      conds: h.conds,
       tests: h.tests,
       words: h.words,
     });
@@ -418,11 +562,22 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
   // Sessions and their facts.
   const factSession = new Map<object, string>();
   for (const s of full.sessions) {
+    // Failed commands other than checks (checks are Run nodes with outcomes).
+    const checkKeys = new Set(
+      s.runs
+        .filter((r) => r.kind !== 'other')
+        .map((r) => clip(commandKey(testSegment(r.cmd) ?? r.cmd), 60)),
+    );
+    const failing = s.commands.filter(
+      (c) => c.failures > 0 && !c.isTest && !checkKeys.has(c.cmd),
+    );
     node('Session', s.ref, {
       agent: s.agent,
       band: s.band,
       score: s.score,
       title: s.title ?? null,
+      failedCommands: failing.reduce((n, c) => n + c.failures, 0),
+      failedCommand: failing[0]?.cmd ?? null,
     });
     for (const p of s.prompts) factSession.set(p, s.ref);
     for (const p of s.prompts)
@@ -439,6 +594,11 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
         node('Decision', d.id, {
           t: d.t ?? null,
           text: clip(d.text.replace(/\s+/g, ' '), 600),
+          answers: decisionAnswers(d),
+          // The record itself was cut off (not this clip): its answer may be incomplete.
+          truncated:
+            RECORD_TRUNCATED.test(d.text) ||
+            (d.questions ?? []).some((q) => RECORD_TRUNCATED.test(q.answer ?? '')),
           session: s.ref,
         });
     for (const p of s.plans)
