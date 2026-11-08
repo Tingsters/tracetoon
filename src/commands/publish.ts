@@ -545,7 +545,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           mode: briefMode,
           issues: [
             briefMode === 'lean'
-              ? 'Checked draft: on the full path run render --json and the independent review next; on the quick path (references/quick-path.md) the slim review comes next.'
+              ? 'Checked draft: run render --json and the independent review next (SKILL step 2b.5); on the quick path (references/quick-path.md) the slim review comes next.'
               : existsSync(join(run.dir, 'reviewer-notes.md'))
                 ? 'Reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md).'
                 : 'Reviewed brief path: no reviewer-notes.md found; run the slim reviewer before publishing.',
@@ -659,7 +659,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         findings.length && !approval.allowFindings
           ? 'Not ready to publish: fix what the leak scan found (above), then render again.'
           : briefMode === 'lean'
-            ? `Next (full path): tracetoon render --json --run ${run.id}, then the independent reviewer writes review.json v2. Quick path only: the slim reviewer (references/quick-path.md step 7), then render --reviewed.`
+            ? `Next: tracetoon render --json --run ${run.id}, then one fresh independent reviewer writes review.json v2 (SKILL step 2b.5). Quick path only: the slim reviewer (references/quick-path.md step 7), then render --reviewed.`
             : `Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)

@@ -7,9 +7,11 @@ description: Create a GitHub PR with a description and optional comic written fr
 
 Tracetoon reads the session logs your agents already keep on disk, finds the
 sessions that produced the current branch, and gives you a redacted digest and
-an evidence brief. With or without a brief, you coordinate a researcher, a
-drafter and an independent reviewer; the brief feeds all three. An unattended
-run is not a request for the cheapest PR. Tracetoon draws the comic, checks the result, and creates
+an evidence brief. With a brief, you draft the description yourself from it
+and one fresh independent reviewer checks it (step 2b). Without a brief, or
+when the user asks for the most thorough PR, you coordinate a researcher, a
+drafter and an independent reviewer. An unattended run is not a request for the
+cheapest PR. Tracetoon draws the comic, checks the result, and creates
 or updates the PR.
 
 ## The tool
@@ -117,13 +119,39 @@ reviewer separate.
      In the public body, name the commands and observed results. Keep receipt
      internals local; do not turn content or environment fingerprints into a
      general validation assurance. Attribute each result to its actual command.
-     When `prepare --json` returns a `brief`, every role uses it (steps 3–7,
-     as references/contribution-workflow.md describes) and the review gets at
-     most one correction round. Read every command's whole output: never pipe
-     `prepare`, `query` or `render` through `head` or `tail`.
-     2a. **Quick brief path:** only if the user's own message asks for the
-     cheapest or quickest PR, follow [references/quick-path.md](references/quick-path.md)
-     instead of steps 3–6.
+     Read every command's whole output: never pipe `prepare`, `query` or
+     `render` through `head` or `tail`. When `prepare --json` returns a
+     `brief`, take step 2b unless the user's own message asks for something
+     else: the cheapest or quickest PR (2a), or the most thorough one (steps
+     3–7 with a researcher, a drafter and a reviewer, each using the brief).
+     2a. **Quick brief path:** follow [references/quick-path.md](references/quick-path.md).
+     2b. **Reviewed brief path (the default with a brief).** You draft; one fresh
+     independent reviewer checks.
+     1. Read the brief and `context.json`; apply step 3's AI-policy bullets.
+        Find the checks the repository requires (contributing guide, CI config)
+        yourself; there is no separate researcher.
+     2. Draft inline, following the drafter prompt in
+        [references/contribution-workflow.md](references/contribution-workflow.md)
+        (section 2, including its evidence-brief rules): write
+        `change-map.json`, then `title.txt` and `body.md`. Tag factual sentences
+        with brief refs (`[CH1, commit:<sha>#2]`) and put
+        `<!-- tracetoon:validation -->` where the Validation section belongs.
+     3. Run each required check that has no current receipt once with
+        `tracetoon check --run <id> --name <check> -- <command>`.
+     4. `tracetoon render --check --json --run <id>`: fix every sentence it lists
+        and cover every listed row, up to three rounds.
+     5. `tracetoon render --json --run <id>`, then start **one fresh independent
+        reviewer** (Codex: `spawn_agent` with its default fork; Claude Code: one
+        `Agent` call) with the reviewer prompt in contribution-workflow.md
+        (section 3) and `review-input.json`. It writes `review.json` (v2) with
+        `drafter: { "mode": "inline" }` and `reviewer: { "mode": "delegated",
+        "agentId": "<its real id>" }`.
+     6. One correction round: check each finding against the patch, apply what
+        holds, `render --json`, then send the **same** reviewer the new
+        `review-input.json` (Codex: `followup_task`; Claude Code: SendMessage to
+        the same agent) to confirm or re-flag and update `review.json`.
+     7. Comic if wanted (step 5), then publish (step 7) once render reports the
+        review current.
 3. **Context.**
    Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
