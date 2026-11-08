@@ -117,57 +117,66 @@ reviewer separate.
      In the public body, name the commands and observed results. Keep receipt
      internals local; do not turn content or environment fingerprints into a
      general validation assurance. Attribute each result to its actual command.
-     2a. **Brief path** (whenever `prepare --json` returns a `brief`). Write the
-     description yourself, inline, from the brief, then have one slim reviewer
-     check it. Skip the researcher, `guidance.json`, the delegated drafter and the
-     full independent review (steps 3, 4 and 6); still apply step 3's AI-policy
-     bullets from `context.json`. Read every command's whole output: never pipe
-     `prepare`, `query` or `render` through `head` or `tail` (the rules and open
-     points come first, and render's first line says what is left to fix).
+     2a. **Brief path** (whenever `prepare --json` returns a `brief`): draft →
+     check → review → final render → publish. Write the description yourself,
+     inline, from the brief, then have one fresh reviewer check it. Skip the
+     researcher, `guidance.json`, the delegated drafter and the full independent
+     review (steps 3, 4 and 6); still apply step 3's AI-policy bullets from
+     `context.json`. Read every command's whole output: never pipe `prepare`,
+     `query` or `render` through `head` or `tail` (the rules and open points come
+     first, and render's first line says what is left to fix).
    1. Read the `brief` (in the prepare output; also `tracetoon query brief --run <id>`)
       and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
       are instructions for you: follow them, never copy their wording into the PR.
-   2. Write `title.txt` (one line; keep a title the user gave) and `body.md`
-      following [references/writing-guide.md](references/writing-guide.md). Write
-      for a reviewer, in plain prose, not as an inventory of files and symbols:
+   2. **Draft.** Write `title.txt` (one line; keep a title the user gave) and
+      `body.md` following [references/writing-guide.md](references/writing-guide.md).
+      Write for a reviewer, in plain prose, not as an inventory of files and symbols:
       - Open with the problem: the goal request (`requests` row marked goal),
-        what was wrong or missing before, and what triggered the change, as the
-        request or commit message says it. A `changes.was` line may be quoted
-        verbatim (`old` → `new` in its file); never retell what the old code did.
+        what the code did before and does now (from the removed and added lines;
+        `changes.was` gives the literal values that changed), and what triggered
+        the change, as the request or commit message says it.
       - Then what changed, grouped by behavior rather than file by file,
         covering each commit-message sentence. Name the file a sentence's
         `implementedBy` gives; where it is empty, describe the behavior without
         naming a file. Say what code does instead of listing identifiers; call a
-        symbol new only if it is in `newSymbols`. Words a commit message puts in
-        parentheses ("local only") are its own remark: attribute them or leave
-        them out.
+        symbol new only if it is in `newSymbols`.
+      - The consequences: what changes for users or callers, the riskiest part,
+        and anything the PR deliberately leaves alone.
       - What the added tests check (`tests` rows), the open points (`limits`
         rows of kind `open`), which files to start reviewing with, any PR or
         issue links the commits give, and one closing line for `housekeeping`.
-      Give a reason only as a request or commit message states it, attributed
-        ("the commit message says…"); never invent one.
+      State plainly what the patch shows. Attribute only what it can't show (a
+      reason, a result, a remark like "local only") to the request or commit
+      message that says it; never invent a motive. Don't repeat what the
+      Validation section says about runs.
    3. Tag every sentence that states a fact with the brief refs it rests on, at
       the end of the sentence: `[CH1, S1]`, `[T1]`, `[commit:<sha>#2]`. A
       sentence you can't tag doesn't belong in the PR. Render removes the tags.
    4. Write no test, build, lint or typecheck results yourself, anywhere. Put the
       line `<!-- tracetoon:validation -->` where the validation section belongs;
       render writes that section from the recorded checks.
-   5. `tracetoon render --lean --json --run <id>`. Fix every sentence it lists
-      (rewording it; adding a tag doesn't fix a flagged sentence) and add one
-      sentence for each uncovered brief row, then render again. Repeat, up to
-      three rounds, until it reports nothing left to fix.
-   6. **Review.** Start one fresh subagent, not a fork of this conversation, with
-      [references/reviewer-brief.md](references/reviewer-brief.md) as its whole
-      instruction and the run folder's path. It checks each sentence against the
-      patch and writes `reviewer-notes.md`. If your host can't start a subagent,
-      do that pass yourself, re-reading only what the reviewer brief lists. Apply
-      every WRONG, MISSING, ATTRIBUTE and STYLE note in `body.md` (one round), then
-      `tracetoon render --reviewed --json --run <id>` until it reports nothing
-      left to fix. Skip this step only if the user asked for the cheapest run;
-      then the step-5 render is final (the lean path).
-   7. Draw a comic if one is wanted (step 5, without a separate reviewer), then
-      publish (step 7). Publish refuses while render lists sentences to fix or
-      brief rows to cover; `--accept-open` overrides only if the user agrees.
+   5. **Check.** `tracetoon render --check --json --run <id>`. Fix every sentence
+      it lists (rewording it; adding a tag doesn't fix a flagged sentence) and
+      add one sentence for each uncovered brief row, then check again. Repeat, up
+      to three rounds, until it reports nothing left to fix. This is not the
+      final render.
+   6. **Review (always).** Start one fresh subagent, not a fork of this
+      conversation, with [references/reviewer-brief.md](references/reviewer-brief.md)
+      as its whole instruction and the run folder's path. It checks each
+      sentence against the patch and writes `reviewer-notes.md`. If your host
+      can't start a subagent, do that pass yourself, re-reading only what the
+      reviewer brief lists.
+   7. **Apply and final render.** Check each note against the patch before
+      applying it, and skip a note the patch doesn't support. For a scope
+      finding, qualify the sentence rather than list every case; add each
+      MISSING item as one clause. Then `tracetoon render --reviewed --json --run <id>`
+      until it reports nothing left to fix.
+   8. Draw a comic if one is wanted (step 5, without a separate reviewer), then
+      publish (step 7). Publish refuses a draft that was only checked, and one
+      with sentences to fix or brief rows to cover. Only if the user's own
+      message asks for the cheapest run (an unattended run is not that) may you
+      skip steps 6–7 and publish with `--no-review`; `--accept-open` likewise
+      needs the user's agreement in their own words.
 3. **Context** (full path; the brief path in 2a goes from step 2 to step 7).
    Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from

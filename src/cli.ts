@@ -232,6 +232,10 @@ program
     'lean brief path: drafted inline from the evidence brief, no separate reviewer needed to publish',
   )
   .option(
+    '--check',
+    'brief path: check the draft against the evidence brief before the slim review',
+  )
+  .option(
     '--reviewed',
     'reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md)',
   )
@@ -249,10 +253,14 @@ program
   .option('--draft', 'open the PR as a draft')
   .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
   .option(
+    '--no-review',
+    'publish a checked brief-path draft without the slim review (only when the user asked for the cheapest run; recorded)',
+  )
+  .option(
     '--accept-open',
     'publish although the last render listed sentences to fix or brief rows to cover (recorded)',
   )
-  .action((o) => publishCmd(cwd, { ...g(), ...o }));
+  .action((o) => publishCmd(cwd, { ...g(), ...o, noReview: o.review === false }));
 
 const comic = program.command('comic').description("make this PR's comic");
 comic

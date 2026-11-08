@@ -63,7 +63,7 @@ const list = (xs: unknown) => {
 
 /** Most a reader needs: the test runs first, then the other checks. */
 const KIND_ORDER = ['test', 'typecheck', 'lint', 'build', 'eval'];
-const MAX_LINES = 5;
+const MAX_LINES = 3;
 
 /**
  * The Validation section, from the brief's validation rows only: at most five
@@ -72,54 +72,45 @@ const MAX_LINES = 5;
  * left out. The "may predate the final code" caveat is said once, at the end.
  */
 export function validationSection(b: BriefParts): string {
-  const runs: { order: number; line: string }[] = [];
-  const asserted: string[] = [];
-  let predates = false;
+  // Only recorded results, at most three lines: the whole suite and the latest
+  // focused test run, then a typecheck or lint. Commit-message results, runs with
+  // no captured result and files with no passing run after their last edit are
+  // open points the prose covers (limits rows), so they aren't repeated here.
+  const shown: { kind: string; line: string; when: string }[] = [];
+  const perKind = new Map<string, number>();
   for (const r of rowsOf(b, 'validation')) {
-    if (r.kind === 'commit message') {
-      asserted.push(
-        `- The message of commit ${String(r.when).replace(/^not a run: commit (\S+) says so$/, '$1')} says: "${plain(r.cmd)}" (not a recorded run).`,
-      );
-      continue;
-    }
+    const kind = String(r.kind);
+    if (!['test', 'typecheck', 'lint', 'build'].includes(kind)) continue;
+    if (r.outcome !== 'passed' && r.outcome !== 'failed') continue;
     const cmd = shownCommand(r.cmd);
     if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
-    // Eval scripts print their own tallies, often from elsewhere: not shown as runs.
-    if (r.kind === 'eval') continue;
-    const recorded = r.outcome === 'passed' || r.outcome === 'failed';
-    if (!recorded && r.kind !== 'test') continue;
-    // Only what the logs establish: the result as recorded, and edits seen after the run.
-    const result = recorded
-      ? `${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}`
-      : 'ran; Tracetoon could not read its result';
-    const edited = list(r.editedAfter);
-    if (!edited && String(r.when ?? '').startsWith('after the last edit'))
-      predates = true;
-    const when = edited
-      ? `the logs show later edits to ${edited}`
-      : !String(r.when ?? '').startsWith('after the last edit') && r.when
-        ? `ran ${String(r.when)}`
-        : '';
-
-    const order = KIND_ORDER.indexOf(String(r.kind));
-    runs.push({
-      order: order < 0 ? KIND_ORDER.length : order,
-      line: `- \`${cmd}\`: ${result}${when ? `; ${when}` : ''}.`,
+    const n = perKind.get(kind) ?? 0;
+    if (n >= (kind === 'test' ? 2 : 1)) continue;
+    perKind.set(kind, n + 1);
+    const result = `${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}`;
+    const editedAll = (Array.isArray(r.editedAfter) ? r.editedAfter : []).map(String);
+    const edited = editedAll.length > 2 ? `${editedAll.length} files` : list(editedAll);
+    const when = edited ? `before later edits to ${edited}` : '';
+    shown.push({
+      kind,
+      line: `- \`${cmd}\`: ${result}${when ? `, ${when}` : ''}.`,
+      when: String(r.when ?? ''),
     });
   }
-  const lines = [
-    ...runs.sort((x, y) => x.order - y.order).map((x) => x.line),
-    ...asserted,
-  ].slice(0, MAX_LINES);
-  if (b.unchecked.length)
-    lines.push(
-      `- No recorded passing test, build, lint or typecheck run after the last captured edit of ${list(b.unchecked.length > 6 ? [...b.unchecked.slice(0, 6), `+${b.unchecked.length - 6} more`] : b.unchecked)}.`,
-    );
+  const order = (k: string) => KIND_ORDER.indexOf(k);
+  const lines = shown
+    .sort((x, y) => order(x.kind) - order(y.kind))
+    .slice(0, MAX_LINES)
+    .map((x) => x.line);
   if (!lines.length)
     lines.push(
-      '- No test, build, lint or typecheck run was recorded in the captured sessions.',
+      '- No passing or failing test, typecheck or lint run was recorded in the captured sessions.',
     );
-  if (predates)
+  // Said once, and only when a shown run is dated by the logs' last edit rather
+  // than checked against the submitted content.
+  const predates = shown.some((x) => x.when.startsWith('after the last edit'));
+  const fresh = shown.some((x) => /submitted content|fresh/i.test(x.when));
+  if (predates && !fresh)
     lines.push("- Tracetoon can't tell whether these runs saw the final commit.");
   return [
     '## Validation',
@@ -361,7 +352,7 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
         flags.push({
           sentence: clean,
           severity: 'check',
-          problem: `"${universal}": ${branchy.join(', ')} has conditional paths; read them in the patch and keep "${universal}" only if every path does it, or attribute it ("the commit message says").`,
+          problem: `"${universal}": ${branchy.join(', ')} has conditional paths; read them in the patch and keep "${universal}" if every path in the patch does this; otherwise qualify the sentence. Don't drop the behavior.`,
         });
     }
     // PR or issue links, and scope statements, that only a commit message makes.

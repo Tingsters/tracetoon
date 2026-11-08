@@ -283,7 +283,8 @@ describe('evidence graph', () => {
     const { repo, cli } = scenario();
     const prepared = cli(repo.root, '--json', 'prepare', '--offline');
     const run = prepared.json.run;
-    expect(prepared.json.next).toContain('render --lean');
+    expect(prepared.json.next).toContain('render --check');
+    expect(prepared.json.next).toContain('render --reviewed');
     expect(prepared.json.brief).not.toContain('branching or fallback line');
     const b = cli(repo.root, '--json', 'query', 'brief', '--run', run);
     const changes = b.json.sections.find((x: any) => x.title === 'changes').rows;
@@ -314,11 +315,10 @@ describe('evidence graph', () => {
     expect(body).not.toContain('## Testing');
     // The section quotes the brief's row: the failing run, before farewell's last edit.
     expect(body).toContain(
-      '- `bun test`: failed (3 pass; 1 fail); the logs show later edits to src/farewell.ts.',
+      '- `bun test`: failed (3 pass; 1 fail), before later edits to src/farewell.ts.',
     );
-    expect(body).toContain(
-      'No recorded passing test, build, lint or typecheck run after the last captured edit of src/farewell.ts',
-    );
+    // The unchecked file is an open point for the prose, not repeated in the section.
+    expect(body).not.toContain('No recorded passing test');
     expect(r.json.briefCheck).toMatchObject({
       validationSection: true,
       tags: 5,

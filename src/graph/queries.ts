@@ -538,7 +538,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       );
     if (!links.length && !(r.commits as string[]).length)
       (r as Record<string, unknown>).requests = [
-        'none captured: give only a reason a commit message states, attributed to it',
+        'none captured: give the reason a commit message states, if any; never invent one',
       ];
   }
 
@@ -700,7 +700,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         change: c.id,
         kind: 'instruction',
         limit:
-          'No captured request: give only a reason a commit message states, attributed to it ("the commit message says…"); don\'t invent one.',
+          'No captured request: give the reason a commit message states, if any; never invent a motive.',
       });
   }
 
@@ -735,6 +735,29 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         kind: 'open',
         limit: `\`${shownCommand(v.cmd)}\` ran, but no result for it was captured in the logs Tracetoon read.`,
       });
+  // Earlier failures of a check whose last recorded run passed: what they failed
+  // on isn't in the brief. No count: readers count runs differently (dev13).
+  const failNoted = new Set<string>();
+  for (const v of validation) {
+    if (v.outcome !== 'passed' || !['test', 'typecheck'].includes(String(v.kind)))
+      continue;
+    if (failNoted.has(String(v.kind))) continue;
+    const run = runs.find((r) => r.id === v.check);
+    if (!run) continue;
+    const failedBefore = runs.some(
+      (r) =>
+        r.kind === run.kind &&
+        r.outcome === 'failed' &&
+        String(r.t ?? '') < String(run.t ?? ''),
+    );
+    if (!failedBefore) continue;
+    failNoted.add(String(v.kind));
+    limits.push({
+      change: null,
+      kind: 'open',
+      limit: `Earlier ${String(run.kind)} runs in the session failed before \`${shownCommand(v.cmd)}\` passed; what they failed on isn't recorded here.`,
+    });
+  }
   limits.forEach((l, i) => (l.ref = `L${i + 1}`));
 
   const avoid = [
@@ -751,7 +774,9 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     'Point reviewers at files (from commitMessages.implementedBy or changes.where), not at functions, and not at the largest file.',
     'Name a file or symbol for a commit-message sentence only from its implementedBy; when implementedBy is empty, describe the behavior without naming where it lives.',
     'Call a symbol new, added or introduced only if it is in newSymbols; others already existed and were changed.',
-    'changes.was lines are code, not history: quote one only verbatim, as `old` → `new` in its file; never describe what the old code did or why beyond that.',
+    "Say what the code did before and what it does now, in one plain sentence per change, from the removed and added lines (changes.was gives the literal values that changed); don't guess beyond what the patch shows.",
+    "State plainly what the patch shows. Attribute only what it can't show (a reason, a result, a remark about scope) to the request or commit message that says it.",
+    "Don't repeat in the prose what the generated Validation section says about runs.",
     "Words a commit message puts in parentheses or asides ('local only', 'experimental', 'for now') are that commit's own remark: attribute them or leave them out; never turn them into claims about what the PR includes.",
   ].map((rule) => ({ rule }));
 

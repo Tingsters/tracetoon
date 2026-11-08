@@ -220,6 +220,8 @@ export interface RenderOpts extends OutOpts {
    * separate researcher or reviewer. Publishing then needs no review.json.
    */
   lean?: boolean;
+  /** Same as `lean`: the brief-path draft check that comes before the slim review. */
+  check?: boolean;
   /**
    * The reviewed brief path: drafted inline from the brief, then checked by one
    * slim reviewer whose corrections were applied (notes in reviewer-notes.md).
@@ -286,13 +288,8 @@ function briefCheckLines(b: BriefApplied): string {
         .map((f) => `  - ${f.sentence}\n    → ${f.problem}`)
         .join('\n')}`,
     );
-  if (b.unbackedNames.length)
-    out.push(
-      `Sentences that name code outside where the cited commit sentence's implementedBy places it (check the patch: move the sentence to the code that does it, or drop the name):\n${b.unbackedNames
-        .slice(0, 8)
-        .map((u) => `  - ${u.names.map((n) => `\`${n}\``).join(', ')}: ${u.sentence}`)
-        .join('\n')}`,
-    );
+  // Names placed outside a sentence's implementedBy stay in the JSON only: writers
+  // deleted correct names on that hint (dev15).
   if (b.tags && b.untagged.length)
     out.push(
       `Sentences with no ref tag. These say something no brief row states: delete each one, unless a row says the same thing, then reword it to that row and tag it. Adding a tag without a row that states it is not a fix:\n${b.untagged
@@ -534,7 +531,12 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     composition.issues,
   );
   // On the lean path a review someone did write still counts; none is needed.
-  const briefMode = opts.reviewed ? 'reviewed-brief' : opts.lean ? 'lean' : undefined;
+  // `--check` (alias `--lean`): the draft checked against the brief, before the slim review.
+  const briefMode = opts.reviewed
+    ? 'reviewed-brief'
+    : opts.lean || opts.check
+      ? 'lean'
+      : undefined;
   const contributionReview: typeof reviewed =
     briefMode && reviewed.status === 'missing'
       ? {
@@ -543,7 +545,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           mode: briefMode,
           issues: [
             briefMode === 'lean'
-              ? 'Lean brief path: drafted inline from the evidence brief, with no separate researcher or reviewer.'
+              ? 'Brief path, checked draft: the slim review (step 2a.6) comes next, then render --reviewed.'
               : existsSync(join(run.dir, 'reviewer-notes.md'))
                 ? 'Reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md).'
                 : 'Reviewed brief path: no reviewer-notes.md found; run the slim reviewer before publishing.',
@@ -656,7 +658,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           : `Comic: none — ${comicStatus.detail ?? comicStatus.state}.`,
         findings.length && !approval.allowFindings
           ? 'Not ready to publish: fix what the leak scan found (above), then render again.'
-          : `Next: tracetoon publish --run ${run.id}`,
+          : briefMode === 'lean'
+            ? `Next: start one fresh reviewer subagent with the skill's references/reviewer-brief.md (step 2a.6), apply its reviewer-notes.md, then tracetoon render --reviewed --run ${run.id}.`
+            : `Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -849,6 +853,17 @@ export interface PublishOpts extends OutOpts {
   hosting?: 'auto' | 'branch' | 'attach';
   /** Publish although the last render listed open problems or uncovered brief rows. */
   acceptOpen?: boolean;
+  /** Publish a checked brief-path draft with no slim review (only when the user asks for the cheapest run). */
+  noReview?: boolean;
+}
+
+/** Why a brief-path draft can't be published yet for lack of its slim review, if so. */
+export function briefPathUnreviewed(run: { dir: string }): string | undefined {
+  const review = readLocal<{ mode?: string }>(join(run.dir, 'review-result.json'));
+  if (review?.mode !== 'lean') return undefined;
+  if (existsSync(join(run.dir, 'reviewer-notes.md')))
+    return 'reviewer-notes.md exists but the last render was the pre-review check: apply the notes and run tracetoon render --reviewed.';
+  return 'This draft was only checked (render --check), not reviewed. Start one fresh reviewer subagent with references/reviewer-brief.md (step 2a.6), apply its reviewer-notes.md, then run tracetoon render --reviewed. Pass --no-review only if the user asked for the cheapest run.';
 }
 
 /** What the last render on a brief path left open, or undefined when nothing is. */
@@ -902,12 +917,18 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     );
   const preparationProblem = publishProblem(truth.toplevel, run, approval);
   if (preparationProblem) throw new UserError(preparationProblem);
+  // A brief-path draft that was only checked still needs its slim review.
+  const unreviewed = briefPathUnreviewed(run);
+  if (unreviewed) {
+    if (!opts.noReview) throw new UserError(unreviewed);
+    writeJson(run, 'no-review.json', { at: new Date().toISOString() });
+  }
   // On a brief path the brief check is the review: open items block publishing.
   const briefOpen = briefPathOpen(run);
   if (briefOpen) {
     if (!opts.acceptOpen)
       throw new UserError(
-        `${briefOpen}\nFix body.md and run tracetoon render again, or pass --accept-open if the user agrees to publish as is.`,
+        `${briefOpen}\nFix body.md and run tracetoon render again. Pass --accept-open only if the user, in their own words, agrees to publish as is.`,
       );
     writeJson(run, 'accepted-open.json', {
       at: new Date().toISOString(),

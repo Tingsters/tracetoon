@@ -36,7 +36,7 @@ import {
 } from '../src/workflow/checks.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
 import { publishProblem } from '../src/workflow/readiness.ts';
-import { briefPathOpen } from '../src/commands/publish.ts';
+import { briefPathOpen, briefPathUnreviewed } from '../src/commands/publish.ts';
 import { discoveryIndex } from '../src/trace/discovery.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
 import { git } from '../src/util/exec.ts';
@@ -1123,4 +1123,19 @@ test('on a brief path, publish is blocked while the brief check lists open items
     put('brief-check.json', { open: 0, uncovered: [] });
     expect(briefPathOpen({ dir })).toBeUndefined();
   }
+});
+
+test('a brief-path draft that was only checked needs its slim review before publishing', () => {
+  const dir = tempDir();
+  const put = (f: string, v: unknown) => writeFileSync(join(dir, f), JSON.stringify(v));
+  put('review-result.json', { status: 'skipped', mode: 'lean' });
+  expect(briefPathUnreviewed({ dir })).toContain(
+    'only checked (render --check), not reviewed',
+  );
+  writeFileSync(join(dir, 'reviewer-notes.md'), '- OK: no findings\n');
+  expect(briefPathUnreviewed({ dir })).toContain('run tracetoon render --reviewed');
+  put('review-result.json', { status: 'skipped', mode: 'reviewed-brief' });
+  expect(briefPathUnreviewed({ dir })).toBeUndefined();
+  put('review-result.json', { status: 'current', mode: 'delegated' });
+  expect(briefPathUnreviewed({ dir })).toBeUndefined();
 });
