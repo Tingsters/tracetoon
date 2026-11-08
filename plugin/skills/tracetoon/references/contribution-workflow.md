@@ -150,6 +150,9 @@ existing rendering. Human-only sections must never be filled in by an agent.
 > Validation follows the rules above (receipts and dated log runs, exact
 > commands and counts); a check the repository requires with no current
 > receipt is run once with `tracetoon check`.
+> Say how the work came about where the brief's `requests` rows show it: the
+> goal request, decisions taken and approaches dropped, in one or two
+> sentences, attributed to the person or plan that says it.
 > Keep the concrete values a brief row gives (model names, counts, versions,
 > output shapes) rather than a vaguer paraphrase; cover changed defaults, JSON
 > shapes and error paths as consequences; name each added test file and what

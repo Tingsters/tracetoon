@@ -290,6 +290,12 @@ reviewer separate.
    validate and display the assessment. Return draftable findings, including
    claims that aren't `supported` and omissions, to the drafter
    for up to **two correction rounds** (one when the run has a brief), each followed by a render and fresh review.
+   With a brief, the follow-up after the correction round goes to the **same
+   reviewer**, not a new one: after the drafter's fix, `render --json`, then
+   send that reviewer the new `review-input.json` (Codex: `followup_task`;
+   Claude Code: continue the same agent with SendMessage) to confirm or re-flag
+   only what changed and update `review.json` to the new fingerprint. Publish
+   only when render reports the review current.
    Findings show in `render` output and `--json`; mention remaining ones briefly
    after publishing. Never manufacture human attestations or test evidence.
    Guidance and review findings are advisory.
