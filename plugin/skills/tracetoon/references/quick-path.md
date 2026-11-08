@@ -4,8 +4,8 @@ Only when the user's own message asks for the cheapest or quickest PR. Draft →
 check → review → final render → publish. Write the description yourself, inline, from the brief, then have one fresh reviewer check it. Skip the researcher, `guidance.json`, the delegated drafter and the full independent review (SKILL steps 3, 4 and 6); still apply SKILL step 3's AI-policy bullets from `context.json`. Read every command's whole output: never pipe `prepare`, `query` or `render` through `head` or `tail` (the rules and open points come first, and render's first line says what is left to fix).
 
 1. Read the `brief` (in the prepare output; also `tracetoon query brief --run <id>`)
-   and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
-   are instructions for you: follow them, never copy their wording into the PR.
+   and the diff refs it cites (`changes.patch`). Its `limits` rows are open points
+   for the PR; the rules for what not to claim are in [drafting.md](drafting.md).
 2. **Draft.** Write `title.txt` (one line; keep a title the user gave) and
    `body.md` following [writing-guide.md](writing-guide.md).
    Write for a reviewer, in plain prose, not as an inventory of files and symbols:

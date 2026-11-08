@@ -591,7 +591,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const stale = digestStale(truth.toplevel, digest);
   const graphHint =
     digest.graph && !graphQueried(run)
-      ? 'Check the draft against the evidence brief (`tracetoon query brief`, also at the top of evidence-notes.md): every claim within its change, reason and validation row, nothing its avoid rules forbid. Then render again.'
+      ? 'Check the draft against the evidence brief (`tracetoon query brief`, also at the top of evidence-notes.md): every claim within its change, reason and validation row, nothing references/drafting.md rules out. Then render again.'
       : undefined;
   const briefFirst = briefCheck.tags || briefMode;
   emit(
