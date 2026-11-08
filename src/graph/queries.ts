@@ -740,29 +740,9 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         kind: 'open',
         limit: `\`${shownCommand(v.cmd)}\` ran, but no result for it was captured in the logs Tracetoon read.`,
       });
-  // Earlier failures of a check whose last recorded run passed: what they failed
-  // on isn't in the brief. No count: readers count runs differently (dev13).
-  const failNoted = new Set<string>();
-  for (const v of validation) {
-    if (v.outcome !== 'passed' || !['test', 'typecheck'].includes(String(v.kind)))
-      continue;
-    if (failNoted.has(String(v.kind))) continue;
-    const run = runs.find((r) => r.id === v.check);
-    if (!run) continue;
-    const failedBefore = runs.some(
-      (r) =>
-        r.kind === run.kind &&
-        r.outcome === 'failed' &&
-        String(r.t ?? '') < String(run.t ?? ''),
-    );
-    if (!failedBefore) continue;
-    failNoted.add(String(v.kind));
-    limits.push({
-      change: null,
-      kind: 'open',
-      limit: `Earlier ${String(run.kind)} runs in the session failed before \`${shownCommand(v.cmd)}\` passed; what they failed on isn't recorded here.`,
-    });
-  }
+  // (No "earlier failures weren't recorded" point: Tracetoon keeps only result
+  // lines, so it can't tell whether a failure's output was recorded, and the
+  // claim was judged false where it was (dev16).)
   limits.forEach((l, i) => (l.ref = `L${i + 1}`));
 
   const avoid = [

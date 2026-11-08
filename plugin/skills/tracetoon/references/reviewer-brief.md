@@ -47,7 +47,9 @@ Only what a reviewer would act on:
   a limit, the reason for the change.
 - An open point: a `limits` row of kind `open`, or a path the patch adds that
   no recorded run and no added test exercises (a route not run live, output
-  not checked in a real terminal).
+  not checked in a real terminal). Before saying no test covers something,
+  `grep` the test files for it (this counts toward your 3 greps); cite the
+  search.
 
 Don't ask for lists of symbols, syntax forms, test helpers or test counts.
 
