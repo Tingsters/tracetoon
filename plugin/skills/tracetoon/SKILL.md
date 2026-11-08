@@ -132,9 +132,10 @@ reviewer separate.
       `body.md` following [references/writing-guide.md](references/writing-guide.md).
       Write for a reviewer, in plain prose, not as an inventory of files and symbols:
       - Open with the problem: the goal request (`requests` row marked goal),
-        what the code did before and does now (from the removed and added lines;
-        `changes.was` gives the literal values that changed), and what triggered
-        the change, as the request or commit message says it.
+        what the code did before and does now (only where `changes.was` or the
+        removed lines show the old value; never infer old behavior from the new
+        code), and what triggered the change, as the request or commit message
+        says it.
       - Then what changed, grouped by behavior rather than file by file,
         covering each commit-message sentence. Name the file a sentence's
         `implementedBy` gives; where it is empty, describe the behavior without
@@ -142,9 +143,11 @@ reviewer separate.
         symbol new only if it is in `newSymbols`.
       - The consequences: what changes for users or callers, the riskiest part,
         and anything the PR deliberately leaves alone.
-      - What the added tests check (`tests` rows), the open points (`limits`
-        rows of kind `open`), which files to start reviewing with, any PR or
-        issue links the commits give, and one closing line for `housekeeping`.
+      - What the added tests check (`tests` rows; no test counts, no helper
+        names), the open points (`limits` rows of kind `open`), which files to
+        start reviewing with, the riskiest change and the feedback you want, any
+        PR or issue links the commits give, and one closing line for
+        `housekeeping`.
       State plainly what the patch shows. Attribute only what it can't show (a
       reason, a result, a remark like "local only") to the request or commit
       message that says it; never invent a motive. Don't repeat what the

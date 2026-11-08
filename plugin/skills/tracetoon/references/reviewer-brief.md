@@ -49,7 +49,7 @@ Only what a reviewer would act on:
   no recorded run and no added test exercises (a route not run live, output
   not checked in a real terminal).
 
-Don't ask for lists of symbols or syntax forms.
+Don't ask for lists of symbols, syntax forms, test helpers or test counts.
 
 ## Write `reviewer-notes.md` in the run folder
 

@@ -399,7 +399,12 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       ).slice(0, 6);
       return syms.length ? `${f} (${syms.join(', ')})` : f;
     });
-    const fresh = uniq(hs.flatMap((h) => (h.fresh as string[]) ?? [])).slice(0, 8);
+    // New code, not test helpers: a fixture's `reply` or `calls` is noise to a reviewer.
+    const fresh = uniq(
+      hs
+        .filter((h) => fileRole.get(String(h.file)) !== 'tests')
+        .flatMap((h) => (h.fresh as string[]) ?? []),
+    ).slice(0, 8);
     // Each pair with its file, to quote as a code change, not to retell.
     const was = uniq(
       hs.flatMap((h) =>
@@ -774,7 +779,8 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     'Point reviewers at files (from commitMessages.implementedBy or changes.where), not at functions, and not at the largest file.',
     'Name a file or symbol for a commit-message sentence only from its implementedBy; when implementedBy is empty, describe the behavior without naming where it lives.',
     'Call a symbol new, added or introduced only if it is in newSymbols; others already existed and were changed.',
-    "Say what the code did before and what it does now, in one plain sentence per change, from the removed and added lines (changes.was gives the literal values that changed); don't guess beyond what the patch shows.",
+    'Say what the code did before only where changes.was or the removed lines you read show it, quoting the value (e.g. 30 minutes → 5 minutes); otherwise describe just the new behavior. Never infer old behavior from the new code.',
+    "Don't count tests or name test helpers: say what the added test titles check.",
     "State plainly what the patch shows. Attribute only what it can't show (a reason, a result, a remark about scope) to the request or commit message that says it.",
     "Don't repeat in the prose what the generated Validation section says about runs.",
     "Words a commit message puts in parentheses or asides ('local only', 'experimental', 'for now') are that commit's own remark: attribute them or leave them out; never turn them into claims about what the PR includes.",
@@ -790,7 +796,8 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         uniq([...(testsByFile.get(String(h.file)) ?? []), t]),
       );
   for (const [file, titles] of testsByFile)
-    tests.push({ ref: `T${tests.length + 1}`, file, titles: refs(titles, 6) });
+    // Titles in full: a "+N more" marker was read as a count of tests (smoke15).
+    tests.push({ ref: `T${tests.length + 1}`, file, titles: titles.slice(0, 8) });
 
   // Version bumps and generated files: one sentence covers them.
   const housekeeping: Record<string, unknown>[] = [];
