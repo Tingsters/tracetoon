@@ -17,6 +17,8 @@ export const VALIDATION_MARKER = '<!-- tracetoon:validation -->';
 export interface BriefParts {
   sections: Section[];
   unchecked: string[];
+  /** Symbols (or files) whose changed lines branch or fall back. */
+  branchy?: string[];
 }
 
 export interface BriefApplied {
@@ -78,7 +80,8 @@ export function validationSection(b: BriefParts): string {
   // open points the prose covers (limits rows), so they aren't repeated here.
   // Every check Tracetoon ran on the submitted content (V receipts) is shown,
   // whatever its kind (a dropped `bun run bundle` receipt cost a dev19 pair);
-  // session-log runs fill the rest, up to three lines in all.
+  // session-log runs fill the rest, one per kind with no receipt, up to three
+  // lines in all. Earlier failures are process facts, not repeated here.
   const shown: { kind: string; line: string; when: string; current: boolean }[] = [];
   const perKind = new Map<string, number>();
   const rows = rowsOf(b, 'validation').filter(
@@ -96,16 +99,18 @@ export function validationSection(b: BriefParts): string {
       current: true,
     });
   }
+  const receiptKinds = new Set(receipts.map((r) => String(r.kind)));
   for (const r of logRuns) {
     if (shown.length >= MAX_LINES) break;
     const kind = String(r.kind);
     if (!['test', 'typecheck', 'lint', 'build'].includes(kind)) continue;
+    if (receiptKinds.has(kind)) continue;
     const cmd = shownCommand(r.cmd);
     if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
     // A receipt for the same command already says more.
     if (shown.some((x) => x.current && x.line.startsWith(`- \`${cmd}\`:`))) continue;
     const n = perKind.get(kind) ?? 0;
-    if (n >= (kind === 'test' ? 2 : 1)) continue;
+    if (n >= 1) continue;
     perKind.set(kind, n + 1);
     // A run from the session logs is history, with no counts a reader can't check.
     const editedAll = (Array.isArray(r.editedAfter) ? r.editedAfter : []).map(String);
@@ -149,7 +154,7 @@ export function briefRefs(b: BriefParts): Set<string> {
     for (const r of s.rows)
       for (const k of ['change', 'ref', 'check'])
         if (typeof r[k] === 'string' && r[k]) out.add(r[k] as string);
-  // `commit:<sha>` rows also answer to the short sha, and claim refs to `commit:<sha>#n`.
+  // A commit's rows (`<sha>`, `<sha>#n`) also answer to `commit:<sha>` and `commit:<sha>#n`.
   for (const ref of [...out]) {
     const m = /^(?:commit:)?([0-9a-f]{7,40})(#\d+)?$/.exec(ref);
     if (m) {
@@ -296,9 +301,11 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
   const existing = new Set(
     changeRows.flatMap((r) => symbolsOf(r.where)).filter((x) => !fresh.has(x)),
   );
-  const limitText = rowsOf(b, 'limits')
-    .map((r) => String(r.limit ?? ''))
-    .join('\n');
+  // Names with conditional paths: from the brief's branch list, and any limit naming them.
+  const limitText = [
+    ...(b.branchy ?? []),
+    ...rowsOf(b, 'limits').map((r) => String(r.limit ?? '')),
+  ].join('\n');
   const unknown = new Set<string>();
   let tags = 0;
   const untagged: string[] = [];
@@ -393,7 +400,7 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
   // Brief refs are for render, not readers: one left in the prose (outside a tag) is noise.
   for (const unit of proseUnits(body)) {
     const clean = unit.replace(TAG, '');
-    const leaked = (clean.match(/\b(?:CH|HK|[STLRDP])\d+\b/g) ?? []).filter((r) =>
+    const leaked = (clean.match(/\b(?:CH|HK|PR|[STLRDP])\d+\b/g) ?? []).filter((r) =>
       known.has(r),
     );
     if (leaked.length)

@@ -267,10 +267,18 @@ export function listsSeveral(text: string): boolean {
  * wrong file misleads more than none (dev14: every Terra error on pr5).
  */
 export function describedHunks(hunks: Record<string, unknown>[], text: string): string[] {
+  // A sentence that names one of the commit's files says where it lives.
+  const files = uniq(hunks.map((h) => String(h.file)));
+  const named = files.filter((f) =>
+    new RegExp(
+      `(^|[\\s(\`'"])${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[\\s),.:;\`'"])`,
+    ).test(text),
+  );
+  if (named.length === 1) return named;
   const words = uniq(proseWords(text).map(stem));
   if (!words.length || !hunks.length || listsSeveral(text)) return [];
   const has = hunks.map((h) => new Set(((h.words as string[]) ?? []).map(stem)));
-  const named = hunks.map(
+  const symbolWords = hunks.map(
     (h) =>
       new Set(
         ((h.symbols as string[]) ?? []).flatMap((x) =>
@@ -296,11 +304,11 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
           (n, w) =>
             n +
             (has[i]!.has(w) ? idf.get(w)! : 0) +
-            (named[i]!.has(w) ? idf.get(w)! || 1 : 0),
+            (symbolWords[i]!.has(w) ? idf.get(w)! || 1 : 0),
           0,
         ) /
         (0.5 + (0.5 * has[i]!.size) / avg),
-      hits: words.filter((w) => has[i]!.has(w) || named[i]!.has(w)).length,
+      hits: words.filter((w) => has[i]!.has(w) || symbolWords[i]!.has(w)).length,
     }))
     .filter((x) => x.hits >= Math.min(2, words.length));
   // Version files match any sentence with a number; they belong only to version sentences.
@@ -311,25 +319,332 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
   // Tests and docs describe behavior too; the code that does it comes first.
   const isCode = (f: string) =>
     !/(^|\/)(tests?|__tests__|spec|docs?)\/|\.(test|spec)\.\w+$|\.(md|mdx|txt)$/.test(f);
-  if (
-    scored.some((x) => isCode(x.file)) &&
-    !/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b/i.test(text)
-  )
+  // A sentence that mentions neither is about code: a test or doc file alone
+  // matching it is no placement.
+  if (!/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b|\breadme\b/i.test(text))
     scored = scored.filter((x) => isCode(x.file));
   // Best hunk per file.
-  const byFile = new Map<string, number>();
-  for (const x of scored) byFile.set(x.file, Math.max(byFile.get(x.file) ?? 0, x.score));
-  const ranked = [...byFile].sort((a, b) => b[1] - a[1]);
+  const byFile = new Map<string, { score: number; hits: number }>();
+  for (const x of scored)
+    if (x.score > (byFile.get(x.file)?.score ?? -1))
+      byFile.set(x.file, { score: x.score, hits: x.hits });
+  const ranked = [...byFile].sort((a, b) => b[1].score - a[1].score);
   if (!ranked.length) return [];
   // Two files that fit about equally: say neither rather than guess.
-  if (ranked.length > 1 && ranked[1]![1] >= ranked[0]![1] * 0.8) return [];
+  if (ranked.length > 1 && ranked[1]![1].score >= ranked[0]![1].score * 0.8) return [];
+  // A weak match (two shared words out of many) places nothing: three words,
+  // or at least two fifths of the sentence's words, must meet the hunk.
+  const best = ranked[0]![1];
+  if (best.hits < 3 && best.hits < 0.4 * words.length) return [];
   return [ranked[0]![0]];
+}
+
+const planStatus = (approved: unknown) =>
+  approved === true
+    ? 'plan (approved)'
+    : approved === false
+      ? 'plan (not approved as written)'
+      : 'plan';
+
+export interface PrTurns {
+  /** Prompts whose turn produced surviving edits in the PR, or a PR commit. */
+  productive: Set<string>;
+  /** Turns with no edits right before a productive turn: where its work was set up. */
+  leadIn: Set<string>;
+  /** The first prompt of the included sessions. */
+  opening?: { id: string; text: string; t: string };
+  /** Per included session, the time of its first productive or lead-in turn. */
+  start: Map<string, string>;
+  /** Included sessions, with their prompts in order. */
+  prompts: Map<string, { id: string; t: string; edits: number }[]>;
+}
+
+/**
+ * Which turns are this PR's: those whose edits survive in it or that made one
+ * of its commits, and the edit-free turn just before each (a question, a plan).
+ * A session shared with earlier work also holds that work's turns; they are
+ * not this PR's history.
+ */
+export function thisPrTurns(g: GraphEngine): PrTurns {
+  const rows = g.run(
+    `MATCH (p:Prompt)-[:IN_SESSION]->(s:Session {band: 'included'})
+     OPTIONAL MATCH (e:Edit)-[:IN_TURN]->(p)
+     RETURN p.id AS id, p.t AS t, p.text AS text, s.id AS session, count(e) AS edits,
+            sum(CASE WHEN e.surviving > 0 AND e.inPr = true THEN 1 ELSE 0 END) AS surviving`,
+  ).rows;
+  const made = g.run(
+    `MATCH (s:Session {band: 'included'})-[:MADE]->(k:Commit) WHERE k.t IS NOT NULL
+     RETURN s.id AS session, k.t AS t`,
+  ).rows;
+  const productive = new Set<string>();
+  const leadIn = new Set<string>();
+  const start = new Map<string, string>();
+  const prompts = new Map<string, { id: string; t: string; edits: number }[]>();
+  const bySession = new Map<string, Record<string, unknown>[]>();
+  for (const r of rows)
+    bySession.set(String(r.session), [...(bySession.get(String(r.session)) ?? []), r]);
+  for (const [session, ps] of bySession) {
+    ps.sort(
+      (a, b) =>
+        String(a.t ?? '').localeCompare(String(b.t ?? '')) ||
+        factOrder(String(a.id), String(b.id)),
+    );
+    prompts.set(
+      session,
+      ps.map((p) => ({ id: String(p.id), t: String(p.t ?? ''), edits: Number(p.edits) })),
+    );
+    ps.forEach((p, i) => {
+      const from = String(p.t ?? '');
+      const to = ps[i + 1]?.t ? String(ps[i + 1]!.t) : '\uffff';
+      const commits = made.some(
+        (k) => k.session === session && from && String(k.t) >= from && String(k.t) < to,
+      );
+      if (Number(p.surviving) > 0 || commits) productive.add(String(p.id));
+    });
+    ps.forEach((p, i) => {
+      const next = ps[i + 1];
+      if (
+        next &&
+        productive.has(String(next.id)) &&
+        !productive.has(String(p.id)) &&
+        !Number(p.edits)
+      )
+        leadIn.add(String(p.id));
+    });
+    const first = ps.find(
+      (p) => productive.has(String(p.id)) || leadIn.has(String(p.id)),
+    );
+    if (first?.t) start.set(session, String(first.t));
+  }
+  const opening = [...rows].sort((a, b) =>
+    String(a.t ?? '').localeCompare(String(b.t ?? '')),
+  )[0];
+  return {
+    productive,
+    leadIn,
+    opening: opening
+      ? {
+          id: String(opening.id),
+          text: String(opening.text ?? ''),
+          t: String(opening.t ?? ''),
+        }
+      : undefined,
+    start,
+    prompts,
+  };
+}
+
+/**
+ * A change's conditions, quoted from its code hunks: changed conditions first,
+ * then added branches and fallbacks with a literal (thresholds, defaults),
+ * then the others, then removed conditions. At most four, each with its file.
+ */
+export function behaviorOf(hunks: Record<string, unknown>[]): string[] {
+  const rank = (x: string) =>
+    !/^[+-] /.test(x)
+      ? 0
+      : x.startsWith('- ')
+        ? 4
+        : /[<>]=?\s*-?\d|[=!]==?\s*(?:-?\d|['"`])|\?\?\s*(?:-?\d|['"`])/.test(x)
+          ? 1
+          : /\?\?|\bcatch\b|\bexcept\b|\bdefault\b|\belse\b/.test(x)
+            ? 2
+            : 3;
+  const items = [...hunks]
+    .sort((a, b) => byDiff(String(a.diff), String(b.diff)))
+    .flatMap((h) =>
+      ((h.conds as string[]) ?? []).map((c) => ({
+        text: clipText(`${String(h.file).split('/').pop()}: ${c}`, 160),
+        rank: rank(c),
+      })),
+    );
+  return uniq(
+    items
+      .map((x, i) => ({ ...x, i }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map((x) => x.text),
+  ).slice(0, 4);
+}
+
+/**
+ * How the work was done, as recorded: each session's part, whether a plan or
+ * decision was recorded, each check kind's runs over this PR's turns, and
+ * failed commands. Counts and ids only; no judgments.
+ */
+function processRows(
+  g: GraphEngine,
+  turns: PrTurns,
+  checkRuns: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const add = (kind: string, fact: string, cites: string[] = []) =>
+    out.push({ ref: `PR${out.length + 1}`, kind, fact, cites });
+  const sessions = g
+    .run(
+      `MATCH (s:Session)
+       OPTIONAL MATCH (e:Edit)-[:IN_SESSION]->(s)
+       RETURN s.id AS id, s.agent AS agent, s.band AS band, s.failedCommands AS failed,
+              s.failedCommand AS failedCommand, count(e) AS edits,
+              sum(CASE WHEN e.surviving > 0 AND e.inPr = true THEN 1 ELSE 0 END) AS surviving`,
+    )
+    .rows.sort(
+      (a, b) =>
+        Number(a.band !== 'included') - Number(b.band !== 'included') ||
+        String(a.id).localeCompare(String(b.id)),
+    );
+  const made = new Map<string, string[]>();
+  for (const r of g.run(
+    'MATCH (s:Session)-[:MADE]->(k:Commit) RETURN s.id AS session, k.id AS commit',
+  ).rows)
+    made.set(String(r.session), [
+      ...(made.get(String(r.session)) ?? []),
+      String(r.commit),
+    ]);
+  if (!sessions.length) add('session', 'No agent session was matched to this PR.');
+  for (const s of sessions.slice(0, 6)) {
+    const id = String(s.id);
+    const commits = (made.get(id) ?? []).sort();
+    const edits = Number(s.edits);
+    const surviving = Number(s.surviving);
+    const role =
+      s.band !== 'included'
+        ? 'ambiguous'
+        : commits.length
+          ? 'made commits'
+          : surviving
+            ? 'edits survive'
+            : edits
+              ? "edits didn't survive"
+              : 'no edits captured';
+    const asked = (turns.prompts.get(id) ?? [])
+      .filter((p) => turns.productive.has(p.id))
+      .map((p) => p.id);
+    add(
+      'session',
+      `${String(s.agent)} session, ${role}${commits.length ? ` (${commits.join(', ')})` : ''}: ${edits} edit(s) captured, ${surviving} with lines in the PR${s.band !== 'included' ? '; matched ambiguously, so not used as evidence' : ''}${asked.length ? `; turns that produced this PR's edits or commits: ${refs(asked, 6).join(', ')}` : ''}.`,
+      [id, ...commits],
+    );
+  }
+  if (sessions.length > 6)
+    add('session', `${sessions.length - 6} more session(s) not listed.`);
+
+  // Plans and decisions of this PR's turns (and the edit-free turn before each).
+  const inScope = (turn: unknown) =>
+    !!turn && (turns.productive.has(String(turn)) || turns.leadIn.has(String(turn)));
+  const facts = g
+    .run(
+      `MATCH (x)-[:IN_TURN]->(p:Prompt) WHERE x:Plan OR x:Decision
+       RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved, x.t AS t,
+              x.text AS title, x.truncated AS truncated, p.id AS turn`,
+    )
+    .rows.filter((x) => inScope(x.turn))
+    .sort(
+      (a, b) =>
+        String(a.t ?? '').localeCompare(String(b.t ?? '')) ||
+        factOrder(String(a.id), String(b.id)),
+    );
+  const plans = facts.filter((x) => x.label === 'Plan');
+  const decisions = facts.filter((x) => x.label === 'Decision');
+  if (!plans.length)
+    add(
+      'plan',
+      decisions.length ? 'No plan was recorded.' : 'No plan or decision was recorded.',
+    );
+  else
+    add(
+      'plan',
+      `${plans.length === 1 ? 'Plan' : 'Plans, in order'}: ${plans
+        .map(
+          (p) =>
+            `${String(p.id)} "${clipText(p.title, 80)}" ${
+              p.approved === true
+                ? 'approved'
+                : p.approved === false
+                  ? 'not approved as written'
+                  : '(approval not recorded)'
+            }`,
+        )
+        .join(' → ')}.`,
+      plans.map((p) => String(p.id)),
+    );
+  if (decisions.length)
+    add(
+      'decision',
+      `${decisions.length} question(s) answered by the user: ${decisions
+        .map(
+          (d) =>
+            `${String(d.id)} (turn ${String(d.turn)})${d.truncated ? ', record cut off' : ''}`,
+        )
+        .join(', ')}.`,
+      decisions.map((d) => String(d.id)),
+    );
+
+  // Each check kind over this PR's turns: runs, failures, the last result, and
+  // whether a pass came after the last commit.
+  const runSession = new Map(
+    g
+      .run('MATCH (r:Run)-[:IN_SESSION]->(s:Session) RETURN r.id AS id, s.id AS session')
+      .rows.map((r) => [String(r.id), String(r.session)]),
+  );
+  const scoped = checkRuns.filter((r) => {
+    const from = turns.start.get(runSession.get(String(r.id)) ?? '');
+    return !from || String(r.t ?? '') >= from;
+  });
+  const lastCommit = g
+    .run('MATCH (k:Commit) WHERE k.t IS NOT NULL RETURN k.id AS id, k.t AS t')
+    .rows.sort((a, b) => String(b.t).localeCompare(String(a.t)))[0];
+  for (const kind of CHECK_KINDS) {
+    const rs = scoped.filter((r) => r.kind === kind);
+    if (!rs.length) continue;
+    const ids = (xs: Record<string, unknown>[]) =>
+      refs(
+        xs.map((r) => String(r.id)),
+        4,
+      );
+    const failed = rs.filter((r) => r.outcome === 'failed');
+    const unknown = rs.filter((r) => r.outcome !== 'passed' && r.outcome !== 'failed');
+    const last = rs.at(-1)!;
+    const after = lastCommit
+      ? rs.filter(
+          (r) => r.outcome === 'passed' && String(r.t ?? '') > String(lastCommit.t),
+        )
+      : [];
+    add(
+      kind,
+      [
+        `${rs.length} ${kind} run(s)`,
+        failed.length
+          ? `${failed.length} failed (${ids(failed).join(', ')})`
+          : 'none failed',
+        ...(unknown.length ? [`${unknown.length} with no captured result`] : []),
+        `last ${String(last.id)} ${String(last.outcome === 'unknown' ? 'result not captured' : last.outcome)}`,
+        ...(lastCommit
+          ? [
+              after.length
+                ? `a passing run came after the last commit (${ids(after).join(', ')})`
+                : 'no passing run recorded after the last commit',
+            ]
+          : []),
+      ].join('; ') + '.',
+      uniq([...failed.slice(0, 4), last, ...after.slice(0, 2)].map((r) => String(r.id))),
+    );
+  }
+
+  for (const s of sessions)
+    if (s.band === 'included' && Number(s.failed) > 0)
+      add(
+        'commands',
+        `${Number(s.failed)} failed non-check command(s) recorded in the ${String(s.agent)} session${s.failedCommand ? `, e.g. \`${String(s.failedCommand)}\`` : ''}.`,
+        [String(s.id)],
+      );
+  return out;
 }
 
 /**
  * Everything a description needs, in the order it is written: the change units
  * (with the symbols that own them), why each was made, what checked it and when,
- * what the evidence does not establish, and what not to claim. Each row cites
+ * how the work went (recorded process facts) and what the evidence does not
+ * establish. Each row cites
  * its evidence; nothing in it is inferred beyond the graph.
  */
 export function brief(g: GraphEngine): Section[] {
@@ -341,7 +656,11 @@ export function brief(g: GraphEngine): Section[] {
  * behavior or test files with no recorded passing check after their last
  * captured edit.
  */
-export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: string[] } {
+export function briefParts(g: GraphEngine): {
+  sections: Section[];
+  unchecked: string[];
+  branchy: string[];
+} {
   const changes = g
     .run(
       `MATCH (c:Change)
@@ -355,6 +674,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
      OPTIONAL MATCH (h)<-[:INTRODUCED]-(k:Commit)
      RETURN c.id AS change, h.id AS hunk, h.file AS file, h.diff AS diff, h.scope AS scope,
             h.touched AS symbols, h.branches AS branches, h.fresh AS fresh, h.pairs AS pairs,
+            h.conds AS conds,
             h.tests AS tests, h.words AS words, count(DISTINCT e) AS edits,
             collect(DISTINCT k.id) AS commits`,
   ).rows;
@@ -369,24 +689,25 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
      RETURN c.id AS change, p.id AS id, p.text AS text, p.pushback AS pushback, a.how AS how,
             collect(DISTINCT x.id) AS facts`,
   ).rows;
+  // Plans and decisions with the turn they were made in.
   const turnFacts = new Map(
     g
       .run(
-        `MATCH (x)-[:IN_TURN]->(:Prompt) WHERE x:Decision OR x:Plan
-         RETURN x.id AS id, coalesce(x.excerpt, x.text) AS text`,
+        `MATCH (x) WHERE x:Decision OR x:Plan
+         OPTIONAL MATCH (x)-[:IN_TURN]->(p:Prompt)
+         RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved, x.t AS t,
+                coalesce(x.answers, x.excerpt, x.text) AS text, x.text AS title,
+                x.truncated AS truncated, p.id AS turn`,
       )
-      .rows.map((r) => [String(r.id), String(r.text ?? '')]),
+      .rows.map((r) => [String(r.id), r]),
   );
+  const turns = thisPrTurns(g);
   const said = g.run(
     `MATCH (c:Change)-[:EXPLAINED_BY]->(k:Commit)
      OPTIONAL MATCH (k)-[:SAYS]->(m:CommitClaim)
      RETURN c.id AS change, k.id AS commit, k.subject AS subject,
             collect(DISTINCT {id: m.id, text: m.text, result: m.assertsResult}) AS claims`,
   ).rows;
-  const commitScope = new Map<string, string[]>();
-  for (const h of hunkRows)
-    for (const k of (h.commits as string[]) ?? [])
-      commitScope.set(k, uniq([...(commitScope.get(k) ?? []), String(h.file)]));
 
   const changeRows = changes.map((c) => {
     const hs = hunkRows
@@ -411,12 +732,19 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         ((h.pairs as string[]) ?? []).map((p) => `${String(h.file)}: ${p}`),
       ),
     ).slice(0, 4);
+    const behavior = behaviorOf(
+      hs.filter(
+        (h) =>
+          !['tests', 'docs', 'generated'].includes(fileRole.get(String(h.file)) ?? ''),
+      ),
+    );
     return {
       change: c.id,
       groupedBy: String(c.key).split(':')[0],
       where,
       newSymbols: fresh,
       was,
+      behavior,
       added: c.added,
       removed: c.removed,
       diff: refs(
@@ -430,9 +758,25 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     };
   });
 
-  // Each request and commit sentence once; changes cite them by ref.
+  // Each request once; changes cite them by ref. Only this PR's turns: a
+  // shared session also holds earlier PRs' requests, plans and decisions,
+  // which no writer cites.
   const requests: Record<string, unknown>[] = [];
   const seen = new Set<string>();
+  const factRow = (f: string, kind: string) => {
+    const x = turnFacts.get(f);
+    if (!x || seen.has(f)) return;
+    seen.add(f);
+    const plan = x.label === 'Plan';
+    requests.push({
+      ref: f,
+      kind: plan
+        ? `${planStatus(x.approved)}${kind}`
+        : `decision (question asked and the answer)${kind}`,
+      text: clipText(x.text, plan ? 400 : 700),
+      truncated: x.truncated === true || null,
+    });
+  };
   for (const a of [...asked].sort((x, y) => factOrder(String(x.id), String(y.id)))) {
     if (seen.has(String(a.id))) continue;
     seen.add(String(a.id));
@@ -443,58 +787,32 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         : 'user request',
       text: clipText(a.text, 600),
     });
-    for (const f of ((a.facts as string[]) ?? []).sort(factOrder))
-      if (!seen.has(f)) {
-        seen.add(f);
-        requests.push({
-          ref: f,
-          kind: `${f.startsWith('P') ? 'plan' : 'decision'} in the turn of ${String(a.id)}`,
-          text: clipText(turnFacts.get(f), 400),
-        });
-      }
+    if (turns.productive.has(String(a.id)))
+      for (const f of ((a.facts as string[]) ?? []).sort(factOrder))
+        factRow(f, ` in the turn of ${String(a.id)}`);
   }
-  // The session's opening request is the goal even when no surviving edit is
-  // in its turn (a later turn often makes the edits); plans and decisions
-  // record how the approach was chosen.
-  const opening = g.run(
-    `MATCH (p:Prompt)-[:IN_SESSION]->(:Session {band: 'included'})
-     RETURN p.id AS id, p.text AS text, p.t AS t ORDER BY p.t LIMIT 1`,
-  ).rows[0];
-  if (opening && !seen.has(String(opening.id))) {
-    seen.add(String(opening.id));
-    requests.unshift({
-      ref: opening.id,
-      kind: 'goal: the first request of the session',
-      text: clipText(opening.text, 600),
-    });
-  } else if (opening)
-    for (const r of requests)
-      if (r.ref === opening.id)
-        r.kind = `goal: the first request of the session; ${String(r.kind)}`;
-  for (const x of g
-    .run(
-      `MATCH (x)-[:IN_SESSION]->(:Session {band: 'included'}) WHERE x:Plan OR x:Decision
-     RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved,
-            coalesce(x.excerpt, x.text) AS text, x.t AS t ORDER BY x.t`,
-    )
-    // From this PR's work only: a shared session also holds earlier PRs' plans.
-    .rows.filter((x) => opening && String(x.t ?? '') >= String(opening.t ?? ''))
-    .slice(0, 4)) {
-    if (seen.has(String(x.id))) continue;
-    seen.add(String(x.id));
-    requests.push({
-      ref: x.id,
-      kind:
-        x.label === 'Plan'
-          ? x.approved === true
-            ? 'plan (approved)'
-            : x.approved === false
-              ? 'plan (not approved as written)'
-              : 'plan'
-          : 'decision (question asked and the answer)',
-      text: clipText(x.text, 400),
-    });
+  // The session's opening request is the goal when its own turn produced
+  // surviving edits or commits in this PR; otherwise it is earlier work.
+  const opening = turns.opening;
+  if (opening && turns.productive.has(opening.id)) {
+    if (!seen.has(opening.id)) {
+      seen.add(opening.id);
+      requests.unshift({
+        ref: opening.id,
+        kind: 'goal: the first request of the session',
+        text: clipText(opening.text, 600),
+      });
+    } else
+      for (const r of requests)
+        if (r.ref === opening.id)
+          r.kind = `goal: the first request of the session; ${String(r.kind)}`;
   }
+  // Plans and decisions made in turns that produced this PR's edits or commits.
+  for (const [id, x] of [...turnFacts].sort((a, b) =>
+    String(a[1].t ?? '').localeCompare(String(b[1].t ?? '')),
+  ))
+    if (x.turn && turns.productive.has(String(x.turn)))
+      factRow(id, ` in the turn of ${String(x.turn)}`);
 
   // Which hunks each commit sentence describes: the commit's own hunks whose
   // changed lines share the sentence's rarer words. A commit listing several
@@ -508,6 +826,8 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
   const implementedBy = (commit: string, text: unknown): string[] =>
     describedHunks(commitHunks.get(commit) ?? [], String(text ?? ''));
 
+  // One row for each commit's subject (ref: its short sha) and one for each
+  // sentence of its message (ref: <sha>#n).
   const commitText: Record<string, unknown>[] = [];
   const commitsSeen = new Set<string>();
   for (const k of [...said].sort((x, y) =>
@@ -515,10 +835,8 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
   )) {
     if (commitsSeen.has(String(k.commit))) continue;
     commitsSeen.add(String(k.commit));
-    const scope = (commitScope.get(String(k.commit)) ?? []).sort().join(' ');
     commitText.push({
-      ref: `commit:${String(k.commit)}`,
-      about: scope,
+      ref: String(k.commit),
       text: k.subject,
       implementedBy: implementedBy(String(k.commit), k.subject),
     });
@@ -527,7 +845,6 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       .sort((x, y) => Number(x.id.split('#')[1]) - Number(y.id.split('#')[1])))
       commitText.push({
         ref: m.id,
-        about: `commit ${String(k.commit)} only`,
         text: m.text,
         implementedBy: implementedBy(String(k.commit), m.text),
       });
@@ -541,10 +858,6 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
           ? String(a.id)
           : `${String(a.id)} (${String(a.how)})`,
       );
-    if (!links.length && !(r.commits as string[]).length)
-      (r as Record<string, unknown>).requests = [
-        'none captured: give the reason a commit message states, if any; never invent one',
-      ];
   }
 
   const receipts = g
@@ -573,34 +886,36 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     lastOf.delete(key);
     lastOf.set(key, r);
   }
-  // Runs that saw the final edits are what counts; an earlier, stale run is kept
-  // only when no later run of its kind exists, as the best evidence there is.
+  // One run per kind: the latest that saw the final edits, else the latest
+  // with a recorded result, else the latest. At equal standing the whole
+  // suite says more than a focused rerun after it. A kind Tracetoon checked
+  // itself on the submitted content (a V receipt) needs no log run.
   const current = (r: Record<string, unknown>) =>
     r.revision === 'no later edits seen' && !((r.later as string[]) ?? []).length;
-  for (const [cmd, r] of [...lastOf])
-    if (!current(r) && [...lastOf.values()].some((x) => current(x) && x.kind === r.kind))
-      lastOf.delete(cmd);
-  const staleKinds = new Map<string, string>();
-  for (const [cmd, r] of lastOf) if (!current(r)) staleKinds.set(String(r.kind), cmd);
-  for (const [cmd, r] of [...lastOf])
-    if (!current(r) && staleKinds.get(String(r.kind)) !== cmd) lastOf.delete(cmd);
-  // The whole suite's latest run says more than a focused rerun after it:
-  // keep it too, dated by the edits that came after.
-  const fullSuite = [...runs]
-    .reverse()
-    .find(
-      (r) =>
-        r.kind === 'test' &&
-        /^(?:(?:bun|npm|pnpm|yarn)(?: run)? test|pytest|cargo test|go test \.\/\.\.\.)$/.test(
-          shownCommand(r.cmd),
-        ),
+  const standing = (r: Record<string, unknown>) =>
+    (current(r) ? 2 : 0) + (r.outcome === 'passed' || r.outcome === 'failed' ? 1 : 0);
+  const wholeSuite = (r: Record<string, unknown>) =>
+    r.kind === 'test' &&
+    /^(?:(?:bun|npm|pnpm|yarn)(?: run)? test|pytest|cargo test|go test \.\/\.\.\.)$/.test(
+      shownCommand(r.cmd),
     );
-  if (fullSuite && ![...lastOf.values()].includes(fullSuite))
-    lastOf.set(shownCommand(fullSuite.cmd), fullSuite);
+  const receiptKinds = new Set(receipts.map((v) => String(v.kind)));
+  const latestOf = new Map<string, Record<string, unknown>>();
+  for (const r of runs) {
+    const kind = String(r.kind);
+    if (receiptKinds.has(kind)) continue;
+    const prev = latestOf.get(kind);
+    if (
+      !prev ||
+      standing(r) > standing(prev) ||
+      (standing(r) === standing(prev) && !(wholeSuite(prev) && !wholeSuite(r)))
+    )
+      latestOf.set(kind, r);
+  }
   const validation: Record<string, unknown>[] = (
     [
       ...receipts.map((v) => ({ ...v, editedAfter: [] as string[] })),
-      ...[...lastOf.values()]
+      ...[...latestOf.values()]
         .sort((a, b) => factOrder(String(a.id), String(b.id)))
         .map((r) => ({
           ...r,
@@ -650,6 +965,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     .map((v) => String(v.id));
   const limits: Record<string, unknown>[] = [];
   const uncheckedAll: string[] = [];
+  const branchy: string[] = [];
   for (const c of changes) {
     const hs = hunkRows.filter((h) => h.change === c.id);
     const behavior = ((c.files as string[]) ?? []).filter((f) =>
@@ -670,44 +986,24 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
           ? `No logged passing check after the last captured edit of ${unchecked.join(', ')}; fresh ${freshPass.join(', ')} passed on the submitted code, which shows the suite passes, not that it exercises this change.`
           : `No recorded passing test, build, lint or typecheck run after the last captured edit of ${unchecked.join(', ')}.`,
       });
-    const unexplained = hs.filter(
-      (h) =>
-        !Number(h.edits) &&
-        !((h.commits as string[]) ?? []).length &&
-        ['behavior', 'tests'].includes(fileRole.get(String(h.file)) ?? ''),
-    );
-    if (unexplained.length)
-      limits.push({
-        change: c.id,
-        kind: 'instruction',
-        limit: `${unexplained.length} hunk(s) with no captured edit or commit link (${refs(
-          unexplained.map((h) => String(h.diff)),
-          4,
-        ).join(' ')}): read them in the patch before describing them.`,
-      });
-    // An instruction, not a fact: no count (the line test is rough) and no
-    // wording a writer could copy into the PR as a claim about the code.
+    // Symbols with conditional paths, for render's check of "always", "only"…
     if (Number(c.branches) > 0)
-      limits.push({
-        change: c.id,
-        kind: 'instruction',
-        limit: `Before writing "always", "only", "no longer" or "all" about ${(() => {
-          const where = uniq(
-            hs
-              .filter((h) => Number(h.branches) > 0)
-              .map((h) => String(((h.symbols as string[]) ?? [])[0] ?? h.file)),
-          ).slice(0, 5);
-          return where.length ? where.join(', ') : 'this change';
-        })()}, read its conditions in the patch; say it only if every path does it.`,
-      });
-    if (!asked.some((a) => a.change === c.id) && !said.some((x) => x.change === c.id))
-      limits.push({
-        change: c.id,
-        kind: 'instruction',
-        limit:
-          'No captured request: give the reason a commit message states, if any; never invent a motive.',
-      });
+      branchy.push(
+        ...hs
+          .filter((h) => Number(h.branches) > 0)
+          .map((h) => String(((h.symbols as string[]) ?? [])[0] ?? h.file)),
+      );
   }
+  // Changes no captured request covers: one open point for all of them.
+  const unasked = changes
+    .filter((c) => !asked.some((a) => a.change === c.id))
+    .map((c) => String(c.id));
+  if (unasked.length)
+    limits.push({
+      change: unasked,
+      kind: 'open',
+      limit: `No user request was recorded for ${unasked.length === changes.length ? (unasked.length === 1 ? 'this change' : 'any of these changes') : unasked.join(', ')}.`,
+    });
 
   // Open points a reviewer should hear about, each worth a sentence in the PR.
   for (const m of g
@@ -727,7 +1023,11 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       .filter((r) => r.outcome === 'passed' || r.outcome === 'failed')
       .flatMap((r) => shownCommand(r.cmd).split(' ; ')),
   );
-  for (const v of validation)
+  for (const v of [...lastOf.values()].filter(
+    (r) =>
+      !receiptKinds.has(String(r.kind)) &&
+      (current(r) || [...latestOf.values()].includes(r)),
+  ))
     if (
       v.outcome === 'unknown' &&
       ['test', 'typecheck', 'lint'].includes(String(v.kind)) &&
@@ -744,29 +1044,6 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
   // lines, so it can't tell whether a failure's output was recorded, and the
   // claim was judged false where it was (dev16).)
   limits.forEach((l, i) => (l.ref = `L${i + 1}`));
-
-  const avoid = [
-    'Limits and these rules are instructions for you, not content for the PR: never copy their wording into the description.',
-    "Don't write test, build, lint or typecheck results yourself: put the line `<!-- tracetoon:validation -->` where the validation section belongs, and `render` writes it from the validation rows.",
-    'Tag each sentence that states a fact with the refs it rests on, e.g. `[CH1, S1]` (any ref from the brief: changes, requests, commit messages, validation rows); `render` removes the tags and lists sentences with no tag or an unknown ref.',
-    "Tracetoon's line matching (matched %, unmatched lines, commits made in sessions) is not authorship: don't report who wrote what as percentages or counts.",
-    'A commit-message sentence speaks for its own commit only: never generalize it to other commits ("all of these were found while…").',
-    'Results that appear only in a commit message (validation rows marked "asserted") are not runs: attribute them to that commit message or leave them out.',
-    "Checks listed with files edited after them did not see those edits: don't present them as testing the final code.",
-    'A check dated after the last captured edit ran after the last edit the logs show, not necessarily on the final code: say that, and never "on the final code" or "after all changes".',
-    'Absence of a recorded run is not evidence a check was never run or that code is untested: write "no recorded run", never "not tested", "not exercised" or "never ran".',
-    'Quote run results exactly as the validation rows give them (command and counts); never add a count, suite or file the row does not show.',
-    'Point reviewers at files (from commitMessages.implementedBy or changes.where), not at functions, and not at the largest file.',
-    'Name a file or symbol for a commit-message sentence only from its implementedBy; when implementedBy is empty, describe the behavior without naming where it lives.',
-    'Call a symbol new, added or introduced only if it is in newSymbols; others already existed and were changed.',
-    'State what the code did before whenever the removed lines, changes.was or the request show it, quoting values (e.g. 30 minutes → 5 minutes); never infer old behavior from the new code alone.',
-    'No blanket negatives ("no X was run", "nothing tests Y", "never recorded") unless a limits row of kind open states it; and give mechanism claims their conditions (flags, fallbacks) instead of "any", "always" or "every".',
-    'Give every changed area at least a clause, including docs, skill or config files and each test file; say each thing once.',
-    "Don't count tests or name test helpers: say what the added test titles check.",
-    "State plainly what the patch shows. Attribute only what it can't show (a reason, a result, a remark about scope) to the request or commit message that says it.",
-    "Don't repeat in the prose what the generated Validation section says about runs.",
-    "Words a commit message puts in parentheses or asides ('local only', 'experimental', 'for now') are that commit's own remark: attribute them or leave them out; never turn them into claims about what the PR includes.",
-  ].map((rule) => ({ rule }));
 
   // What the added tests check, by their titles.
   const tests: Record<string, unknown>[] = [];
@@ -814,9 +1091,10 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       files: refs(generated, 6),
     });
 
-  // Rules and open points first: writers often read only the head of the output.
+  const process = processRows(g, turns, runs);
+
+  // Open points first: writers often read only the head of the output.
   const sections = [
-    section('avoid', ['rule'], avoid),
     section('limits', ['ref', 'change', 'kind', 'limit'], limits),
     section(
       'changes',
@@ -826,6 +1104,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
         'where',
         'newSymbols',
         'was',
+        'behavior',
         'added',
         'removed',
         'diff',
@@ -834,8 +1113,9 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       ],
       changeRows,
     ),
-    section('requests', ['ref', 'kind', 'text'], requests),
-    section('commitMessages', ['ref', 'about', 'text', 'implementedBy'], commitText),
+    section('process', ['ref', 'kind', 'fact', 'cites'], process),
+    section('requests', ['ref', 'kind', 'text', 'truncated'], requests),
+    section('commitMessages', ['ref', 'text', 'implementedBy'], commitText),
     section('tests', ['ref', 'file', 'titles'], tests),
     section('housekeeping', ['ref', 'what', 'files'], housekeeping),
     section(
@@ -844,14 +1124,18 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       validation,
     ),
   ];
-  return { sections, unchecked: uniq(uncheckedAll).sort() };
+  return {
+    sections,
+    unchecked: uniq(uncheckedAll).sort(),
+    branchy: uniq(branchy).sort(),
+  };
 }
 
 export const QUERIES: NamedQuery[] = [
   {
     name: 'brief',
     args: '',
-    help: 'Start here. The PR as a reviewer needs it: change units with the symbols that own them, why each was made (requests, plans, commit-message sentences scoped to their commit), checks with when they ran, limits the evidence leaves open, and what not to claim.',
+    help: 'Start here. The PR as a reviewer needs it: change units with the symbols that own them, why each was made (requests, plans, commit-message sentences scoped to their commit), checks with when they ran, how the work went (sessions, plans, check runs) and the open points the evidence leaves.',
     run: (g) => brief(g),
   },
   {
