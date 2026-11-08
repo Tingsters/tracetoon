@@ -128,24 +128,23 @@ reviewer separate.
       and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
       are instructions for you: follow them, never copy their wording into the PR.
    2. Write `title.txt` (one line; keep a title the user gave) and `body.md`
-      following [references/writing-guide.md](references/writing-guide.md), in
-      this order:
-      - **Problem:** the goal request (`requests` row marked goal), what was
-        wrong or missing before, and what triggered the change, as the request
-        or commit message says it. A `changes.was` line may be quoted verbatim
-        (`old` → `new` in its file); never retell what the old code did.
-      - **Changes:** one short part per change unit, covering each of its
-        commit-message sentences. Name the file a sentence's `implementedBy`
-        gives; where `implementedBy` is empty, describe the behavior without
-        naming a file. Call a symbol new only if it is in `newSymbols`.
-        Words a commit message puts in parentheses ("local only") are its own
-        remark: attribute them or leave them out.
-      - **Tests:** what the added tests check (`tests` rows).
-      - **Consequences and open points:** from the `limits` rows.
-      - **Where to start reviewing** (files, not functions), and any PR or issue
-        links the commits give.
-      - **Housekeeping:** one line for the `housekeeping` rows (version, rebuilt files).
-        Give a reason only as a request or commit message states it, attributed
+      following [references/writing-guide.md](references/writing-guide.md). Write
+      for a reviewer, in plain prose, not as an inventory of files and symbols:
+      - Open with the problem: the goal request (`requests` row marked goal),
+        what was wrong or missing before, and what triggered the change, as the
+        request or commit message says it. A `changes.was` line may be quoted
+        verbatim (`old` → `new` in its file); never retell what the old code did.
+      - Then what changed, grouped by behavior rather than file by file,
+        covering each commit-message sentence. Name the file a sentence's
+        `implementedBy` gives; where it is empty, describe the behavior without
+        naming a file. Say what code does instead of listing identifiers; call a
+        symbol new only if it is in `newSymbols`. Words a commit message puts in
+        parentheses ("local only") are its own remark: attribute them or leave
+        them out.
+      - What the added tests check (`tests` rows), the open points (`limits`
+        rows of kind `open`), which files to start reviewing with, any PR or
+        issue links the commits give, and one closing line for `housekeeping`.
+      Give a reason only as a request or commit message states it, attributed
         ("the commit message says…"); never invent one.
    3. Tag every sentence that states a fact with the brief refs it rests on, at
       the end of the sentence: `[CH1, S1]`, `[T1]`, `[commit:<sha>#2]`. A
@@ -162,7 +161,7 @@ reviewer separate.
       instruction and the run folder's path. It checks each sentence against the
       patch and writes `reviewer-notes.md`. If your host can't start a subagent,
       do that pass yourself, re-reading only what the reviewer brief lists. Apply
-      every WRONG, MISSING and ATTRIBUTE note in `body.md` (one round), then
+      every WRONG, MISSING, ATTRIBUTE and STYLE note in `body.md` (one round), then
       `tracetoon render --reviewed --json --run <id>` until it reports nothing
       left to fix. Skip this step only if the user asked for the cheapest run;
       then the step-5 render is final (the lean path).

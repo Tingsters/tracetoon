@@ -52,6 +52,7 @@ One line per finding, most serious first, at most 12:
 - WRONG: "<the sentence, short>" — <what the patch shows instead> (<diff ref or file>)
 - MISSING: <what to add, in the brief's words> (<brief ref>)
 - ATTRIBUTE: "<the sentence>" — only <commit/request ref> says this
+- STYLE: <where the draft lists files or identifiers without saying what they do, or repeats itself> (at most 2)
 ```
 
 If nothing is wrong or missing, write `- OK: no findings`. Then stop; the main

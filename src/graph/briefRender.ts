@@ -378,6 +378,19 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
           'only a commit message says this: write "the commit message says…" or leave it out.',
       });
   }
+  // Brief refs are for render, not readers: one left in the prose (outside a tag) is noise.
+  for (const unit of proseUnits(body)) {
+    const clean = unit.replace(TAG, '');
+    const leaked = (clean.match(/\b(?:CH|HK|[STLRDP])\d+\b/g) ?? []).filter((r) =>
+      known.has(r),
+    );
+    if (leaked.length)
+      flags.push({
+        sentence: clean.trim(),
+        severity: 'fix',
+        problem: `${uniqList(leaked).join(', ')} is a brief ref, not something a reader can follow: say what it refers to, and keep refs only in the [tags].`,
+      });
+  }
   // Brief rows nothing cites: each deserves a sentence.
   const cited = (ref: unknown) => {
     const r = String(ref ?? '').replace(/^commit:/, '');
@@ -415,15 +428,7 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
   for (const r of rowsOf(b, 'limits'))
     if (r.kind === 'open' && !cited(r.ref))
       uncovered.push(`${String(r.ref)} (open point): ${clipped(String(r.limit ?? ''))}`);
-  // New code nothing names: one sentence on what each does (up to 3 per change).
-  const prose = proseUnits(body).join(' ');
-  for (const r of changeRows) {
-    const unnamed = ((r.newSymbols as string[]) ?? [])
-      .filter((x) => x.length >= 5 && !prose.includes(x))
-      .slice(0, 3);
-    if (unnamed.length)
-      uncovered.push(`${String(r.change)} new code not described: ${unnamed.join(', ')}`);
-  }
+
   for (const r of rowsOf(b, 'requests'))
     if (String(r.kind ?? '').startsWith('goal') && !cited(r.ref))
       uncovered.push(`${String(r.ref)} (the goal): ${clipped(String(r.text ?? ''))}`);
@@ -448,4 +453,5 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
   };
 }
 
+const uniqList = (xs: string[]) => [...new Set(xs)];
 const clipped = (s: string) => (s.length > 100 ? `${s.slice(0, 99)}…` : s);

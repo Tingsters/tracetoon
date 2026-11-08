@@ -579,6 +579,19 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
   for (const [cmd, r] of lastOf) if (!current(r)) staleKinds.set(String(r.kind), cmd);
   for (const [cmd, r] of [...lastOf])
     if (!current(r) && staleKinds.get(String(r.kind)) !== cmd) lastOf.delete(cmd);
+  // The whole suite's latest run says more than a focused rerun after it:
+  // keep it too, dated by the edits that came after.
+  const fullSuite = [...runs]
+    .reverse()
+    .find(
+      (r) =>
+        r.kind === 'test' &&
+        /^(?:(?:bun|npm|pnpm|yarn)(?: run)? test|pytest|cargo test|go test \.\/\.\.\.)$/.test(
+          shownCommand(r.cmd),
+        ),
+    );
+  if (fullSuite && ![...lastOf.values()].includes(fullSuite))
+    lastOf.set(shownCommand(fullSuite.cmd), fullSuite);
   const validation: Record<string, unknown>[] = (
     [
       ...receipts.map((v) => ({ ...v, editedAfter: [] as string[] })),
@@ -700,7 +713,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     limits.push({
       change: null,
       kind: 'open',
-      limit: `Only commit ${String(m.commit)}'s message reports "${clipText(m.text, 140)}"; no captured run shows that result.`,
+      limit: `"${clipText(m.text, 140)}" comes only from commit ${String(m.commit)}'s message: attribute it to that message, and don't say what any run did or didn't show.`,
     });
   // A run whose result wasn't captured is open only if no run of that command
   // has a recorded result (an earlier pass still tells the reader something).

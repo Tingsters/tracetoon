@@ -471,7 +471,7 @@ describe('evidence graph', () => {
     ).toEqual(['src/digest/build.ts']);
   });
 
-  test('coverage lists open limits and undescribed new code; eval rows stay out of Validation', () => {
+  test('coverage lists open limits; eval rows stay out of Validation', () => {
     const b = {
       unchecked: [],
       sections: [
@@ -530,10 +530,28 @@ describe('evidence graph', () => {
     );
     expect(r.uncovered).toEqual([
       'L1 (open point): Only commit abc1234\'s message reports "50/50"; no captured run shows that result.',
-      'CH1 new code not described: splitCommands',
     ]);
     expect(r.text).toContain('- `bun test`: passed (9 pass; 0 fail).');
     expect(r.text).not.toContain('eval.ts');
+  });
+
+  test('a brief ref left in the prose is flagged for rewording', () => {
+    const b = {
+      unchecked: [],
+      sections: [
+        {
+          title: 'tests',
+          rows: [{ ref: 'T1', file: 'tests/shell.test.ts', titles: ['x'] }],
+        },
+      ],
+    } as any;
+    const r = applyBrief('No test in T1 names backtick quotes yet. [T1]', b);
+    expect(r.flags.map((f) => [f.severity, f.problem.slice(0, 22)])).toEqual([
+      ['fix', 'T1 is a brief ref, not'],
+    ]);
+    expect(applyBrief('The shell tests cover chains and pipes. [T1]', b).flags).toEqual(
+      [],
+    );
   });
 
   test('shown commands drop output redirections', () => {
