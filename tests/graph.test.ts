@@ -16,7 +16,7 @@ import { toToon } from '../src/graph/toon.ts';
 import { deriveFromGraphJson } from '../src/graph/derive.ts';
 import { GraphEngine, graphEngineAvailable, withGraph } from '../src/graph/engine.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
-import { describedHunks, findQuery } from '../src/graph/queries.ts';
+import { describedHunks, findQuery, listsSeveral } from '../src/graph/queries.ts';
 import { applyBrief, shownCommand, validationSection } from '../src/graph/briefRender.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';
@@ -247,14 +247,14 @@ describe('evidence graph', () => {
     expect(b.code).toBe(0);
     const sec = (t: string) => b.json.sections.find((x: any) => x.title === t).rows;
     expect(b.json.sections.map((x: any) => x.title)).toEqual([
+      'avoid',
+      'limits',
       'changes',
       'requests',
       'commitMessages',
       'tests',
       'housekeeping',
       'validation',
-      'limits',
-      'avoid',
     ]);
     const changes = sec('changes');
     const of = (file: string) =>
@@ -437,6 +437,103 @@ describe('evidence graph', () => {
       '- `bun x tsc --noEmit`: passed.',
       "- Tracetoon can't tell whether these runs saw the final commit.",
     ]);
+  });
+
+  test('a sentence listing several behaviors, or fitting two files equally, is placed nowhere', () => {
+    expect(
+      listsSeveral(
+        'Files under .git are not repo edits; binary files count as changed, and work after the last commit belongs to the next PR.',
+      ),
+    ).toBe(true);
+    expect(listsSeveral('Sharing a session no longer makes two PRs a saga.')).toBe(false);
+    const tie = [
+      { file: 'src/a.ts', symbols: [], words: ['commit', 'quiet', 'subject'] },
+      { file: 'src/b.ts', symbols: [], words: ['commit', 'quiet', 'subject'] },
+    ];
+    expect(describedHunks(tie, 'Quiet commits are recognized by their subject.')).toEqual(
+      [],
+    );
+    // A symbol whose name shares the sentence's words wins (commands → commandKey).
+    const named = [
+      {
+        file: 'src/digest/build.ts',
+        symbols: ['commandKey'],
+        words: ['runner', 'label'],
+      },
+      {
+        file: 'src/correlate/correlate.ts',
+        symbols: ['matchSession'],
+        words: ['runner', 'label'],
+      },
+    ];
+    expect(
+      describedHunks(named, 'Test commands are labeled by their test runner.'),
+    ).toEqual(['src/digest/build.ts']);
+  });
+
+  test('coverage lists open limits and undescribed new code; eval rows stay out of Validation', () => {
+    const b = {
+      unchecked: [],
+      sections: [
+        {
+          title: 'limits',
+          rows: [
+            {
+              ref: 'L1',
+              kind: 'open',
+              limit:
+                'Only commit abc1234\'s message reports "50/50"; no captured run shows that result.',
+            },
+            {
+              ref: 'L2',
+              kind: 'instruction',
+              limit: 'Before writing "always" about x, read its conditions.',
+            },
+          ],
+        },
+        {
+          title: 'changes',
+          rows: [
+            {
+              change: 'CH1',
+              where: ['src/shell.ts (splitCommands)'],
+              newSymbols: ['splitCommands'],
+            },
+          ],
+        },
+        {
+          title: 'validation',
+          rows: [
+            {
+              check: 'R1',
+              kind: 'eval',
+              outcome: 'passed',
+              result: '50/50 checks pass',
+              cmd: 'bun scripts/eval.ts',
+              editedAfter: [],
+            },
+            {
+              check: 'R2',
+              kind: 'test',
+              outcome: 'passed',
+              result: '9 pass; 0 fail',
+              cmd: 'bun test',
+              editedAfter: [],
+            },
+          ],
+        },
+      ],
+    } as any;
+    const r = applyBrief(
+      'The shell module changes how commands split. [CH1]\n\n<!-- tracetoon:validation -->',
+      b,
+    );
+    expect(r.uncovered).toEqual([
+      'L1 (open point): Only commit abc1234\'s message reports "50/50"; no captured run shows that result.',
+      'CH1 new code not described: splitCommands',
+    ]);
+    expect(r.text).toContain('- `bun test`: passed (9 pass; 0 fail).');
+    expect(r.text).not.toContain('eval.ts');
   });
 
   test('shown commands drop output redirections', () => {

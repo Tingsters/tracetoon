@@ -7,9 +7,9 @@ description: Create a GitHub PR with a description and optional comic written fr
 
 Tracetoon reads the session logs your agents already keep on disk, finds the
 sessions that produced the current branch, and gives you a redacted digest and
-an evidence brief. With a brief you write the description yourself from it (the
-lean path); without one you coordinate a researcher, a drafter and an
-independent reviewer. Tracetoon draws the comic, checks the result, and creates
+an evidence brief. With a brief you write the description yourself from it and
+have one slim reviewer check it (the brief path); without one you coordinate a
+researcher, a drafter and an independent reviewer. Tracetoon draws the comic, checks the result, and creates
 or updates the PR.
 
 ## The tool
@@ -117,10 +117,13 @@ reviewer separate.
      In the public body, name the commands and observed results. Keep receipt
      internals local; do not turn content or environment fingerprints into a
      general validation assurance. Attribute each result to its actual command.
-     2a. **Lean brief path** (whenever `prepare --json` returns a `brief`). Write the
-     description yourself, inline, from the brief. Skip the researcher,
-     `guidance.json`, the delegated drafter and the independent reviewer (steps 3,
-     4 and 6); still apply step 3's AI-policy bullets from `context.json`.
+     2a. **Brief path** (whenever `prepare --json` returns a `brief`). Write the
+     description yourself, inline, from the brief, then have one slim reviewer
+     check it. Skip the researcher, `guidance.json`, the delegated drafter and the
+     full independent review (steps 3, 4 and 6); still apply step 3's AI-policy
+     bullets from `context.json`. Read every command's whole output: never pipe
+     `prepare`, `query` or `render` through `head` or `tail` (the rules and open
+     points come first, and render's first line says what is left to fix).
    1. Read the `brief` (in the prepare output; also `tracetoon query brief --run <id>`)
       and the diff refs it cites (`changes.patch`). Its `limits` and `avoid` rows
       are instructions for you: follow them, never copy their wording into the PR.
@@ -154,9 +157,19 @@ reviewer separate.
       (rewording it; adding a tag doesn't fix a flagged sentence) and add one
       sentence for each uncovered brief row, then render again. Repeat, up to
       three rounds, until it reports nothing left to fix.
-   6. Draw a comic if one is wanted (step 5, without a separate reviewer), then
-      publish (step 7).
-3. **Context** (full path; the lean path in 2a goes from step 2 to step 7).
+   6. **Review.** Start one fresh subagent, not a fork of this conversation, with
+      [references/reviewer-brief.md](references/reviewer-brief.md) as its whole
+      instruction and the run folder's path. It checks each sentence against the
+      patch and writes `reviewer-notes.md`. If your host can't start a subagent,
+      do that pass yourself, re-reading only what the reviewer brief lists. Apply
+      every WRONG, MISSING and ATTRIBUTE note in `body.md` (one round), then
+      `tracetoon render --reviewed --json --run <id>` until it reports nothing
+      left to fix. Skip this step only if the user asked for the cheapest run;
+      then the step-5 render is final (the lean path).
+   7. Draw a comic if one is wanted (step 5, without a separate reviewer), then
+      publish (step 7). Publish refuses while render lists sentences to fix or
+      brief rows to cover; `--accept-open` overrides only if the user agrees.
+3. **Context** (full path; the brief path in 2a goes from step 2 to step 7).
    Read the prepared `context.json`; do not repeat preparation. Note the PR template, existing PR,
    settings, AI policy, and `comic.recentComics` (compact creative choices from
    recent comics, so this one can differ; missing legacy fields are unknown).

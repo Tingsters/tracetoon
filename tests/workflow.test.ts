@@ -36,6 +36,7 @@ import {
 } from '../src/workflow/checks.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
 import { publishProblem } from '../src/workflow/readiness.ts';
+import { briefPathOpen } from '../src/commands/publish.ts';
 import { discoveryIndex } from '../src/trace/discovery.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
 import { git } from '../src/util/exec.ts';
@@ -694,6 +695,19 @@ describe('requested PR to publication rehearsal', () => {
     expect(
       publishProblem(repo.root, run, readLocal(join(run.dir, 'approval.json'))!),
     ).toBeUndefined();
+    // The reviewed brief path also needs no full review; it notes whether the slim reviewer ran.
+    const noNotes = ok(repo.root, 'render', '--run', run.id, '--no-comic', '--reviewed');
+    expect(noNotes.contributionReview.mode).toBe('reviewed-brief');
+    expect(noNotes.contributionReview.issues.join(' ')).toContain('no reviewer-notes.md');
+    writeFileSync(join(run.dir, 'reviewer-notes.md'), '- OK: no findings\n');
+    const reviewed = ok(repo.root, 'render', '--run', run.id, '--no-comic', '--reviewed');
+    expect(reviewed.contributionReview.status).toBe('skipped');
+    expect(reviewed.contributionReview.issues.join(' ')).toContain(
+      'checked by one slim reviewer',
+    );
+    expect(
+      publishProblem(repo.root, run, readLocal(join(run.dir, 'approval.json'))!),
+    ).toBeUndefined();
     ok(repo.root, 'render', '--run', run.id, '--no-comic');
     expect(cli(repo.root, ['publish', '--run', run.id], gh).json.error).toContain(
       'independent review',
@@ -1091,4 +1105,22 @@ describe('ordinary git and task identity', () => {
       Object.assign(process.env, saved);
     }
   });
+});
+
+test('on a brief path, publish is blocked while the brief check lists open items', () => {
+  const dir = tempDir();
+  const put = (f: string, v: unknown) => writeFileSync(join(dir, f), JSON.stringify(v));
+  // Not a brief path: no gate.
+  put('review-result.json', { status: 'current', mode: 'delegated' });
+  put('brief-check.json', { open: 2, uncovered: ['CH1: a.ts'] });
+  expect(briefPathOpen({ dir })).toBeUndefined();
+  for (const mode of ['lean', 'reviewed-brief']) {
+    put('review-result.json', { status: 'skipped', mode });
+    put('brief-check.json', { open: 2, uncovered: ['CH1: a.ts'] });
+    expect(briefPathOpen({ dir })).toContain(
+      '2 sentence(s) to fix and 1 brief row(s) to cover',
+    );
+    put('brief-check.json', { open: 0, uncovered: [] });
+    expect(briefPathOpen({ dir })).toBeUndefined();
+  }
 });

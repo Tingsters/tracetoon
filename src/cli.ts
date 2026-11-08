@@ -231,6 +231,10 @@ program
     '--lean',
     'lean brief path: drafted inline from the evidence brief, no separate reviewer needed to publish',
   )
+  .option(
+    '--reviewed',
+    'reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md)',
+  )
   .action((o) => {
     o.noComic = o.comic === false;
     renderCmd(cwd, { ...g(), ...o });
@@ -244,6 +248,10 @@ program
   .option('--no-push', 'require the rendered revision to already be on the remote')
   .option('--draft', 'open the PR as a draft')
   .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
+  .option(
+    '--accept-open',
+    'publish although the last render listed sentences to fix or brief rows to cover (recorded)',
+  )
   .action((o) => publishCmd(cwd, { ...g(), ...o }));
 
 const comic = program.command('comic').description("make this PR's comic");

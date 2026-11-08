@@ -208,9 +208,12 @@ export interface ReviewInput {
 }
 
 export interface ReviewResult {
-  /** `skipped`: the lean brief path, drafted inline with no separate review. */
+  /**
+   * `skipped`: a brief path (lean: no review; reviewed-brief: one slim reviewer
+   * whose corrections were applied), not the full independent review.
+   */
   status: 'current' | 'incomplete' | 'missing' | 'stale' | 'invalid' | 'skipped';
-  mode?: 'delegated' | 'inline' | 'lean';
+  mode?: 'delegated' | 'inline' | 'lean' | 'reviewed-brief';
   issues: string[];
   guidanceStatus: GuidanceResult['status'];
   assessments: Assessment[];

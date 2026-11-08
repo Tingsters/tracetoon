@@ -247,15 +247,37 @@ const proseWords = (text: string) =>
       .filter((w) => (w.length >= 3 || /^\d+$/.test(w)) && !STOP.has(w)),
   );
 
+/** Crude stem so "commands", "labeled" and "rejecting" meet `commandKey`, `label`, `reject`. */
+const stem = (w: string) =>
+  w.replace(/(ies|es|s|ed|ing)$/, (m) => (m === 'ies' ? 'y' : '')) || w;
+
+/** A sentence that lists three or more behaviors ("a, b, and c") can't be placed in one file. */
+export function listsSeveral(text: string): boolean {
+  const parts = text
+    .replace(/\([^)]*\)/g, '')
+    .split(/[,;]|\band\b/)
+    .filter((p) => p.trim().split(/\s+/).length >= 2);
+  return parts.length >= 3;
+}
+
 /**
- * The hunks a sentence describes, among one commit's hunks: those whose changed
- * lines share the sentence's words, weighted by how few hunks share each word.
- * Returns the files, best first.
+ * The files a sentence describes, among one commit's hunks: those whose changed
+ * lines and symbol names share the sentence's rarer words. Returns nothing when
+ * the sentence lists several behaviors or two files fit about equally, since a
+ * wrong file misleads more than none (dev14: every Terra error on pr5).
  */
 export function describedHunks(hunks: Record<string, unknown>[], text: string): string[] {
-  const words = proseWords(text);
-  if (!words.length || !hunks.length) return [];
-  const has = hunks.map((h) => new Set((h.words as string[]) ?? []));
+  const words = uniq(proseWords(text).map(stem));
+  if (!words.length || !hunks.length || listsSeveral(text)) return [];
+  const has = hunks.map((h) => new Set(((h.words as string[]) ?? []).map(stem)));
+  const named = hunks.map(
+    (h) =>
+      new Set(
+        ((h.symbols as string[]) ?? []).flatMap((x) =>
+          proseWords(x.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ')).map(stem),
+        ),
+      ),
+  );
   const idf = new Map(
     words.map((w) => {
       const df = has.filter((x) => x.has(w)).length;
@@ -263,44 +285,45 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
     }),
   );
   // Long hunks (a file of prompt text, a fixture) share some word with any
-  // sentence; scale by size, as BM25 does, so they don't win by bulk.
+  // sentence; scale by size, as BM25 does, so they don't win by bulk. A word
+  // that is also in the name of the symbol the hunk changes counts double.
   const avg = has.reduce((n, x) => n + x.size, 0) / has.length || 1;
-  const scored = hunks
+  let scored = hunks
     .map((h, i) => ({
-      h,
+      file: String(h.file),
       score:
-        words.reduce((n, w) => n + (has[i]!.has(w) ? idf.get(w)! : 0), 0) /
+        words.reduce(
+          (n, w) =>
+            n +
+            (has[i]!.has(w) ? idf.get(w)! : 0) +
+            (named[i]!.has(w) ? idf.get(w)! || 1 : 0),
+          0,
+        ) /
         (0.5 + (0.5 * has[i]!.size) / avg),
-      hits: words.filter((w) => has[i]!.has(w)).length,
+      hits: words.filter((w) => has[i]!.has(w) || named[i]!.has(w)).length,
     }))
-    .filter((x) => x.hits >= Math.min(2, words.length))
-    .sort((a, b) => b.score - a.score);
-  if (!scored.length) return [];
-  // Tests and docs describe behavior too; the code that does it comes first.
-  const isCode = (f: unknown) =>
-    !/(^|\/)(tests?|__tests__|spec|docs?)\/|\.(test|spec)\.\w+$|\.(md|mdx|txt)$/.test(
-      String(f),
-    );
+    .filter((x) => x.hits >= Math.min(2, words.length));
   // Version files match any sentence with a number; they belong only to version sentences.
-  if (!/\bversion|\bbump/i.test(text)) {
-    const versionless = scored.filter(
-      (x) =>
-        !/(^|\/)(VERSION|package\.json|plugin\.json|version\.\w+)$/.test(
-          String(x.h.file),
-        ),
+  if (!/\bversion|\bbump/i.test(text))
+    scored = scored.filter(
+      (x) => !/(^|\/)(VERSION|package\.json|plugin\.json|version\.\w+)$/.test(x.file),
     );
-    scored.splice(0, scored.length, ...versionless);
-    if (!scored.length) return [];
-  }
-  const code = scored.filter((x) => isCode(x.h.file));
-  if (code.length && !/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b/i.test(text))
-    scored.splice(0, scored.length, ...code);
-  const best = scored[0]!.score;
-  // Files only: naming symbols here led writers to pin behaviors on the
-  // wrong function (dev13); the file is what the diff shows reliably.
-  return uniq(
-    scored.filter((x) => x.score >= best * 0.6).map((x) => String(x.h.file)),
-  ).slice(0, 3);
+  // Tests and docs describe behavior too; the code that does it comes first.
+  const isCode = (f: string) =>
+    !/(^|\/)(tests?|__tests__|spec|docs?)\/|\.(test|spec)\.\w+$|\.(md|mdx|txt)$/.test(f);
+  if (
+    scored.some((x) => isCode(x.file)) &&
+    !/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b/i.test(text)
+  )
+    scored = scored.filter((x) => isCode(x.file));
+  // Best hunk per file.
+  const byFile = new Map<string, number>();
+  for (const x of scored) byFile.set(x.file, Math.max(byFile.get(x.file) ?? 0, x.score));
+  const ranked = [...byFile].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return [];
+  // Two files that fit about equally: say neither rather than guess.
+  if (ranked.length > 1 && ranked[1]![1] >= ranked[0]![1] * 0.8) return [];
+  return [ranked[0]![0]];
 }
 
 /**
@@ -624,9 +647,10 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     if (unchecked.length)
       limits.push({
         change: c.id,
+        kind: 'open',
         limit: freshPass.length
           ? `No logged passing check after the last captured edit of ${unchecked.join(', ')}; fresh ${freshPass.join(', ')} passed on the submitted code, which shows the suite passes, not that it exercises this change.`
-          : `No recorded passing test, build, lint or typecheck run after the last captured edit of ${unchecked.join(', ')}: say "no recorded run", not "untested" or "not exercised".`,
+          : `No recorded passing test, build, lint or typecheck run after the last captured edit of ${unchecked.join(', ')}.`,
       });
     const unexplained = hs.filter(
       (h) =>
@@ -637,6 +661,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     if (unexplained.length)
       limits.push({
         change: c.id,
+        kind: 'instruction',
         limit: `${unexplained.length} hunk(s) with no captured edit or commit link (${refs(
           unexplained.map((h) => String(h.diff)),
           4,
@@ -647,6 +672,7 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     if (Number(c.branches) > 0)
       limits.push({
         change: c.id,
+        kind: 'instruction',
         limit: `Before writing "always", "only", "no longer" or "all" about ${(() => {
           const where = uniq(
             hs
@@ -659,10 +685,44 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
     if (!asked.some((a) => a.change === c.id) && !said.some((x) => x.change === c.id))
       limits.push({
         change: c.id,
+        kind: 'instruction',
         limit:
           'No captured request: give only a reason a commit message states, attributed to it ("the commit message says…"); don\'t invent one.',
       });
   }
+
+  // Open points a reviewer should hear about, each worth a sentence in the PR.
+  for (const m of g
+    .run(
+      'MATCH (m:CommitClaim {assertsResult: true}) RETURN m.id AS id, m.commit AS commit, m.text AS text',
+    )
+    .rows.sort((a, b) => String(a.id).localeCompare(String(b.id))))
+    limits.push({
+      change: null,
+      kind: 'open',
+      limit: `Only commit ${String(m.commit)}'s message reports "${clipText(m.text, 140)}"; no captured run shows that result.`,
+    });
+  // A run whose result wasn't captured is open only if no run of that command
+  // has a recorded result (an earlier pass still tells the reader something).
+  const recorded = new Set(
+    runs
+      .filter((r) => r.outcome === 'passed' || r.outcome === 'failed')
+      .flatMap((r) => shownCommand(r.cmd).split(' ; ')),
+  );
+  for (const v of validation)
+    if (
+      v.outcome === 'unknown' &&
+      ['test', 'typecheck', 'lint'].includes(String(v.kind)) &&
+      !shownCommand(v.cmd)
+        .split(' ; ')
+        .some((c) => recorded.has(c))
+    )
+      limits.push({
+        change: null,
+        kind: 'open',
+        limit: `\`${shownCommand(v.cmd)}\` ran, but no result for it was captured in the logs Tracetoon read.`,
+      });
+  limits.forEach((l, i) => (l.ref = `L${i + 1}`));
 
   const avoid = [
     'Limits and these rules are instructions for you, not content for the PR: never copy their wording into the description.',
@@ -723,11 +783,14 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
   if (generated.length)
     housekeeping.push({
       ref: `HK${housekeeping.length + 1}`,
-      what: 'generated or built files rebuilt (not hand-edited)',
+      what: 'generated files changed (not hand-edited)',
       files: refs(generated, 6),
     });
 
+  // Rules and open points first: writers often read only the head of the output.
   const sections = [
+    section('avoid', ['rule'], avoid),
+    section('limits', ['ref', 'change', 'kind', 'limit'], limits),
     section(
       'changes',
       [
@@ -753,8 +816,6 @@ export function briefParts(g: GraphEngine): { sections: Section[]; unchecked: st
       ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'cmd'],
       validation,
     ),
-    section('limits', ['change', 'limit'], limits),
-    section('avoid', ['rule'], avoid),
   ];
   return { sections, unchecked: uniq(uncheckedAll).sort() };
 }

@@ -84,6 +84,8 @@ export function validationSection(b: BriefParts): string {
     }
     const cmd = shownCommand(r.cmd);
     if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
+    // Eval scripts print their own tallies, often from elsewhere: not shown as runs.
+    if (r.kind === 'eval') continue;
     const recorded = r.outcome === 'passed' || r.outcome === 'failed';
     if (!recorded && r.kind !== 'test') continue;
     // Only what the logs establish: the result as recorded, and edits seen after the run.
@@ -409,6 +411,19 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
   for (const r of [...rowsOf(b, 'tests'), ...rowsOf(b, 'housekeeping')])
     if (!cited(r.ref))
       uncovered.push(`${String(r.ref)}: ${String(r.file ?? r.what ?? '')}`);
+  // Open points: each deserves a sentence saying what the evidence leaves open.
+  for (const r of rowsOf(b, 'limits'))
+    if (r.kind === 'open' && !cited(r.ref))
+      uncovered.push(`${String(r.ref)} (open point): ${clipped(String(r.limit ?? ''))}`);
+  // New code nothing names: one sentence on what each does (up to 3 per change).
+  const prose = proseUnits(body).join(' ');
+  for (const r of changeRows) {
+    const unnamed = ((r.newSymbols as string[]) ?? [])
+      .filter((x) => x.length >= 5 && !prose.includes(x))
+      .slice(0, 3);
+    if (unnamed.length)
+      uncovered.push(`${String(r.change)} new code not described: ${unnamed.join(', ')}`);
+  }
   for (const r of rowsOf(b, 'requests'))
     if (String(r.kind ?? '').startsWith('goal') && !cited(r.ref))
       uncovered.push(`${String(r.ref)} (the goal): ${clipped(String(r.text ?? ''))}`);

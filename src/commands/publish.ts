@@ -220,7 +220,20 @@ export interface RenderOpts extends OutOpts {
    * separate researcher or reviewer. Publishing then needs no review.json.
    */
   lean?: boolean;
+  /**
+   * The reviewed brief path: drafted inline from the brief, then checked by one
+   * slim reviewer whose corrections were applied (notes in reviewer-notes.md).
+   */
+  reviewed?: boolean;
 }
+
+/** One line a writer can't miss, printed first: what is left to fix. */
+const briefCheckHeadline = (b: BriefApplied) => {
+  const open = openProblems(b);
+  return open || b.uncovered.length
+    ? `Brief check: ${open} sentence(s) to fix, ${b.uncovered.length} brief row(s) to cover (listed below). Publishing refuses until both are 0.`
+    : 'Brief check: nothing left to fix.';
+};
 
 const briefCheckSummary = (b: BriefApplied) => ({
   validationSection: b.validation,
@@ -521,14 +534,19 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     composition.issues,
   );
   // On the lean path a review someone did write still counts; none is needed.
+  const briefMode = opts.reviewed ? 'reviewed-brief' : opts.lean ? 'lean' : undefined;
   const contributionReview: typeof reviewed =
-    opts.lean && reviewed.status === 'missing'
+    briefMode && reviewed.status === 'missing'
       ? {
           ...reviewed,
           status: 'skipped',
-          mode: 'lean',
+          mode: briefMode,
           issues: [
-            'Lean brief path: drafted inline from the evidence brief, with no separate researcher or reviewer.',
+            briefMode === 'lean'
+              ? 'Lean brief path: drafted inline from the evidence brief, with no separate researcher or reviewer.'
+              : existsSync(join(run.dir, 'reviewer-notes.md'))
+                ? 'Reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md).'
+                : 'Reviewed brief path: no reviewer-notes.md found; run the slim reviewer before publishing.',
           ],
         }
       : reviewed;
@@ -573,9 +591,12 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     digest.graph && !graphQueried(run)
       ? 'Check the draft against the evidence brief (`tracetoon query brief`, also at the top of evidence-notes.md): every claim within its change, reason and validation row, nothing its avoid rules forbid. Then render again.'
       : undefined;
+  const briefFirst = briefCheck.tags || briefMode;
   emit(
     opts,
     {
+      // First, so a writer reading only the head of the output still sees it.
+      ...(briefFirst ? { briefCheck: briefCheckSummary(briefCheck) } : {}),
       run: run.id,
       ...approval,
       ...(writeYourself ? { evidenceNotesPath: join(run.dir, 'evidence-notes.md') } : {}),
@@ -600,6 +621,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     },
     () =>
       [
+        briefFirst ? briefCheckHeadline(briefCheck) : '',
         // A PR the leak scan stops is the first thing the user must hear.
         leakBlocks(approval) ? leakNotice(approval) : '',
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
@@ -825,6 +847,28 @@ export interface PublishOpts extends OutOpts {
   push?: boolean;
   draft?: boolean;
   hosting?: 'auto' | 'branch' | 'attach';
+  /** Publish although the last render listed open problems or uncovered brief rows. */
+  acceptOpen?: boolean;
+}
+
+/** What the last render on a brief path left open, or undefined when nothing is. */
+export function briefPathOpen(run: { dir: string }): string | undefined {
+  const review = readLocal<{ mode?: string }>(join(run.dir, 'review-result.json'));
+  if (review?.mode !== 'lean' && review?.mode !== 'reviewed-brief') return undefined;
+  const b = readLocal<{ open?: number; uncovered?: string[] }>(
+    join(run.dir, 'brief-check.json'),
+  );
+  const open = b?.open ?? 0;
+  const uncovered = b?.uncovered?.length ?? 0;
+  if (!open && !uncovered) return undefined;
+  return `The last render left ${open} sentence(s) to fix and ${uncovered} brief row(s) to cover${
+    uncovered
+      ? `:\n${(b?.uncovered ?? [])
+          .slice(0, 8)
+          .map((u) => `  - ${u}`)
+          .join('\n')}`
+      : '.'
+  }`;
 }
 
 export function publishCmd(cwd: string, opts: PublishOpts): void {
@@ -858,6 +902,18 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     );
   const preparationProblem = publishProblem(truth.toplevel, run, approval);
   if (preparationProblem) throw new UserError(preparationProblem);
+  // On a brief path the brief check is the review: open items block publishing.
+  const briefOpen = briefPathOpen(run);
+  if (briefOpen) {
+    if (!opts.acceptOpen)
+      throw new UserError(
+        `${briefOpen}\nFix body.md and run tracetoon render again, or pass --accept-open if the user agrees to publish as is.`,
+      );
+    writeJson(run, 'accepted-open.json', {
+      at: new Date().toISOString(),
+      reason: briefOpen,
+    });
+  }
   const body = readFileSync(bodyPath, 'utf8');
   if (codeFor(approval, body) !== approval.code || sha(body) !== approval.bodySha) {
     throw new UserError(
