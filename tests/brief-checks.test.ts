@@ -148,7 +148,7 @@ describe('run history', () => {
       run('R15', 3, 'test', 'bun test tests/a.test.ts', 'passed', ['22 pass', '0 fail']),
     ]);
     expect(h?.text).toBe(
-      "3 test runs in this PR's turns (3 commands), in order: failed (R9 `bun test tests/shell.test.ts`), then passed twice (R11, R15)",
+      "Tests failed in the first run, then passed (failing to passing). 3 test runs in this PR's turns (3 commands), in order: failed (R9 `bun test tests/shell.test.ts`), then passed twice (R11, R15)",
     );
     const same = runHistory([
       run('R1', 1, 'test', 'bun test', 'failed', ['1 fail']),
@@ -156,7 +156,7 @@ describe('run history', () => {
       run('R3', 3, 'test', 'bun test', 'passed', ['3 pass']),
     ]);
     expect(same?.text).toBe(
-      "`bun test`: 3 runs in this PR's turns, in order: failed twice (R1, R2), then passed (R3)",
+      "`bun test` failed in the first 2 runs, then passed (failing to passing). 3 runs in this PR's turns, in order: failed twice (R1, R2), then passed (R3)",
     );
     // A pass, then a rerun with no result (pr11's typecheck).
     expect(
@@ -181,6 +181,16 @@ describe('run history', () => {
     );
     expect(runHistory(many)?.text).toBe(
       "`bun test`: 7 runs in this PR's turns, 2 failed (R2, R4); after the last failure: passed twice (R6, R7); 1 other run(s) with no captured result",
+    );
+    // Passing, then failing: the opposite trend, said the same way.
+    expect(
+      runHistory([
+        run('R1', 1, 'build', 'bun run build', 'passed', ['ok']),
+        run('R2', 2, 'build', 'bun run build', 'failed', ['error']),
+        run('R3', 3, 'build', 'bun run build', 'failed', ['error']),
+      ])?.text,
+    ).toBe(
+      "`bun run build` passed in the first run, then failed (passing to failing). 3 runs in this PR's turns, in order: passed (R1), then failed twice (R2, R3)",
     );
     // All alike, or a single run: the counts say it already.
     expect(
@@ -257,6 +267,47 @@ describe('do not say', () => {
     expect(String(rows[2]!.text)).toContain("commit abc1234's claim, not a run");
     expect(rows[4]!.text).toBe(
       '5: a.ts, install.sh, version.ts, package.json, app.mjs. 3 are beyond the version bump: never "housekeeping only", "version bump only" or "no logic changes".',
+    );
+  });
+
+  test('recorded requests, plans and decisions: never "none was recorded"', () => {
+    const withRecords = [
+      ...sections(),
+      { title: 'requests', columns: [], rows: [{ ref: 'S2', kind: 'asked', text: 'x' }] },
+      {
+        title: 'background',
+        columns: [],
+        rows: [
+          { ref: 'D1', kind: 'decision', text: 'q' },
+          { ref: 'P1', kind: 'plan (approved)', text: 'p' },
+        ],
+      },
+      {
+        title: 'process',
+        columns: [],
+        rows: [{ ref: 'PR2', kind: 'plan', fact: 'Plan: P3', cites: ['P3'] }],
+      },
+    ];
+    const row = doNotSayRows(withRecords).find((r) => r.kind === 'recorded requests');
+    expect(row).toEqual({
+      kind: 'recorded requests',
+      text: "Requests/plans/decisions were recorded (S2, D1, P1, P3): don't say none was recorded.",
+      cites: ['S2', 'D1', 'P1', 'P3'],
+    });
+    const plansOnly = doNotSayRows([
+      ...sections(),
+      {
+        title: 'background',
+        columns: [],
+        rows: [{ ref: 'P1', kind: 'plan', text: 'p' }],
+      },
+    ]);
+    expect(plansOnly.find((r) => r.kind === 'recorded requests')?.text).toBe(
+      "Plans were recorded (P1): don't say none was recorded.",
+    );
+    // None recorded: no hint row (the limits rows say it).
+    expect(doNotSayRows(sections()).some((r) => r.kind === 'recorded requests')).toBe(
+      false,
     );
   });
 

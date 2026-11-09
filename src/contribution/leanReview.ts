@@ -169,7 +169,10 @@ export interface ImportContext {
 interface Resolved {
   contract: string[];
   notes: string[];
+  /** Ref-shaped tokens that resolve to nothing (a CH, H or diff ref not in this run). */
   invalid: string[];
+  /** Evidence text that is neither a ref nor a quote from the body or brief. */
+  unparsed?: string[];
 }
 
 const rows = (brief: Section[] | undefined, title: string) =>
@@ -185,16 +188,21 @@ const overlaps = (a: string, b: string) => {
   return !!x && !!y && x[0] <= y[1] && y[0] <= x[1];
 };
 
-/** Turn one finding's evidence into contract refs, brief-only notes and unknown refs. */
+/**
+ * Turn one finding's evidence into contract refs, brief-only notes and unknown
+ * refs. Each evidence entry may be a list of refs (diff:, CH#, H#, PR#, S#, L#,
+ * commit or `<sha>#n`, path:line, review-packet lines) or prose: prose found
+ * in the body (or title) is cited by its line, prose found in the brief is
+ * noted as a brief quote, and refs inside it still count. Only entries with no
+ * ref and no locatable quote end up `unparsed`.
+ */
 export function resolveEvidence(
   evidence: string | string[],
   ctx: ImportContext,
 ): Resolved {
-  const out: Resolved = { contract: [], notes: [], invalid: [] };
-  const tokens = (Array.isArray(evidence) ? evidence : [evidence])
-    .flatMap((s) => s.split(/\s*[|,;]\s*|\s+/))
-    .map((t) => t.replace(/^[(\[`'"]+|[)\]`'".:]+$/g, ''))
-    .filter(Boolean);
+  const out: Required<Resolved> = { contract: [], notes: [], invalid: [], unparsed: [] };
+  const clean = (t: string) =>
+    t.replace(/^[(\[`'"“]+|[)\]`'"”.:]+$/g, '').replace(/^(?:brief|path):/i, '');
   const changes = rows(ctx.brief, 'changes');
   const changeDiffs = (id: string) => {
     const row = changes.find((r) => r.change === id);
@@ -209,6 +217,15 @@ export function resolveEvidence(
       ),
     ) as string[],
   );
+  let briefText: string | undefined;
+  const inBrief = (q: string) =>
+    (briefText ??= norm(
+      (ctx.brief ?? [])
+        .flatMap((s) => s.rows.flatMap((r) => Object.values(r)))
+        .flat()
+        .filter((v) => typeof v === 'string')
+        .join(' \n '),
+    )).includes(norm(q));
   const add = (refs: string[] | undefined, token: string, note = false) => {
     if (refs?.length) out.contract.push(...refs.slice(0, 3));
     if (note || !refs?.length) {
@@ -216,25 +233,31 @@ export function resolveEvidence(
       else out.invalid.push(token);
     }
   };
-  for (const t of tokens) {
+  /** Handles one ref-shaped token; false when the token isn't a ref at all. */
+  const ref = (t: string): boolean => {
     if (t === 'title' || /^(diff|body|author|code|digest|source):/.test(t)) {
       if (ctx.contractRef(t)) out.contract.push(t);
       else out.invalid.push(t);
-      continue;
+      return true;
     }
-    const commit = /^commit:([0-9a-f]{7,40})(#\d+)?$/i.exec(t);
+    // commit:<sha>[#n], or a bare commit-message ref (<sha>#n) or SHA with a digit.
+    const commit =
+      /^commit:([0-9a-f]{7,40})(#\d+)?$/i.exec(t) ??
+      (/\d/.test(t) && /[a-f]/i.test(t) ? /^([0-9a-f]{7,40})(#\d+)?$/i.exec(t) : null);
     if (commit) {
       const base = `commit:${commit[1]}`;
+      const bare = `${commit[1]}${commit[2] ?? ''}`;
       if (ctx.contractRef(base)) out.contract.push(base);
       if (commit[2] || !ctx.contractRef(base)) {
-        if (known.has(t) || known.has(base) || ctx.contractRef(base)) out.notes.push(t);
+        if (known.has(t) || known.has(bare) || known.has(base) || ctx.contractRef(base))
+          out.notes.push(bare);
         else out.invalid.push(t);
       }
-      continue;
+      return true;
     }
     if (/^CH\d+$/.test(t)) {
       add(changeDiffs(t), t);
-      continue;
+      return true;
     }
     if (/^T\d+$/.test(t)) {
       const row = rows(ctx.brief, 'tests').find((r) => r.ref === t);
@@ -242,7 +265,7 @@ export function resolveEvidence(
         row ? ctx.hunks.filter((h) => h.file === row.file).map((h) => h.diff) : undefined,
         t,
       );
-      continue;
+      return true;
     }
     if (/^L\d+$/.test(t)) {
       const row = rows(ctx.brief, 'limits').find((r) => r.ref === t);
@@ -253,24 +276,47 @@ export function resolveEvidence(
         if (diffs?.length) out.contract.push(...diffs.slice(0, 3));
         out.notes.push(t);
       }
-      continue;
+      return true;
     }
-    if (/^H\d+$/.test(t)) {
-      const h = ctx.hunks.find((h) => h.id === t);
-      if (h) out.contract.push(h.diff);
+    const hunks = /^H(\d+)(?:-H?(\d+))?$/.exec(t);
+    if (hunks) {
+      const [from, to] = [Number(hunks[1]), Number(hunks[2] ?? hunks[1])];
+      const hit = ctx.hunks.filter((h) => {
+        const n = Number(h.id.slice(1));
+        return n >= from && n <= to;
+      });
+      if (hit.length) out.contract.push(...hit.slice(0, 3).map((h) => h.diff));
       else out.invalid.push(t);
-      continue;
+      return true;
     }
     if (/^[SPDRV]\d+$/.test(t)) {
       if (ctx.contractRef(`digest:${t}`)) out.contract.push(`digest:${t}`);
       else if (known.has(t)) out.notes.push(t);
       else out.invalid.push(t);
-      continue;
+      return true;
     }
-    if (/^HK\d+$/.test(t)) {
-      if (known.has(t)) out.notes.push(t);
-      else out.invalid.push(t);
-      continue;
+    const checkpoint = ctx.checkpoints.find((c) => c.id === t);
+    if (checkpoint) {
+      add(
+        checkpoint.evidence.filter((d) => ctx.contractRef(d)),
+        t,
+        true,
+      );
+      return true;
+    }
+    // Other brief rows: process (PR#), housekeeping (HK#), head scan (HR#), …
+    if (known.has(t)) {
+      out.notes.push(t);
+      return true;
+    }
+    if (/^(?:PR|HK|HR|B)\d+(?:\.\d+)?$/.test(t)) {
+      out.invalid.push(t);
+      return true;
+    }
+    // A line of the review packet the reviewer read.
+    if (/^(?:review-)?packet(?:-[\w]+)?(?:\.md)?:\d+(?:-\d+)?$/i.test(t)) {
+      out.notes.push(t);
+      return true;
     }
     const loc = /^(.+?):(\d+)(?:-(\d+))?$/.exec(t);
     if (loc) {
@@ -282,14 +328,48 @@ export function resolveEvidence(
       if (hit) out.contract.push(hit.diff);
       if (!hit && (inFile.length || ctx.fileExists?.(path))) out.notes.push(t);
       else if (!hit) out.invalid.push(t);
+      return true;
+    }
+    return false;
+  };
+  /** Prose quoted from the body/title (cited by line) or the brief (noted). */
+  const quote = (q: string): boolean => {
+    const text = q.trim().replace(/^["“'`]+|["”'`.]+$/g, '');
+    if (text.length < 12 || text.split(/\s+/).length < 3) return false;
+    const at = locateQuote(text, ctx.title, ctx.body);
+    if (at && ctx.contractRef(at.at)) {
+      out.contract.push(at.at);
+      return true;
+    }
+    if (inBrief(text)) {
+      out.notes.push(`brief quote "${clipQuote(text)}"`);
+      return true;
+    }
+    return false;
+  };
+  for (const entry of Array.isArray(evidence) ? evidence : [evidence]) {
+    if (typeof entry !== 'string' || !entry.trim()) continue;
+    const tokens = entry
+      .split(/\s*[|,;]\s*|\s+/)
+      .map(clean)
+      .filter(Boolean);
+    const loose = tokens.filter((t) => !ref(t));
+    if (!loose.length) continue;
+    if (tokens.length === 1) {
+      out.invalid.push(loose[0]!);
       continue;
     }
-    out.invalid.push(t);
+    const quoted = [...entry.matchAll(/["“`]([^"”`]{12,})["”`]/g)].map((m) => m[1]!);
+    const found = quote(entry) || quoted.map(quote).some(Boolean);
+    if (!found && loose.length === tokens.length)
+      out.unparsed.push(clipQuote(entry.trim()));
   }
   out.contract = [...new Set(out.contract)];
   out.notes = [...new Set(out.notes)];
   return out;
 }
+
+const clipQuote = (s: string) => (s.length > 60 ? `${s.slice(0, 59)}…` : s);
 
 const norm = (s: string) =>
   s.replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -350,6 +430,10 @@ export function leanToReview(
       warnings.push(
         `${id}: unknown evidence ${ev.invalid.join(', ')} (left out of review.json).`,
       );
+    for (const u of ev.unparsed ?? [])
+      warnings.push(
+        `${id}: evidence "${u}" is neither a ref nor a quote from the body or brief (left out of review.json).`,
+      );
     const noted = ev.notes.length ? ` [evidence: ${ev.notes.join(', ')}]` : '';
     if (f.kind === 'claim') {
       const where = locateQuote(f.quote ?? '', ctx.title, ctx.body);
@@ -380,13 +464,28 @@ export function leanToReview(
     } else {
       const behavior = (f.quote?.trim() || f.fix.trim()).replace(/\s+/g, ' ');
       const diffs = ev.contract.filter((r) => r.startsWith('diff:'));
+      // Brief refs (PR#, S#, L#, …), repo lines or quotes, but no diff line: an
+      // omission about process or context, anchored to the whole diff.
+      const lines = ctx.patch ? ctx.patch.split(/\r?\n/).length : 0;
+      const whole =
+        lines && ctx.contractRef(`diff:1-${lines}`) ? `diff:1-${lines}` : undefined;
+      const parsed = ev.contract.length + ev.notes.length + ev.invalid.length > 0;
       if (diffs.length)
         omissions.push({
           behavior,
           evidence: ev.contract,
           correction: `${f.fix.trim()}${noted}`,
         });
-      else {
+      else if (parsed && whole) {
+        omissions.push({
+          behavior,
+          evidence: [...ev.contract, whole],
+          correction: `${f.fix.trim()}${noted}`,
+        });
+        warnings.push(
+          `${id}: omission cites no diff line; review.json anchors it to the whole diff${ev.notes.length ? ` (brief ${ev.notes.join(', ')})` : ''}.`,
+        );
+      } else {
         unanchored.push(
           `${behavior} (${[...ev.notes, ...ev.contract].join(', ') || 'no evidence'}): ${f.fix.trim()}`,
         );

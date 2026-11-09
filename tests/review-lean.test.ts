@@ -11,10 +11,14 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { leanPacket, WHOLE_DIFF_CHARS } from '../src/commands/review.ts';
 import {
+  type ImportContext,
+  leanToReview,
   locateQuote,
   parseFindings,
   placeholderAgentId,
+  resolveEvidence,
 } from '../src/contribution/leanReview.ts';
+import { patchHunks } from '../src/graph/build.ts';
 import { reviewLine } from '../src/contribution/review.ts';
 import {
   planFromOptions,
@@ -911,5 +915,140 @@ describe('review plan', () => {
     writeLocal(join(run.dir, 'review-findings.json'), findings('agent-p2'));
     ok(repo.root, 'review', 'import', '--run', run.id);
     expect(planGate(run)).toBeUndefined();
+  });
+});
+
+describe('review import evidence', () => {
+  const patch = [branchy, testFile].join('\n') + '\n';
+  const lines = patch.split('\n').length;
+  const body = [
+    'Greets by name, or says hello when no name is given.',
+    '',
+    '- `bun test` passed.',
+  ].join('\n');
+  const ctx = (): ImportContext => ({
+    title: 'Greet by name',
+    body,
+    patch,
+    hunks: patchHunks(patch),
+    brief: [
+      {
+        title: 'changes',
+        columns: [],
+        rows: [{ change: 'CH1', diff: ['diff:5-8'] }],
+      },
+      {
+        title: 'limits',
+        columns: [],
+        rows: [{ ref: 'L1', change: 'CH1', limit: 'No request recorded.' }],
+      },
+      {
+        title: 'process',
+        columns: [],
+        rows: [
+          {
+            ref: 'PR3',
+            kind: 'test',
+            fact: '`bun test` failed in the first run, then passed (failing to passing).',
+          },
+        ],
+      },
+      {
+        title: 'commitMessages',
+        columns: [],
+        rows: [{ ref: 'abc1234def56#2', text: 'Tests pass.' }],
+      },
+    ],
+    contractRef: (ref) => {
+      const d = /^diff:(\d+)(?:-(\d+))?$/.exec(ref);
+      if (d) return Number(d[2] ?? d[1]) <= lines;
+      const b = /^body:(\d+)(?:-(\d+))?$/.exec(ref);
+      if (b) return Number(b[2] ?? b[1]) <= body.split('\n').length;
+      return ref === 'title' || ref === 'commit:abc1234def56';
+    },
+    fileExists: (p) => p === 'README.md',
+    checkpoints: [{ id: 'B1.1', evidence: ['diff:6'] }],
+  });
+
+  test('brief refs, commit refs, repo lines, packet lines and quotes are kept', () => {
+    const ev = resolveEvidence(
+      [
+        'PR3 | abc1234def56#2 | brief:CH1 | H1-H2 | README.md:4 | review-packet-a.md:371 | B1.1',
+        'the brief process row says "failed in the first run, then passed"',
+        'says hello when no name is given',
+      ],
+      ctx(),
+    );
+    expect(ev.invalid).toEqual([]);
+    expect(ev.unparsed).toEqual([]);
+    expect(ev.contract).toEqual([
+      'commit:abc1234def56',
+      'diff:5-8',
+      'diff:4-8',
+      'diff:12-17',
+      'diff:6',
+      'body:1',
+    ]);
+    expect(ev.notes).toEqual([
+      'PR3',
+      'abc1234def56#2',
+      'README.md:4',
+      'review-packet-a.md:371',
+      'B1.1',
+      'brief quote "failed in the first run, then passed"',
+    ]);
+  });
+
+  test('only unknown refs and prose that matches nothing are left out', () => {
+    const ev = resolveEvidence(
+      ['CH99 | PR42 | diff:999', 'some words the reviewer made up here', 'nonsense'],
+      ctx(),
+    );
+    expect(ev.contract).toEqual([]);
+    expect(ev.invalid).toEqual(['CH99', 'PR42', 'diff:999', 'nonsense']);
+    expect(ev.unparsed).toEqual(['some words the reviewer made up here']);
+    // Prose around a ref keeps the ref and drops the words silently.
+    const mixed = resolveEvidence('brief ref Process rows PR3 build last result', ctx());
+    expect(mixed.notes).toEqual(['PR3']);
+    expect(mixed.invalid).toEqual([]);
+    expect(mixed.unparsed).toEqual([]);
+  });
+
+  test('an omission with brief evidence but no diff line stays in review.json', () => {
+    const { review, warnings } = leanToReview(
+      {
+        v: 1,
+        reviewer: { agentId: 'a7c3e19f2b' },
+        findings: [
+          {
+            kind: 'omission',
+            quote: 'The failing-then-passing test history',
+            verdict: 'missing',
+            evidence: 'PR3',
+            fix: 'Say the tests failed first, then passed.',
+          },
+          {
+            kind: 'omission',
+            quote: 'Something vague',
+            verdict: 'missing',
+            evidence: 'words that match nothing anywhere at all',
+            fix: 'x',
+          },
+        ],
+      } as any,
+      'a7c3e19f2b',
+      'fp',
+      ctx(),
+    );
+    expect(review.bodyReview!.omissions).toEqual([
+      {
+        behavior: 'The failing-then-passing test history',
+        evidence: [`diff:1-${lines}`],
+        correction: 'Say the tests failed first, then passed. [evidence: PR3]',
+      },
+    ]);
+    expect(warnings.join(' ')).toContain('F1: omission cites no diff line');
+    expect(warnings.join(' ')).toContain('F2: evidence "words that match nothing');
+    expect(review.bodyReview!.transfer.reason).toContain('Something vague');
   });
 });

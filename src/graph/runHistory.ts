@@ -118,6 +118,46 @@ const OUTCOME_WORD: Record<string, string> = {
   unknown: 'no result captured',
 };
 
+const SUBJECT: Record<string, string> = {
+  test: 'Tests',
+  typecheck: 'The typecheck',
+  lint: 'Lint',
+  build: 'The build',
+};
+
+/**
+ * The plain sentence a writer can copy when a kind's results changed between
+ * the first and the last run with a result: "`bun test` failed in the first
+ * run, then passed (failing to passing)." Undefined when the first and last
+ * results agree.
+ */
+function trendSentence(
+  groups: { outcome: string; runs: RunRow[] }[],
+  sorted: RunRow[],
+  command: string | undefined,
+): string | undefined {
+  const first = groups[0];
+  const end = groups.at(-1);
+  if (!first || !end || first.outcome === end.outcome) return undefined;
+  const subject = command
+    ? `\`${command}\``
+    : (SUBJECT[String(sorted[0]!.kind)] ?? `${String(sorted[0]!.kind)} runs`);
+  const n = first.runs.length;
+  const opening =
+    groups.length === 2
+      ? sorted[0] === first.runs[0]
+        ? n === 1
+          ? ' in the first run'
+          : ` in the first ${n} runs`
+        : n === 1
+          ? ''
+          : ` ${times(n)}`
+      : '';
+  return first.outcome === 'failed'
+    ? `${subject} failed${opening}, then passed (failing to passing).`
+    : `${subject} passed${opening}, then failed (passing to failing).`;
+}
+
 /**
  * A kind's runs in order, when they ended differently: `failed twice (R3, R5),
  * then passed (R8)`, read from the runs with a result (many alternations:
@@ -166,8 +206,9 @@ export function runHistory(
   if (lastUnknown)
     order += `, then the last run (${String(last.id)}) has no captured result`;
   const unknown = sorted.length - known.length - (lastUnknown ? 1 : 0);
+  const lead = trendSentence(groups, sorted, one ? [...commands][0]! : undefined);
   const head = one
-    ? `\`${[...commands][0]}\`: ${sorted.length} runs in this PR's turns`
+    ? `${lead ? '' : `\`${[...commands][0]}\`: `}${sorted.length} runs in this PR's turns`
     : `${sorted.length} ${String(sorted[0]!.kind)} runs in this PR's turns (${commands.size} commands)`;
   const cites = [
     ...new Set([
@@ -184,7 +225,7 @@ export function runHistory(
     ]),
   ];
   return {
-    text: `${head}, ${order}${unknown > 0 ? `; ${unknown} other run(s) with no captured result` : ''}`,
+    text: `${lead ? `${lead} ` : ''}${head}, ${order}${unknown > 0 ? `; ${unknown} other run(s) with no captured result` : ''}`,
     cites,
   };
 }
