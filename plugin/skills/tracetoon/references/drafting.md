@@ -67,13 +67,16 @@ as the PR needs (usually none to three); target 250–400 words. Reviewers mark 
 - **Tests go with the change they test** ("…; `tests/x.test.ts` covers the
   quoted-script case"), or in one short line naming the test files and what
   they check (`tests` rows). Never a list of test titles. Don't restate runs or
-  results: the generated Validation section says them.
+  results: the generated Validation section says them. Attribute each tested
+  behavior to the test file whose titles show it; don't group behaviors from
+  several files under one.
 - **Consequences** worth a reviewer's attention, in a sentence or two: what
   changes for users or callers (defaults, output shapes, error paths), the
   riskiest part, what is deliberately left alone. Skip what is obvious.
 - **Open points** from open `limits` rows and `process` facts (a plan step left
   undone, a command that kept failing), each a clause, folded in where they
-  belong or in one short paragraph.
+  belong or in one short paragraph. If you ran `tracetoon check` and it
+  passed, don't repeat a "no passing run after the last commit" limit.
 - **Where to start and the feedback wanted**, in one or two lines at the end:
   the function and file the `entry` process row names ("start at `fn` in
   `file`"; without one, a file from `changes.where`), not the largest file or

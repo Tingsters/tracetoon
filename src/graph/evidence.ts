@@ -19,7 +19,7 @@ import { addSearchLinks, type GraphSearch } from './search.ts';
 import { annotateDigest, deriveFromGraphJson, type GraphDerived } from './derive.ts';
 import type { EvidenceGraph } from './model.ts';
 import { withGraph } from './engine.ts';
-import { briefParts, findQuery } from './queries.ts';
+import { brief, briefParts } from './queries.ts';
 import type { BriefParts } from './briefRender.ts';
 import { toToon } from './toon.ts';
 import { renderNeighborhood } from './neighborhood.ts';
@@ -192,9 +192,11 @@ export function loadGraphReview(run: Run): GraphDerived['review'] | undefined {
 export function graphBriefParts(
   graph: EvidenceGraph,
   layout: BriefLayout = 'toon',
+  /** A check receipt passed on the submitted content (checks.ts `passOnSubmittedContent`). */
+  freshPass = false,
 ): (BriefParts & { hunkLinks: Record<string, string[]> }) | undefined {
   try {
-    return withGraph(graph, (g) => briefParts(g, { layout }));
+    return withGraph(graph, (g) => briefParts(g, { layout, freshPass }));
   } catch {
     return undefined;
   }
@@ -202,13 +204,16 @@ export function graphBriefParts(
 
 export function graphBrief(
   graph: EvidenceGraph,
-  opts: { rowCap?: number; layout?: BriefLayout } = {},
+  opts: { rowCap?: number; layout?: BriefLayout; freshPass?: boolean } = {},
 ): string | undefined {
   const rowCap = opts.rowCap ?? 60;
   try {
     if (isNeighborhood(opts.layout))
       return withGraph(graph, (g) => {
-        const { sections } = briefParts(g, { layout: 'neighborhood' });
+        const { sections } = briefParts(g, {
+          layout: 'neighborhood',
+          freshPass: opts.freshPass,
+        });
         const budget = briefBudget(opts.layout);
         // As long as the TOON brief of the same run, so the layouts compare at equal size.
         const targetChars = budget.matchToon
@@ -219,7 +224,7 @@ export function graphBrief(
           : undefined;
         return renderNeighborhood(sections, { budgetTokens: budget.tokens, targetChars });
       }).trimEnd();
-    const sections = withGraph(graph, (g) => findQuery('brief')!.run(g, []));
+    const sections = withGraph(graph, (g) => brief(g, { freshPass: opts.freshPass }));
     return toToon(sections, { rowCap }).trimEnd();
   } catch {
     return undefined;

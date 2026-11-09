@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { applyBrief, misplacedFocus } from '../src/graph/briefRender.ts';
+import {
+  applyBrief,
+  misattributedTests,
+  misplacedFocus,
+  staleNoPass,
+} from '../src/graph/briefRender.ts';
 import {
   capLimits,
   entryRow,
@@ -637,6 +642,93 @@ describe('the entry row says what each function owns', () => {
         unchecked: [],
         owners,
       },
+    );
+    expect(r.flags.map((f) => f.severity)).toEqual(['check']);
+  });
+});
+
+describe('stale "no passing run after the last commit"', () => {
+  test('matches the limit and its rewordings, not other sentences', () => {
+    for (const s of [
+      'No passing check run was recorded after the last commit (abc123def456).',
+      'There was no successful test run after the last edit.',
+      'No check passed after the final commit.',
+    ])
+      expect(staleNoPass(s)).toBe(true);
+    for (const s of [
+      'A passing test run came after the last commit.',
+      'No user request was recorded for this change.',
+      'The suite has no passing run for Windows.',
+    ])
+      expect(staleNoPass(s)).toBe(false);
+  });
+  test('flagged only when a receipt passed on the submitted content', () => {
+    const body = 'No passing test run was recorded after the last commit.';
+    const receipt = {
+      sections: [
+        {
+          title: 'validation',
+          columns: ['check'],
+          rows: [{ check: 'V1', kind: 'test', outcome: 'passed', cmd: 'bun test' }],
+        },
+      ],
+    } as any;
+    expect(applyBrief(body, receipt).flags.map((f) => f.severity)).toEqual(['fix']);
+    const failed = structuredClone(receipt);
+    failed.sections[0].rows[0].outcome = 'failed';
+    expect(applyBrief(body, failed).flags).toEqual([]);
+    expect(
+      applyBrief(body, { sections: [], unchecked: [], freshPass: true }).flags,
+    ).toHaveLength(1);
+  });
+});
+
+describe('tested behaviors attributed to the file whose titles show them', () => {
+  const tests = [
+    {
+      ref: 'T1',
+      file: 'tests/alpha-fix.test.ts',
+      titles: ['keeps quoted arguments intact', 'stops at the earlier-work cutoff'],
+    },
+    {
+      ref: 'T2',
+      file: 'tests/render.test.ts',
+      titles: ['marks binary changes in the summary', 'draws shared-session panels'],
+    },
+  ];
+  test('a behavior from another file grouped under the named one is flagged', () => {
+    const flag = misattributedTests(
+      'The alpha-fix tests cover quoted arguments, binary changes and the earlier-work cutoff; the render tests also check shared-session panels.',
+      tests,
+    );
+    expect(flag?.severity).toBe('check');
+    expect(flag?.problem).toContain('"binary changes"');
+    expect(flag?.problem).toContain('tests/render.test.ts');
+    // By path, too.
+    expect(
+      misattributedTests(
+        '`tests/alpha-fix.test.ts` covers binary changes in the summary.',
+        tests,
+      )?.problem,
+    ).toContain('tests/render.test.ts');
+  });
+  test('correct attributions, weak matches and unnamed files are not flagged', () => {
+    for (const s of [
+      'The alpha-fix tests cover quoted arguments and the earlier-work cutoff; the render tests check binary changes and shared-session panels.',
+      // One shared word is no clear margin.
+      'The alpha-fix tests cover binary arguments.',
+      // No test file named.
+      'Binary changes are marked in the summary.',
+      // Named, but no cover/check verb outside the name.
+      'See the alpha-fix tests for binary changes.',
+    ])
+      expect(misattributedTests(s, tests)).toBeUndefined();
+  });
+  test("applyBrief reports it from the brief's tests rows", () => {
+    const b = { sections: [{ title: 'tests', columns: ['ref'], rows: tests }] } as any;
+    const r = applyBrief(
+      'The alpha-fix tests cover binary changes and the earlier-work cutoff. [T1]',
+      b,
     );
     expect(r.flags.map((f) => f.severity)).toEqual(['check']);
   });

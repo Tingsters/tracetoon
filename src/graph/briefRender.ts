@@ -23,6 +23,8 @@ export interface BriefParts {
   branchy?: string[];
   /** Changed source functions and the stemmed words the brief ties to each (`functionProfiles`). */
   owners?: { name: string; file: string; nameWords: string[]; words: string[] }[];
+  /** A `tracetoon check` receipt passed on the submitted content. */
+  freshPass?: boolean;
 }
 
 export interface BriefApplied {
@@ -467,6 +469,31 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
         problem: `the diff also changes ${missing.join(', ')}: don't call it housekeeping, a version bump or "no logic changes" only; name what else changed.`,
       });
   }
+  // "No passing run after the last commit" next to a Validation section that
+  // lists fresh passes from `tracetoon check`: the limit held at prepare time,
+  // not after the writer's own checks (r21, judged contradicted).
+  const freshPass =
+    !!b.freshPass ||
+    rowsOf(b, 'validation').some(
+      (r) => /^V\d/.test(String(r.check ?? '')) && r.outcome === 'passed',
+    );
+  if (freshPass)
+    for (const unit of proseUnits(body)) {
+      const clean = unit.replace(TAG, '').trim();
+      if (staleNoPass(clean))
+        flags.push({
+          sentence: clean,
+          severity: 'fix',
+          problem:
+            'the Validation section shows fresh passing checks run by `tracetoon check` on the submitted content; drop or narrow this sentence.',
+        });
+    }
+  // Behaviors grouped under one test file that another file's titles show.
+  const testRows = rowsOf(b, 'tests');
+  for (const unit of proseUnits(body)) {
+    const p = misattributedTests(unit.replace(TAG, '').trim(), testRows);
+    if (p) flags.push(p);
+  }
   // Brief refs are for render, not readers: one left in the prose (outside a tag) is noise.
   for (const unit of proseUnits(body)) {
     const clean = unit.replace(TAG, '');
@@ -595,4 +622,108 @@ export function misplacedFocus(
     severity: 'check',
     problem: `"${focus[1]}${clipped(focus[2]!).trimEnd()}": the brief ties that to ${rivals.join(' or ')}, not to ${named.map((n) => `\`${n}\``).join(', ')}. Name the function that owns it, or drop the clause.`,
   };
+}
+
+/**
+ * "No passing/successful run (or check, test) … after the last commit/edit":
+ * true before `tracetoon check` ran, stale once a receipt passed on the
+ * submitted content.
+ */
+export function staleNoPass(sentence: string): boolean {
+  return (
+    /\bno\b[^.;!?]{0,60}?\b(?:passing|successful|green|passed)\b[^.;!?]{0,60}?\bafter\s+the\s+(?:last|latest|final)\s+(?:\w+\s+)?(?:commit|edit|change)s?\b/i.test(
+      sentence,
+    ) && /\b(?:runs?|checks?|tests?|suites?)\b/i.test(sentence)
+  );
+}
+
+const TEST_VERB =
+  /\b(?:cover(?:s|ed|ing)?|check(?:s|ed|ing)?|test(?:s|ed|ing)?|assert(?:s|ed|ing)?|verif(?:y|ies|ied|ying)|exercis(?:e|es|ed|ing)|pin(?:s|ned)?)\b/i;
+/** Words that say a test exists, not what it checks. */
+const TEST_FILLER = wordsOf(
+  'cover covers covered check checks checked test tests tested assert asserts verify verifies exercise exercises case cases also both these those each new',
+);
+const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A test file's short name: `tests/summary-fix.test.ts` → `summary-fix`. */
+function testStem(file: string): string {
+  return (file.split('/').pop() ?? file)
+    .replace(/\.[^.]+$/, '')
+    .replace(/[._-](?:test|spec)s?$/i, '')
+    .replace(/^test_/i, '');
+}
+
+/**
+ * A sentence that names a test file (its path, its file name, or "the <name>
+ * tests") and says what it covers, where a listed behavior matches another
+ * test file's titles clearly better than the named file's: the writer grouped
+ * behaviors from several files under one. Conservative: a behavior phrase
+ * needs two words in one title of the other file, and two more than the
+ * named file's best title.
+ */
+export function misattributedTests(
+  sentence: string,
+  tests: Record<string, unknown>[],
+): BriefApplied['flags'][number] | undefined {
+  const files = tests
+    .map((r) => ({
+      file: String(r.file ?? ''),
+      titles: (Array.isArray(r.titles) ? r.titles : []).map((t) => wordsOf(String(t))),
+    }))
+    .filter((f) => f.file && f.titles.length);
+  if (files.length < 2) return undefined;
+  // Where each file is named.
+  const mentions: { at: number; end: number; file: (typeof files)[number] }[] = [];
+  for (const f of files) {
+    const stem = testStem(f.file);
+    const pats = [
+      escRe(f.file),
+      escRe(f.file.split('/').pop()!),
+      ...(stem.length >= 3
+        ? [
+            String.raw`\b${stem
+              .split(/[-_\s]+/)
+              .map(escRe)
+              .join(String.raw`[-_\s]`)}\s+tests?\b`,
+          ]
+        : []),
+    ];
+    for (const pat of pats)
+      for (const m of sentence.matchAll(new RegExp(`\`?${pat}\`?`, 'gi')))
+        if (!mentions.some((x) => m.index! < x.end && x.at < m.index! + m[0].length))
+          mentions.push({ at: m.index!, end: m.index! + m[0].length, file: f });
+  }
+  if (!mentions.length) return undefined;
+  mentions.sort((a, b) => a.at - b.at);
+  const score = (f: (typeof files)[number], words: string[]) =>
+    Math.max(0, ...f.titles.map((t) => words.filter((w) => t.has(w)).length));
+  for (const [i, m] of mentions.entries()) {
+    // The named file's part of the sentence: up to the next file named.
+    const part =
+      sentence.slice(i === 0 ? 0 : m.at, m.at) +
+      ' ' +
+      sentence.slice(m.end, mentions[i + 1]?.at ?? sentence.length);
+    if (!TEST_VERB.test(part)) continue;
+    for (const phrase of part.split(/[,;:()]|\band\b|\bor\b|\bplus\b/i)) {
+      const words = [
+        ...wordsOf(phrase.replace(/`[^`]*`/g, (c) => c.slice(1, -1))),
+      ].filter((w) => !TEST_FILLER.has(w));
+      if (words.length < 2) continue;
+      const mine = score(m.file, words);
+      const ranked = files
+        .filter((f) => f !== m.file)
+        .map((f) => ({ f, n: score(f, words) }))
+        .sort((a, b) => b.n - a.n || a.f.file.localeCompare(b.f.file));
+      const top = ranked[0];
+      if (!top || top.n < 2 || top.n < mine + 2 || top.n < Math.ceil(words.length * 0.6))
+        continue;
+      if (ranked[1]?.n === top.n) continue; // no single better file
+      return {
+        sentence,
+        severity: 'check',
+        problem: `"${phrase.trim()}": the test titles in ${top.f.file} show that, not ${m.file}'s. Attribute each tested behavior to the test file whose titles show it; don't group them under one file.`,
+      };
+    }
+  }
+  return undefined;
 }

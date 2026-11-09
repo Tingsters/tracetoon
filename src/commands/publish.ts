@@ -90,7 +90,7 @@ import { comicSummary } from '../comic/composition.ts';
 import { comicObservationInput } from '../contribution/comicReview.ts';
 import { readTask, saveTask, workFingerprint } from '../workflow/state.ts';
 import { fileHash, publishProblem } from '../workflow/readiness.ts';
-import { receipts } from '../workflow/checks.ts';
+import { passOnSubmittedContent, receipts } from '../workflow/checks.ts';
 import { publicationLock, recordTiming } from '../workflow/publication.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
 import { acknowledgeRepository } from '../workflow/hostSession.ts';
@@ -365,9 +365,11 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   }
   // The brief's Validation section and ref tags: written and checked here.
   const storedGraph = loadGraph(run);
+  // A check that passed on the submitted content retires "no pass after the last commit".
+  const freshPass = passOnSubmittedContent(run, truth.toplevel);
   const briefCheck = applyBrief(
     bodyMd,
-    storedGraph ? graphBriefParts(storedGraph, runLayout(run)) : undefined,
+    storedGraph ? graphBriefParts(storedGraph, runLayout(run), freshPass) : undefined,
   );
   const draft = briefCheck.text;
   // The title: a person's choice is kept. A title edited on GitHub since
@@ -590,7 +592,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     ctx.aiPolicy.text === 'author-written-recommended';
   const outline = evidenceNotes(
     readJson<TraceDigest>(run, 'digest-full.json') ?? digest,
-    storedGraph ? graphBrief(storedGraph, { layout: runLayout(run) }) : undefined,
+    storedGraph
+      ? graphBrief(storedGraph, { layout: runLayout(run), freshPass })
+      : undefined,
   );
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
   writeJson(run, 'approval.json', approval);

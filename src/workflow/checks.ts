@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { contentFingerprint } from './state.ts';
+import { contentFingerprint, readTask } from './state.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
 import type { Run } from '../run.ts';
 import type { Run as EvidenceRun } from '../digest/build.ts';
@@ -345,6 +345,22 @@ export function checkReport(root: string, run: Run) {
       }
     })(),
   }));
+}
+/**
+ * A `tracetoon check` receipt that passed on the content as it is now (and in
+ * this environment). Read from the run folder when the brief is read, so a
+ * check run after `prepare` retires "no passing run after the last commit"
+ * without a rebuilt graph. False when there is no receipt or no known root.
+ */
+export function passOnSubmittedContent(run: Run, root?: string): boolean {
+  if (!receipts(run).some((c) => c.outcome === 'passed')) return false;
+  const at = root ?? readTask(run)?.root;
+  if (!at) return false;
+  try {
+    return checkReport(at, run).some((c) => c.current && c.outcome === 'passed');
+  } catch {
+    return false;
+  }
 }
 /**
  * Paths inside the repository written as `<repo>/…`, so an absolute path the

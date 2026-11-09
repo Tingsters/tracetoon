@@ -1510,6 +1510,55 @@ describe('the brief states recorded process and behavior', () => {
     ]);
   });
 
+  test('a check passed on the submitted content retires "no pass after the last commit"', () => {
+    // Every logged pass before the commit, no receipt: the limit holds.
+    const stale: EvidenceGraph = structuredClone(graph);
+    for (const id of ['R2', 'R3']) stale.nodes.find((n) => n.id === id)!.props.t = t(3);
+    stale.nodes = stale.nodes.filter((n) => n.id !== 'V1');
+    const limitText = (p: { sections: { title: string; rows: any[] }[] }) =>
+      p.sections.find((s) => s.title === 'limits')!.rows.map((l) => String(l.limit));
+    const factText = (p: { sections: { title: string; rows: any[] }[] }) =>
+      p.sections
+        .find((s) => s.title === 'process')!
+        .rows.map((r) => String(r.fact))
+        .join('\n');
+    const before = withGraph(stale, (g) => briefParts(g));
+    expect(before.freshPass).toBe(false);
+    expect(limitText(before).some((l) => l.startsWith('No passing check run'))).toBe(
+      true,
+    );
+    // A receipt in the run folder (read when the brief is read) drops the row
+    // and any process clause saying the same.
+    const fresh = withGraph(stale, (g) => briefParts(g, { freshPass: true }));
+    expect(fresh.freshPass).toBe(true);
+    expect(limitText(fresh).some((l) => /No passing check run/.test(l))).toBe(false);
+    expect(factText(fresh)).not.toMatch(
+      /no pass(ing run recorded)? after the last commit/,
+    );
+    // So does a passing receipt already in the graph.
+    const withReceipt: EvidenceGraph = structuredClone(stale);
+    withReceipt.nodes.push(graph.nodes.find((n) => n.id === 'V1')!);
+    const receipted = withGraph(withReceipt, (g) => briefParts(g));
+    expect(receipted.freshPass).toBe(true);
+    expect(limitText(receipted).some((l) => /No passing check run/.test(l))).toBe(false);
+    // Render flags a copied limit next to the fresh passes.
+    const r = applyBrief(
+      'No passing check run was recorded after the last commit. [CH1]',
+      fresh,
+    );
+    expect(r.flags.map((f) => [f.severity, f.problem])).toContainEqual([
+      'fix',
+      'the Validation section shows fresh passing checks run by `tracetoon check` on the submitted content; drop or narrow this sentence.',
+    ]);
+    // Without a fresh pass the sentence is the open point, not a flag.
+    expect(
+      applyBrief(
+        'No passing check run was recorded after the last commit. [CH1]',
+        before,
+      ).flags.filter((f) => /fresh passing checks/.test(f.problem)),
+    ).toEqual([]);
+  });
+
   test("requests are this PR's turns only; a cut-off record is marked", () => {
     expect(sec('requests').map((r) => [r.ref, r.truncated])).toEqual([
       ['S3', null],

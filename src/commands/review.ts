@@ -17,6 +17,7 @@ import { graphBriefParts, loadGraph } from '../graph/evidence.ts';
 import { runLayout } from '../graph/layout.ts';
 import type { EvidenceGraph } from '../graph/model.ts';
 import type { Section } from '../graph/queries.ts';
+import { passOnSubmittedContent } from '../workflow/checks.ts';
 import { evidenceExists } from '../contribution/review.ts';
 import { parseBodyReview } from '../contribution/bodyReview.ts';
 import {
@@ -454,7 +455,9 @@ function storedBrief(
   run: Run,
   graph: EvidenceGraph | undefined,
 ): { sections: Section[]; hunkLinks: Record<string, string[]> } | undefined {
-  return graph ? graphBriefParts(graph, runLayout(run)) : undefined;
+  return graph
+    ? graphBriefParts(graph, runLayout(run), passOnSubmittedContent(run))
+    : undefined;
 }
 
 export function reviewPacketCmd(

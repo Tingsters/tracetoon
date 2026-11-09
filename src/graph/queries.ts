@@ -683,6 +683,8 @@ function processRows(
   background: Set<string> = new Set(),
   /** A `limits` row already says no pass came after the last commit. */
   noPassLimit = false,
+  /** A `tracetoon check` receipt passed on the submitted content: "no pass after the last commit" no longer holds. */
+  receiptPass = false,
 ): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   const add = (kind: string, fact: string, cites: string[] = []) =>
@@ -855,7 +857,7 @@ function processRows(
         kind,
         [
           history.text,
-          ...(lastCommit && !noPassLimit
+          ...(lastCommit && !noPassLimit && (after.length > 0 || !receiptPass)
             ? [
                 after.length
                   ? `a passing run came after the last commit (${ids(after).join(', ')})`
@@ -871,7 +873,7 @@ function processRows(
     if (!failed.length) {
       quiet.push({
         text: `${kind} (${rs.length} run(s), last ${String(last.id)} ${last.outcome === 'passed' ? 'passed' : last.outcome === 'failed' ? 'failed' : 'no result captured'}${
-          lastCommit && !noPassLimit
+          lastCommit && !noPassLimit && (after.length > 0 || !receiptPass)
             ? after.length
               ? `, passed after the last commit (${ids(after).join(', ')})`
               : ', no pass after the last commit'
@@ -890,7 +892,7 @@ function processRows(
           : 'none failed',
         ...(unknown.length ? [`${unknown.length} with no captured result`] : []),
         `last ${String(last.id)} ${String(last.outcome === 'unknown' ? 'result not captured' : last.outcome)}`,
-        ...(lastCommit && !noPassLimit
+        ...(lastCommit && !noPassLimit && (after.length > 0 || !receiptPass)
           ? [
               after.length
                 ? `a passing run came after the last commit (${ids(after).join(', ')})`
@@ -925,8 +927,8 @@ function processRows(
  * establish. Each row cites
  * its evidence; nothing in it is inferred beyond the graph.
  */
-export function brief(g: GraphEngine): Section[] {
-  return briefParts(g).sections;
+export function brief(g: GraphEngine, opts: { freshPass?: boolean } = {}): Section[] {
+  return briefParts(g, opts).sections;
 }
 
 /**
@@ -936,7 +938,15 @@ export function brief(g: GraphEngine): Section[] {
  */
 export function briefParts(
   g: GraphEngine,
-  opts: { layout?: BriefLayout } = {},
+  opts: {
+    layout?: BriefLayout;
+    /**
+     * A `tracetoon check` receipt in the run folder passed on the content as
+     * it is now (checks.ts `passOnSubmittedContent`), read when the brief is
+     * read: the graph may predate the check.
+     */
+    freshPass?: boolean;
+  } = {},
 ): {
   sections: Section[];
   unchecked: string[];
@@ -945,6 +955,8 @@ export function briefParts(
   hunkLinks: Record<string, string[]>;
   /** Changed source functions and what the graph ties to each (render's review-pointer check). */
   owners: FnProfile[];
+  /** A check passed on the submitted content (a V receipt here, or one in the run folder). */
+  freshPass: boolean;
 } {
   const changes = g
     .run(
@@ -1353,7 +1365,11 @@ export function briefParts(
   // claim was judged false where it was (dev16).)
   // Open points the other rows only imply: no pass after the last commit, a
   // failed publishing command, remote-call branches no run shows live.
-  const noPass = noPassAfterCommitRow(g, scopedRuns);
+  // A check that passed on the submitted content (a receipt) answers it: the
+  // writer's Validation section lists that pass, and the row read as a
+  // contradiction next to it (r21, 5 judgments).
+  const receiptPass = freshPass.length > 0 || !!opts.freshPass;
+  const noPass = receiptPass ? undefined : noPassAfterCommitRow(g, scopedRuns);
   limits.splice(
     0,
     limits.length,
@@ -1422,6 +1438,7 @@ export function briefParts(
     scopedRuns,
     new Set(background.map((r) => String(r.ref))),
     !!noPass,
+    receiptPass,
   );
   // Where to start reading: the changed function that owns the behavior.
   const links = {
@@ -1508,6 +1525,7 @@ export function briefParts(
     branchy: uniq(branchy).sort(),
     hunkLinks,
     owners: [...functionProfiles(g, links).values()],
+    freshPass: receiptPass,
   };
 }
 

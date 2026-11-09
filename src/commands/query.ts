@@ -1,8 +1,10 @@
 /** `tracetoon query`: ask a run's evidence graph a named question or read-only Cypher. */
 import { GraphError, withGraph } from '../graph/engine.ts';
 import { graphBrief, loadGraph } from '../graph/evidence.ts';
+import { passOnSubmittedContent } from '../workflow/checks.ts';
 import { isNeighborhood, parseLayout, runLayout } from '../graph/layout.ts';
 import {
+  brief,
   briefParts,
   findQuery,
   QUERIES,
@@ -78,21 +80,27 @@ export function queryCmd(cwd: string, words: string[], opts: QueryOpts): void {
   }
   // The brief reads as in `prepare`: the run's layout unless --layout says otherwise.
   const layout = named?.name === 'brief' ? (asked ?? runLayout(run)) : 'toon';
+  // A check that passed on the submitted content since the graph was built.
+  const freshPass = named?.name === 'brief' && passOnSubmittedContent(run, repo.root);
   let sections: Section[];
   try {
     sections = withGraph(graph, (g) =>
       isNeighborhood(layout)
-        ? briefParts(g, { layout }).sections
-        : named
-          ? named.run(g, args)
-          : rawQuery(g, opts.cypher!, params),
+        ? briefParts(g, { layout, freshPass }).sections
+        : named?.name === 'brief'
+          ? brief(g, { freshPass })
+          : named
+            ? named.run(g, args)
+            : rawQuery(g, opts.cypher!, params),
     );
   } catch (e) {
     if (e instanceof GraphError) throw new UserError(e.message);
     throw e;
   }
   count('graph.queries');
-  const briefText = isNeighborhood(layout) ? graphBrief(graph, { layout }) : undefined;
+  const briefText = isNeighborhood(layout)
+    ? graphBrief(graph, { layout, freshPass })
+    : undefined;
   emit(
     opts,
     {
