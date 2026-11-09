@@ -103,7 +103,8 @@ reviewer separate.
    `Review lenses:` lists lenses, `--reviewer-model <name>` when `Reviewer
    model:` names a model, `--reviewer-effort <level>` when `Reviewer effort:`
    names a level, `--reviewer-runner tracetoon` when `Reviewer runner:` says
-   tracetoon (publish refuses until that review plan is met). Add `--run
+   tracetoon (publish refuses until that review plan is met), and
+   `--review-recheck <once|contested|none>` from `Review recheck:`. Add `--run
    <id>` to reuse the run from step 0. It prints the run folder and the digest path. Run it as its
    own command, after any `git commit`, never chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
@@ -157,12 +158,16 @@ reviewer separate.
         `review-packet --lean --lens <x> --run <id>` per lens
         (`review-packet-<x>.md`).
         **If `Reviewer runner: tracetoon.`**, don't start a reviewer agent and
-        skip 6–8: run `tracetoon review run --run <id>` (once per lens with
-        `--lens x`, plus once without `--lens` for each pass beyond the number
-        of lenses); it runs the reviewer on the named model and imports its
-        findings. Apply the valid findings (checked as in 8), `render --json`, then
-        `tracetoon review run --run <id> --recheck` once (per lens: `--lens x
-        --recheck`).
+        skip 6–8: run `tracetoon review run --all --run <id>` once. It runs
+        every planned pass (one per lens plus the general passes beyond the
+        lens count) in parallel on the named model, imports each, and prints
+        one merged list (`<run>/review-findings-merged.md`). Apply it in ONE
+        edit pass as in 8, `render --check --json`, then recheck only per the
+        `Review recheck:` line: `once` → `tracetoon review run --all --recheck
+        --run <id>`; `contested` → the same, only if you rejected a finding
+        (add `--note "<finding>: <diff line>"`); `none` → no recheck. Then
+        `tracetoon review import --run <id> --rebind`. If a pass fails, rerun
+        the command it prints (it runs only the failed passes).
      6. Start **one fresh reviewer**, not a fork (a fork costs the same and
         carries your drafting reasoning). Its message is the contents of
         `review-packet.md` followed by
@@ -181,6 +186,8 @@ reviewer separate.
           If `Review passes:` is larger than the number of lenses, also start
           that many more general reviewers in the same message (the plain
           `review-packet.md` with reviewer-lean.md, imported without `--lens`).
+          With `Review passes:` above 1 and no lenses, start all the general
+          reviewers in one message too.
         - **Reviewer model and effort (required when named), on EVERY
           reviewer call**: each lens reviewer, each general reviewer started
           alongside lenses, and each later fresh pass. Read the `Reviewer
@@ -205,8 +212,11 @@ reviewer separate.
         reviewer. Each import records a pass in `review.json` `passes`;
         render lists, and publish refuses, until the plan's passes (distinct
         reviewer ids, one per lens, the named model and effort) are imported.
-     8. One correction round. Reviewers misread code too, so for each finding
-        first read the diff lines or brief row it cites yourself, then:
+     8. One correction round. With several reviewers, first
+        `tracetoon review merge --run <id>`: one deduplicated list
+        (`review-findings-merged.md`), applied in ONE edit pass. Reviewers
+        misread code too, so for each finding first read the diff lines or
+        brief row it cites yourself, then:
         - a claim flagged contradicted, overstated or unsupported is either
           fixed (narrowed, attributed or removed) or rejected with the diff
           line or row that supports the original; never silently left as is;
@@ -214,19 +224,15 @@ reviewer separate.
           never paste its wording unchecked (a pasted fix that misreads the
           code is a new error);
         - add an omission only when the cited row or diff lines show it.
-        Then `render --json` (it notes flagged quotes still verbatim in the
-        body) and send the **same** reviewer only
-        the changed lines, its previous findings and your rejections (with
-        their diff lines) to confirm or re-flag
-        (Claude Code: SendMessage; Codex: `followup_task`). It rewrites
-        `review-findings.json`; run `review import` again.
-        With lenses: apply the valid findings of all lens reviewers in one
-        round, `render --json`, re-check only contested findings with the
-        reviewer that raised them (re-import it with its `--lens`), then
-        `tracetoon review import --run <id> --rebind` so `review.json`
-        matches the new render. With `Review passes:` above 1 and no lenses,
-        each further pass is a NEW fresh reviewer after the correction round
-        (new `review-packet`, then `review import` with its own id).
+        Then `render --check --json` (it notes flagged quotes still verbatim
+        in the body). Recheck per the `Review recheck:` line: `once` → send
+        the **same** reviewer(s) the changed lines, previous findings and your
+        rejections (with their diff lines) to confirm or re-flag (Claude Code:
+        SendMessage; Codex: `followup_task`), all in one message, and
+        re-import each (with its `--lens`); `contested` → only the reviewers
+        whose findings you rejected; `none` → no recheck. Then `tracetoon
+        review import --run <id> --rebind` so `review.json` matches the new
+        render. Publish never requires a recheck.
      9. Comic if wanted (step 5), then publish (step 7) once render reports the
         review current.
 3. **Context.**
@@ -446,6 +452,8 @@ Review passes: 1.
 Review lenses: none.
 
 Reviewer runner: agent.
+
+Review recheck: once.
 
 Brief layout: toon.
 

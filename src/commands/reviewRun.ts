@@ -10,6 +10,9 @@
  *
  * `--recheck` resumes the same session with the changed body lines and its
  * previous findings, and imports the answer as the same pass.
+ *
+ * `--all` runs every pass the plan requires concurrently and writes one
+ * merged findings list (review-findings-merged.md).
  */
 import { createHash } from 'node:crypto';
 import {
@@ -22,16 +25,24 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { codexBin, codexHome, runCli } from '../comic/providers.ts';
-import { FINDING_KINDS, FINDING_VERDICTS } from '../contribution/leanReview.ts';
+import {
+  FINDING_KINDS,
+  FINDING_VERDICTS,
+  type LeanFinding,
+} from '../contribution/leanReview.ts';
 import {
   loadReviewPlan,
   parseEffort,
   parseLens,
   planEnforced,
+  planMissing,
+  planRecheck,
   planSummary,
+  requiredPasses,
   resolveCodexModel,
   type ReviewLens,
   type ReviewPass,
+  type ReviewPlan,
 } from '../contribution/reviewPlan.ts';
 import { skillDir } from '../contribution/skillSettings.ts';
 import type { Run } from '../run.ts';
@@ -41,17 +52,19 @@ import {
   lensFindingsFile,
   loadPasses,
   openRun,
+  recheckNext,
   renderedInput,
+  unchangedFlags,
   writeLeanPacket,
+  writeMergedList,
   type StoredPass,
 } from './review.ts';
 
 export const SCHEMA_FILE = 'review-findings.schema.json';
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
-const suffix = (lens?: string) => (lens ? `-${lens}` : '');
-/** The body text a lens's last run reviewed, for --recheck. */
-const reviewedBodyFile = (lens?: string) => `review-run-body${suffix(lens)}.md`;
-const lastMessageFile = (lens?: string) => `review-run-last${suffix(lens)}.txt`;
+/** The body text a slot's last run reviewed, for --recheck. */
+const reviewedBodyFile = (suffix: string) => `review-run-body${suffix}.md`;
+const lastMessageFile = (suffix: string) => `review-run-last${suffix}.txt`;
 
 /** JSON Schema for the reviewer's final message (strict: every field required). */
 export const FINDINGS_SCHEMA = {
@@ -312,6 +325,12 @@ export interface ReviewRunOptions extends OutOpts {
   recheck?: boolean;
   model?: string;
   effort?: string;
+  /** Run every pass the plan requires, concurrently, then write the merged list. */
+  all?: boolean;
+  /** With --all: run every pass again even when one is already imported for this body. */
+  fresh?: boolean;
+  /** With --recheck: the author's rejections (and their diff lines), passed to the reviewer. */
+  note?: string;
 }
 
 function timeoutMs(): number {
@@ -319,19 +338,72 @@ function timeoutMs(): number {
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_TIMEOUT_MS;
 }
 
-/** The previous Tracetoon-run pass for this lens, which --recheck resumes. */
-function previousRun(run: Run, lens?: ReviewLens): StoredPass | undefined {
+/**
+ * One reviewer slot: a lens, or a general pass (`general`, `general2`, …).
+ * Each slot has its own packet, reply, findings and reviewed-body files, so
+ * parallel passes never share a file.
+ */
+export interface Slot {
+  slot: string;
+  lens?: ReviewLens;
+}
+const slotSuffix = (s: Slot) =>
+  s.lens
+    ? `-${s.lens}`
+    : s.slot === 'general'
+      ? ''
+      : `-g${s.slot.replace(/^general/, '')}`;
+const slotFindingsFile = (s: Slot) =>
+  s.lens ? lensFindingsFile(s.lens) : `review-findings${slotSuffix(s)}.json`;
+const slotLabel = (s: Slot) =>
+  s.lens
+    ? `lens ${s.lens}`
+    : s.slot === 'general'
+      ? 'general'
+      : `general ${s.slot.slice(7)}`;
+const slotOf = (p: StoredPass): string => p.slot ?? p.lens ?? 'general';
+
+/** Every slot the plan requires: one per lens, then the general passes beyond them. */
+export function planSlots(plan: ReviewPlan | undefined): Slot[] {
+  const lenses = plan?.lenses ?? [];
+  const general = plan ? requiredPasses(plan) - lenses.length : 1;
+  return [
+    ...lenses.map((lens) => ({ slot: lens, lens })),
+    ...Array.from({ length: Math.max(0, general) }, (_, i) => ({
+      slot: i ? `general${i + 1}` : 'general',
+    })),
+  ];
+}
+
+/** The latest Tracetoon-run pass in this slot, which --recheck resumes. */
+function previousRun(run: Run, slot: Slot): StoredPass | undefined {
   return loadPasses(run)
-    .filter((p) => p.source === 'tracetoon-run' && p.sessionId && p.lens === lens)
+    .filter(
+      (p) =>
+        p.source === 'tracetoon-run' &&
+        p.sessionId &&
+        p.lens === slot.lens &&
+        slotOf(p) === slot.slot,
+    )
     .sort((x, y) => x.importedAt.localeCompare(y.importedAt))
     .at(-1);
 }
 
-export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise<void> {
-  let lens: ReviewLens | undefined;
+interface RunSetup {
+  run: Run;
+  root: string;
+  plan: ReviewPlan | undefined;
+  model: string;
+  effort?: string;
+  codexModel: string;
+  bin: string;
+  schemaPath: string;
+  input: ReturnType<typeof renderedInput>['input'];
+}
+
+function setup(cwd: string, opts: ReviewRunOptions): RunSetup {
   let effortOpt: string | undefined;
   try {
-    lens = parseLens(opts.lens);
     effortOpt = parseEffort(opts.effort);
   } catch (e) {
     throw new UserError((e as Error).message);
@@ -353,24 +425,54 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
     throw new UserError(
       'No reviewer model configured for this run: set the SKILL "Reviewer model:" line (or prepare --reviewer-model <name>), or pass --model <name>.',
     );
-  if (plan?.lenses.length && !lens)
-    throw new UserError(
-      `This run's review plan has lenses ${plan.lenses.join(', ')}: run each with --lens <${plan.lenses.join('|')}>.`,
-    );
-  if (lens && plan?.lenses.length && !plan.lenses.includes(lens))
-    throw new UserError(
-      `Lens ${lens} is not in this run's review plan (lenses ${plan.lenses.join(', ')}).`,
-    );
   const bin = codexBin();
   if (!bin)
     throw new UserError(
       'The Codex CLI is not installed (or TRACETOON_CODEX_BIN is "none"); tracetoon review run needs codex.',
     );
-  const codexModel = resolveCodexModel(model);
   const { input } = renderedInput(run);
   const schemaPath = join(run.dir, SCHEMA_FILE);
   writeFileSync(schemaPath, JSON.stringify(FINDINGS_SCHEMA, null, 2) + '\n', 'utf8');
-  const outPath = join(run.dir, lastMessageFile(lens));
+  return {
+    run,
+    root,
+    plan,
+    model,
+    ...(effort ? { effort } : {}),
+    codexModel: resolveCodexModel(model),
+    bin,
+    schemaPath,
+    input,
+  };
+}
+
+/** Claim findings of a pass still verbatim in a body that changed since: the ones the author rejected. */
+function contestedFindings(pass: StoredPass, body: string): LeanFinding[] {
+  const quotes = new Set(unchangedFlags([pass], body).map((f) => f.quote));
+  return (pass.raw?.findings ?? []).filter((f) => quotes.has((f.quote ?? '').trim()));
+}
+
+interface PassOutcome {
+  slot: Slot;
+  result: ReturnType<typeof importLeanReview>;
+  pass: ReviewPass;
+  sessionId: string;
+  verifiedModel: string | null;
+  rollout: string | null;
+  findingsPath: string;
+  warnings: string[];
+}
+
+/** Run one reviewer pass (or its recheck) with codex exec and import it. */
+async function runPass(
+  s: RunSetup,
+  slot: Slot,
+  recheck: boolean,
+  note?: string,
+): Promise<PassOutcome> {
+  const { run, root, plan, model, effort, codexModel, input } = s;
+  const suffix = slotSuffix(slot);
+  const outPath = join(run.dir, lastMessageFile(suffix));
   if (existsSync(outPath)) writeFileSync(outPath, '', 'utf8');
   const pinned = [
     '--skip-git-repo-check',
@@ -379,23 +481,24 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
     codexModel,
     ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
     '--output-schema',
-    schemaPath,
+    s.schemaPath,
     '-o',
     outPath,
   ];
+  const lensFlag = slot.lens ? ` --lens ${slot.lens}` : '';
 
   let args: string[];
   let prompt: string;
   let resumed: string | undefined;
-  if (opts.recheck) {
-    const prev = previousRun(run, lens);
+  if (recheck) {
+    const prev = previousRun(run, slot);
     if (!prev?.sessionId)
       throw new UserError(
-        `No earlier tracetoon review run pass${lens ? ` for lens ${lens}` : ''} to recheck: run tracetoon review run --run ${run.id}${lens ? ` --lens ${lens}` : ''} first.`,
+        `No earlier tracetoon review run pass${slot.lens ? ` for lens ${slot.lens}` : ''} to recheck: run tracetoon review run --run ${run.id}${lensFlag} first.`,
       );
     resumed = prev.sessionId;
-    const before = existsSync(join(run.dir, reviewedBodyFile(lens)))
-      ? readFileSync(join(run.dir, reviewedBodyFile(lens)), 'utf8')
+    const before = existsSync(join(run.dir, reviewedBodyFile(suffix)))
+      ? readFileSync(join(run.dir, reviewedBodyFile(suffix)), 'utf8')
       : undefined;
     const changed =
       before === undefined
@@ -404,6 +507,8 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
             ...input.body.split(/\r?\n/).map((l, i) => `  body:${i + 1} | ${l}`),
           ]
         : changedLines(before, input.body).filter((l) => !/\| <!-- tracetoon:/.test(l));
+    const contested =
+      planRecheck(plan) === 'contested' ? contestedFindings(prev, input.body) : [];
     prompt = [
       '# Confirmation round',
       '',
@@ -414,18 +519,33 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
       'Your previous findings:',
       '',
       JSON.stringify({ v: 1, findings: prev.raw.findings }, null, 2),
+      ...(contested.length
+        ? [
+            '',
+            'The author kept these flagged sentences and rejects your findings on them. Check each against the lines it cites and keep it (with your evidence) or withdraw it:',
+            '',
+            ...contested.map((f) => `- ${f.verdict}: "${(f.quote ?? '').trim()}"`),
+          ]
+        : []),
+      ...(note?.trim()
+        ? ['', "The author's notes on rejected findings:", '', note.trim()]
+        : []),
       '',
       'Update them in one turn: drop findings the changes fixed, keep or reword the ones that still hold (quote the current body text), and add any new problem the changed lines introduce. Reply with ONLY the updated findings JSON object in the same shape as before (no prose, no code fence, no files, no commands).',
     ].join('\n');
     args = ['exec', 'resume', ...pinned, resumed, '-'];
   } else {
-    const { packet } = writeLeanPacket(run, lens);
+    const { packet } = writeLeanPacket(
+      run,
+      slot.lens,
+      !slot.lens && suffix ? `review-packet${suffix}.md` : undefined,
+    );
     prompt = [
       packet.text.trimEnd(),
       '',
       '---',
       '',
-      referenceText(lens).trimEnd(),
+      referenceText(slot.lens).trimEnd(),
       '',
       RUN_OVERRIDE,
       '',
@@ -433,7 +553,7 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
     args = ['exec', '--sandbox', 'read-only', ...pinned, '-C', run.dir, '-'];
   }
 
-  const res = await runCli(bin, args, run.dir, timeoutMs(), prompt);
+  const res = await runCli(s.bin, args, run.dir, timeoutMs(), prompt);
   const events = parseEvents(res.stdout);
   const lastErr = () =>
     res.stderr.trim().split('\n').filter(Boolean).pop()?.slice(0, 300) ?? '';
@@ -459,6 +579,8 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
       `The reviewer's reply could not be read as findings JSON (${(e as Error).message}). Nothing was imported.`,
     );
   }
+  // Everything from here to the return is synchronous, so passes running in
+  // parallel import one at a time and never interleave review-passes.json.
   const verified = verifiedSessionModel(sessionId);
   const obj = rec(raw);
   const cold = rec(obj.coldRead);
@@ -468,7 +590,7 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
     ...(str(cold.change) || str(cold.start) ? { coldRead: cold } : {}),
     findings: obj.findings,
   };
-  const findingsPath = join(run.dir, lensFindingsFile(lens));
+  const findingsPath = join(run.dir, slotFindingsFile(slot));
   const previousFile = existsSync(findingsPath)
     ? readFileSync(findingsPath, 'utf8')
     : undefined;
@@ -480,13 +602,14 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
       agentId: sessionId,
       reviewerModel: model,
       ...(effort ? { reviewerEffort: effort } : {}),
-      ...(lens ? { lens } : {}),
+      ...(slot.lens ? { lens: slot.lens } : {}),
       provenance: {
         source: 'tracetoon-run',
         runner: 'codex-exec',
         sessionId,
         verifiedModel: verified.model,
         bodySha256: sha256(input.body),
+        slot: slot.slot,
       },
     });
   } catch (e) {
@@ -495,7 +618,7 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
     else writeFileSync(findingsPath, previousFile, 'utf8');
     throw e;
   }
-  writeFileSync(join(run.dir, reviewedBodyFile(lens)), input.body, 'utf8');
+  writeFileSync(join(run.dir, reviewedBodyFile(suffix)), input.body, 'utf8');
   const warnings = [...result.warnings];
   if (verified.model !== codexModel)
     warnings.unshift(
@@ -503,39 +626,240 @@ export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise
         ? `The session's rollout says it ran on ${verified.model}, not ${codexModel}: publish refuses this pass.`
         : `No rollout for session ${sessionId} under ${join(codexHome(), 'sessions')} shows its model: the model is unverified${plan?.runner === 'tracetoon' ? ' and publish refuses this pass' : ''}.`,
     );
-  const pass = result.pass as ReviewPass;
-  const recheck = `tracetoon review run --run ${run.id}${lens ? ` --lens ${lens}` : ''} --recheck`;
+  return {
+    slot,
+    result,
+    pass: result.pass as ReviewPass,
+    sessionId,
+    verifiedModel: verified.model,
+    rollout: verified.rollout ?? null,
+    findingsPath,
+    warnings,
+  };
+}
+
+/** The single-pass next step, by the plan's `Review recheck:` setting. */
+function singleNext(
+  run: Run,
+  plan: ReviewPlan | undefined,
+  slot: Slot,
+  findings: number,
+) {
+  const recheck = `tracetoon review run --run ${run.id}${slot.lens ? ` --lens ${slot.lens}` : ''} --recheck`;
+  const apply = `check each finding against the patch and apply the valid ones to body.md, tracetoon render --json --run ${run.id}`;
+  if (!findings) return `tracetoon render --json --run ${run.id}`;
+  switch (planRecheck(plan)) {
+    case 'none':
+      return `${apply}, then tracetoon review import --run ${run.id} --rebind (no reviewer recheck)`;
+    case 'contested':
+      return `${apply}, then ${recheck} only if you rejected a finding, else tracetoon review import --run ${run.id} --rebind`;
+    default:
+      return `${apply}, then ${recheck} once`;
+  }
+}
+
+export async function reviewRunCmd(cwd: string, opts: ReviewRunOptions): Promise<void> {
+  if (opts.all) return reviewRunAll(cwd, opts);
+  let lens: ReviewLens | undefined;
+  try {
+    lens = parseLens(opts.lens);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
+  const s = setup(cwd, opts);
+  const { run, plan } = s;
+  // General passes run alongside lenses when the plan asks for more passes than lenses.
+  if (plan?.lenses.length && !lens && requiredPasses(plan) <= plan.lenses.length)
+    throw new UserError(
+      `This run's review plan has lenses ${plan.lenses.join(', ')}: run each with --lens <${plan.lenses.join('|')}>, or all at once with --all.`,
+    );
+  if (lens && plan?.lenses.length && !plan.lenses.includes(lens))
+    throw new UserError(
+      `Lens ${lens} is not in this run's review plan (lenses ${plan.lenses.join(', ')}).`,
+    );
+  const slot: Slot = lens ? { slot: lens, lens } : { slot: 'general' };
+  const o = await runPass(s, slot, !!opts.recheck, opts.note);
+  const pass = o.pass;
   const next = opts.recheck
     ? `tracetoon render --json --run ${run.id}; publish when the review is current`
-    : pass.findings
-      ? `check each finding against the patch and apply the valid ones to body.md, tracetoon render --json --run ${run.id}, then ${recheck} once`
-      : `tracetoon render --json --run ${run.id}`;
+    : singleNext(run, plan, slot, pass.findings);
   emit(
     opts,
     {
-      ...result,
-      warnings,
-      sessionId,
-      model: codexModel,
-      verifiedModel: verified.model,
-      rollout: verified.rollout ?? null,
-      findingsPath,
+      ...o.result,
+      warnings: o.warnings,
+      sessionId: o.sessionId,
+      model: s.codexModel,
+      verifiedModel: o.verifiedModel,
+      rollout: o.rollout,
+      findingsPath: o.findingsPath,
       next,
     },
     () =>
       [
-        `${opts.recheck ? 'Rechecked' : 'Reviewed'} with codex exec on ${codexModel}${effort ? ` (effort ${effort})` : ''}: session ${sessionId}, ${pass.findings} finding(s) (pass ${pass.pass}${lens ? `, lens ${lens}` : ''}).`,
-        `Verified model (rollout): ${verified.model ?? 'not found'}.`,
-        `Wrote ${findingsPath} and ${result.path}.`,
-        ...warnings.map((w) => `  warning: ${w}`),
-        planEnforced(plan)
-          ? result.planMissing.length
-            ? `Review plan (${planSummary(plan)}) still needs:\n${result.planMissing.map((m) => `  - ${m}`).join('\n')}`
-            : `Review plan (${planSummary(plan)}): met.`
-          : '',
+        `${opts.recheck ? 'Rechecked' : 'Reviewed'} with codex exec on ${s.codexModel}${s.effort ? ` (effort ${s.effort})` : ''}: session ${o.sessionId}, ${pass.findings} finding(s) (pass ${pass.pass}${lens ? `, lens ${lens}` : ''}).`,
+        `Verified model (rollout): ${o.verifiedModel ?? 'not found'}.`,
+        `Wrote ${o.findingsPath} and ${o.result.path}.`,
+        ...o.warnings.map((w) => `  warning: ${w}`),
+        planText(plan, o.result.planMissing),
         `Next: ${next}`,
       ]
         .filter(Boolean)
         .join('\n'),
   );
+}
+
+function planText(plan: ReviewPlan | undefined, missing: string[]): string {
+  if (!planEnforced(plan)) return '';
+  return missing.length
+    ? `Review plan (${planSummary(plan)}) still needs:\n${missing.map((m) => `  - ${m}`).join('\n')}`
+    : `Review plan (${planSummary(plan)}): met.`;
+}
+
+/**
+ * `review run --all`: every pass the plan requires, concurrently; each is
+ * imported as a single `review run` imports it, then one merged list is
+ * written. Passes already imported for the current body on the verified model
+ * are kept (unless --fresh), so rerunning after a partial failure runs only
+ * the failed ones. With --recheck: every Tracetoon-run pass is resumed once,
+ * or with `Review recheck: contested.` only those with rejected findings.
+ */
+async function reviewRunAll(cwd: string, opts: ReviewRunOptions): Promise<void> {
+  if (opts.lens)
+    throw new UserError('--all runs every lens in the plan; leave --lens out.');
+  const s = setup(cwd, opts);
+  const { run, plan, input, codexModel } = s;
+  const bodyHash = sha256(input.body);
+  const stored = loadPasses(run);
+  const slots = planSlots(plan);
+  const skipped: { slot: string; label: string; reason: string }[] = [];
+  let todo: Slot[];
+  if (opts.recheck) {
+    todo = [];
+    for (const slot of slots) {
+      const prev = previousRun(run, slot);
+      if (!prev) {
+        skipped.push({
+          slot: slot.slot,
+          label: slotLabel(slot),
+          reason: 'no earlier pass',
+        });
+        continue;
+      }
+      if (
+        planRecheck(plan) === 'contested' &&
+        !contestedFindings(prev, input.body).length
+      ) {
+        skipped.push({
+          slot: slot.slot,
+          label: slotLabel(slot),
+          reason: 'no rejected finding',
+        });
+        continue;
+      }
+      todo.push(slot);
+    }
+  } else {
+    todo = slots.filter((slot) => {
+      const done =
+        !opts.fresh &&
+        stored.some(
+          (p) =>
+            p.source === 'tracetoon-run' &&
+            slotOf(p) === slot.slot &&
+            p.lens === slot.lens &&
+            p.bodySha256 === bodyHash &&
+            p.verifiedModel === codexModel,
+        );
+      if (done)
+        skipped.push({
+          slot: slot.slot,
+          label: slotLabel(slot),
+          reason: 'already imported for this body',
+        });
+      return !done;
+    });
+  }
+  const settled = await Promise.allSettled(
+    todo.map((slot) => runPass(s, slot, !!opts.recheck, opts.note)),
+  );
+  const ran: PassOutcome[] = [];
+  const failed: { slot: string; label: string; error: string }[] = [];
+  settled.forEach((r, i) => {
+    const slot = todo[i]!;
+    if (r.status === 'fulfilled') ran.push(r.value);
+    else
+      failed.push({
+        slot: slot.slot,
+        label: slotLabel(slot),
+        error: (r.reason as Error)?.message ?? String(r.reason),
+      });
+  });
+  const passes = loadPasses(run);
+  const merged = passes.length ? writeMergedList(run) : undefined;
+  const missing = planMissing(
+    plan,
+    passes.map(({ raw: _raw, ...p }) => p),
+  );
+  const rerun = `tracetoon review run --all${opts.recheck ? ' --recheck' : ''} --run ${run.id}`;
+  const next = failed.length
+    ? `${rerun} (reruns only the failed pass(es): ${failed.map((f) => f.label).join(', ')})`
+    : opts.recheck
+      ? `tracetoon render --json --run ${run.id}; publish when the review is current`
+      : recheckNext(run, plan, merged?.items.length ?? 0);
+  const error = failed.length
+    ? `${failed.length} of ${todo.length} reviewer pass(es) failed (${failed.map((f) => `${f.label}: ${f.error}`).join('; ')}). Rerun: ${rerun}`
+    : undefined;
+  emit(
+    opts,
+    {
+      ...(error ? { error } : {}),
+      run: run.id,
+      model: codexModel,
+      ran: ran.map((o) => ({
+        slot: o.slot.slot,
+        label: slotLabel(o.slot),
+        ...o.pass,
+        rollout: o.rollout,
+        findingsPath: o.findingsPath,
+        warnings: o.warnings,
+      })),
+      skipped,
+      failed,
+      ...(failed.length ? { rerun } : {}),
+      ...(merged
+        ? {
+            mergedPath: merged.path,
+            merged: {
+              items: merged.items,
+              total: merged.total,
+              duplicates: merged.duplicates,
+              dropped: merged.dropped,
+              fixed: merged.fixed,
+              passes: merged.passes,
+            },
+          }
+        : {}),
+      planMissing: missing,
+      next,
+    },
+    () =>
+      [
+        `${opts.recheck ? 'Rechecked' : 'Reviewed'} ${ran.length} pass(es) in parallel with codex exec on ${codexModel}${s.effort ? ` (effort ${s.effort})` : ''}: ${ran.map((o) => `${slotLabel(o.slot)} (pass ${o.pass.pass}, ${o.pass.findings} finding(s))`).join(', ') || 'none'}.`,
+        skipped.length
+          ? `Skipped: ${skipped.map((k) => `${k.label} (${k.reason})`).join(', ')}.`
+          : '',
+        ...ran.flatMap((o) =>
+          o.warnings.map((w) => `  warning (${slotLabel(o.slot)}): ${w}`),
+        ),
+        ...failed.map((f) => `FAILED ${f.label}: ${f.error}`),
+        failed.length ? `Rerun the failed pass(es): ${rerun}` : '',
+        merged ? `\n${merged.text.trimEnd()}\n\nWrote ${merged.path}.` : '',
+        planText(plan, missing),
+        `Next: ${next}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+  );
+  if (failed.length) process.exitCode = 1;
 }

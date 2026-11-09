@@ -17,6 +17,8 @@ const SKILL = [
   '',
   'Reviewer runner: tracetoon.',
   '',
+  'Review recheck: none.',
+  '',
   'Brief layout: neighborhood-wide.',
 ].join('\n');
 
@@ -28,6 +30,7 @@ describe('skill settings', () => {
       reviewPasses: '3',
       reviewLenses: 'a, b, c',
       reviewerRunner: 'tracetoon',
+      reviewRecheck: 'none',
       layout: 'neighborhood-wide',
     });
   });
@@ -37,6 +40,16 @@ describe('skill settings', () => {
     expect(out.reviewPasses).toBe('1');
     expect(out.layout).toBe('neighborhood-wide');
     expect(out.reviewerModel).toBe('terra');
+    expect(out.reviewRecheck).toBe('none');
+  });
+  test('step 2b: one review command, one merged list, one edit pass, recheck per the line', async () => {
+    const skill = await Bun.file('plugin/skills/tracetoon/SKILL.md').text();
+    expect(skill).toMatch(/^Review recheck: once\.$/m);
+    expect(skill).toContain('tracetoon review run --all --run <id>');
+    expect(skill).toContain('tracetoon review merge --run <id>');
+    expect(skill).toContain('ONE edit pass');
+    expect(skill).toContain('--review-recheck <once|contested|none>');
+    expect(skill).toMatch(/`none` → no recheck/);
   });
   test('the shipped SKILL.md parses to the defaults', async () => {
     const text = await Bun.file('plugin/skills/tracetoon/SKILL.md').text();
@@ -46,6 +59,7 @@ describe('skill settings', () => {
       reviewPasses: '1',
       reviewLenses: 'none',
       reviewerRunner: 'agent',
+      reviewRecheck: 'once',
       layout: 'toon',
     });
   });

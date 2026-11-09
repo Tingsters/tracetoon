@@ -191,9 +191,32 @@ describe('review run helpers', () => {
       reviewerModel: 'terra',
       runner: 'tracetoon',
     });
-    expect(t).toContain('`tracetoon review run --run r1`');
-    expect(t).toContain('`tracetoon review run --run r1 --recheck`');
+    expect(t).toContain('`tracetoon review run --all --run r1`');
+    expect(t).toContain('ONE edit pass');
+    expect(t).toContain('`tracetoon review run --all --recheck --run r1` once');
     expect(t).not.toContain('review-packet');
+    // Review recheck: none drops the recheck; contested makes it conditional.
+    const none = graphNext('r1', {
+      v: 1,
+      passes: 2,
+      lenses: ['d'],
+      reviewerModel: 'luna',
+      runner: 'tracetoon',
+      recheck: 'none',
+    });
+    expect(none).toContain('`tracetoon review run --all --run r1`');
+    expect(none).toContain('lenses d plus general');
+    expect(none).not.toContain('--recheck');
+    expect(none).toContain('no reviewer recheck');
+    const contested = graphNext('r1', {
+      v: 1,
+      passes: 1,
+      lenses: [],
+      reviewerModel: 'luna',
+      runner: 'tracetoon',
+      recheck: 'contested',
+    });
+    expect(contested).toContain('only if you rejected a finding');
     const l = graphNext('r1', {
       v: 1,
       passes: 1,
@@ -201,7 +224,8 @@ describe('review run helpers', () => {
       reviewerModel: 'terra',
       runner: 'tracetoon',
     });
-    expect(l).toContain('tracetoon review run --run r1 --lens <lens>');
+    expect(l).toContain('tracetoon review run --all --run r1');
+    expect(l).toContain('lenses a, c');
     const agent = graphNext('r1', {
       v: 1,
       passes: 1,
@@ -210,6 +234,17 @@ describe('review run helpers', () => {
     });
     expect(agent).not.toContain('review run');
     expect(agent).toContain('review import');
+    expect(agent).toContain('same reviewer');
+    const agentLens = graphNext('r1', {
+      v: 1,
+      passes: 2,
+      lenses: ['d'],
+      reviewerModel: 'luna',
+      recheck: 'none',
+    });
+    expect(agentLens).toContain('IN PARALLEL (all in one message)');
+    expect(agentLens).toContain('`tracetoon review merge --run r1`');
+    expect(agentLens).not.toContain('SendMessage');
   });
   test('the runner plan field is stored only for tracetoon', () => {
     expect(planFromOptions({ reviewerRunner: 'agent' })).toEqual({
@@ -415,7 +450,7 @@ describe('tracetoon review run', () => {
       runner: 'tracetoon',
     });
     if (prepared.next) {
-      expect(prepared.next).toContain(`tracetoon review run --run ${prepared.run}`);
+      expect(prepared.next).toContain(`tracetoon review run --all --run ${prepared.run}`);
       expect(prepared.next).toContain('--recheck');
     }
     // The flag wins over the SKILL line.
@@ -436,5 +471,221 @@ describe('tracetoon review run', () => {
     expect(
       JSON.parse(readFileSync(join(flagged.runDir, 'review-plan.json'), 'utf8')).runner,
     ).toBeUndefined();
+  });
+});
+
+describe('review run --all and the merged list', () => {
+  const luna = (extra: Record<string, unknown> = {}) => ({
+    reviewerModel: 'luna',
+    reviewerEffort: 'xhigh',
+    runner: 'tracetoon',
+    ...extra,
+  });
+
+  test('runs every planned pass concurrently, each with its own files, and merges them', () => {
+    const { repo, run, reply, plan } = renderedRun();
+    plan({ passes: 3, lenses: ['d'], ...luna({ recheck: 'none' }) });
+    const r = ok(repo.root, ['review', 'run', '--all', '--run', run.id], {
+      FAKE_REVIEW_OUTPUT: reply('always uses the given name'),
+      FAKE_REVIEW_DELAY_MS: '600',
+    });
+    const log = calls() as unknown as { prompt: string; start: number; end: number }[];
+    expect(log).toHaveLength(3);
+    // They overlapped: every pass started before any of them finished.
+    expect(Math.max(...log.map((c) => c.start))).toBeLessThan(
+      Math.min(...log.map((c) => c.end)),
+    );
+    expect(log.filter((c) => c.prompt.includes('# Lens reviewer D'))).toHaveLength(1);
+    expect(log.filter((c) => c.prompt.includes('# Lean reviewer'))).toHaveLength(2);
+    expect(r.ran.map((p: any) => p.slot).sort()).toEqual(['d', 'general', 'general2']);
+    expect(new Set(r.ran.map((p: any) => p.sessionId)).size).toBe(3);
+    expect(new Set(r.ran.map((p: any) => p.pass)).size).toBe(3);
+    for (const p of r.ran)
+      expect(p).toMatchObject({
+        source: 'tracetoon-run',
+        verifiedModel: 'gpt-6-luna',
+        model: 'luna',
+        effort: 'xhigh',
+      });
+    for (const f of [
+      'review-findings-d.json',
+      'review-findings.json',
+      'review-findings-g2.json',
+      'review-packet-d.md',
+      'review-packet.md',
+      'review-packet-g2.md',
+    ])
+      expect(existsSync(join(run.dir, f))).toBe(true);
+    // Three passes raised the same finding: one merged line naming all three.
+    expect(r.merged.items).toHaveLength(1);
+    expect(r.merged.duplicates).toBe(2);
+    expect(r.merged.items[0].passes.sort()).toEqual(['general', 'general 2', 'lens d']);
+    const md = readFileSync(join(run.dir, 'review-findings-merged.md'), 'utf8');
+    expect(md).toContain('1. overstated — "always uses the given name"');
+    expect(md).toContain('[lens d, general, general 2]');
+    expect(r.planMissing).toEqual([]);
+    // Recheck none: the plan is met without any recheck, and the next step says so.
+    expect(r.next).toContain('ONE edit pass');
+    expect(r.next).not.toContain('--recheck');
+    expect(planGate(run)).toBeUndefined();
+    writeFileSync(
+      join(run.dir, 'body.md'),
+      'The greeting uses the given name when one is passed.\n\nIt previously only said hello.\n\nSee src/greet.ts.\n',
+    );
+    ok(repo.root, ['render', '--run', run.id, '--no-comic']);
+    ok(repo.root, ['review', 'import', '--run', run.id, '--rebind']);
+    expect(planGate(run)).toBeUndefined();
+    const merged = ok(repo.root, ['review', 'merge', '--run', run.id]);
+    expect(merged.items).toHaveLength(0);
+    expect(merged.fixed).toBe(3);
+  });
+
+  test('partial failure imports the passes that worked and reruns only the failed one', () => {
+    const { repo, run, reply, plan } = renderedRun();
+    plan({ passes: 2, lenses: ['d'], ...luna() });
+    const r = cli(repo.root, ['review', 'run', '--all', '--run', run.id], {
+      FAKE_REVIEW_OUTPUT: reply('always uses the given name'),
+      FAKE_REVIEW_FAIL_IF: '# Lens reviewer D',
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.json.failed).toHaveLength(1);
+    expect(r.json.failed[0]).toMatchObject({ slot: 'd', label: 'lens d' });
+    expect(r.json.failed[0].error).toContain('exited 4');
+    expect(r.json.ran.map((p: any) => p.slot)).toEqual(['general']);
+    expect(r.json.rerun).toBe(`tracetoon review run --all --run ${run.id}`);
+    expect(r.json.error).toContain(r.json.rerun);
+    expect(r.json.planMissing.join(' ')).toContain('lens d');
+    expect(existsSync(join(run.dir, 'review-findings-merged.md'))).toBe(true);
+    expect(planGate(run)).toContain('lens d');
+    const again = ok(repo.root, ['review', 'run', '--all', '--run', run.id], {
+      FAKE_REVIEW_OUTPUT: reply('always uses the given name'),
+    });
+    expect(calls()).toHaveLength(3);
+    expect(again.ran.map((p: any) => p.slot)).toEqual(['d']);
+    expect(again.skipped.map((p: any) => p.slot)).toEqual(['general']);
+    expect(again.merged.items[0].passes.sort()).toEqual(['general', 'lens d']);
+    expect(planGate(run)).toBeUndefined();
+    // Recheck once (the default): every pass is resumed in one command.
+    expect(again.next).toContain(`tracetoon review run --all --recheck --run ${run.id}`);
+  });
+
+  test('--all --recheck with recheck contested resumes only passes with rejected findings', () => {
+    const { repo, run, reply, plan } = renderedRun();
+    plan({ passes: 1, lenses: [], ...luna({ recheck: 'contested' }) });
+    const first = ok(repo.root, ['review', 'run', '--all', '--run', run.id], {
+      FAKE_REVIEW_OUTPUT: reply('always uses the given name'),
+    });
+    expect(first.next).toContain('only if you rejected a finding');
+    // The author fixed the flagged sentence: nothing is contested, nothing runs.
+    writeFileSync(
+      join(run.dir, 'body.md'),
+      'The greeting uses the given name when one is passed.\n\nIt previously only said hello.\n\nSee src/greet.ts.\n',
+    );
+    ok(repo.root, ['render', '--run', run.id, '--no-comic']);
+    const none = ok(repo.root, ['review', 'run', '--all', '--recheck', '--run', run.id]);
+    expect(none.ran).toHaveLength(0);
+    expect(none.skipped[0].reason).toBe('no rejected finding');
+    expect(calls()).toHaveLength(1);
+    // The author keeps it and rejects the finding: that pass is rechecked.
+    writeFileSync(
+      join(run.dir, 'body.md'),
+      'The greeting always uses the given name.\n\nIt previously only said hi.\n\nSee src/greet.ts.\n',
+    );
+    ok(repo.root, ['render', '--run', run.id, '--no-comic']);
+    const re = ok(
+      repo.root,
+      [
+        'review',
+        'run',
+        '--all',
+        '--recheck',
+        '--run',
+        run.id,
+        '--note',
+        'diff:3 shows it',
+      ],
+      { FAKE_REVIEW_OUTPUT: reply() },
+    );
+    expect(re.ran).toHaveLength(1);
+    const resume = calls()[1]!;
+    expect(resume.args.slice(0, 2)).toEqual(['exec', 'resume']);
+    expect(resume.prompt).toContain('rejects your findings');
+    expect(resume.prompt).toContain('diff:3 shows it');
+    expect(planGate(run)).toBeUndefined();
+  });
+
+  test('review merge works for agent-imported passes and needs one first', () => {
+    const { repo, run, reply, plan } = renderedRun();
+    plan({ passes: 2, lenses: ['d'], reviewerModel: 'luna' });
+    expect(cli(repo.root, ['review', 'merge', '--run', run.id]).json.error).toContain(
+      'No reviewer pass',
+    );
+    writeFileSync(
+      join(run.dir, 'review-findings-d.json'),
+      reply('always uses the given name').replace('codex-exec', 'agent-d1'),
+    );
+    ok(repo.root, [
+      'review',
+      'import',
+      '--run',
+      run.id,
+      '--lens',
+      'd',
+      '--reviewer-model',
+      'luna',
+    ]);
+    writeFileSync(
+      join(run.dir, 'review-findings.json'),
+      reply('the greeting always uses the given name.').replace('codex-exec', 'agent-g1'),
+    );
+    ok(repo.root, ['review', 'import', '--run', run.id, '--reviewer-model', 'luna']);
+    const m = ok(repo.root, ['review', 'merge', '--run', run.id]);
+    expect(m.items).toHaveLength(1);
+    expect(m.items[0].passes.sort()).toEqual(['general', 'lens d']);
+    expect(m.planMissing).toEqual([]);
+    expect(m.next).toContain('SendMessage');
+    expect(existsSync(m.path)).toBe(true);
+  });
+
+  test('the recheck setting is stored in the plan only when not once', () => {
+    expect(planFromOptions({ reviewRecheck: 'once.' })).toEqual({
+      v: 1,
+      passes: 1,
+      lenses: [],
+    });
+    expect(planFromOptions({ reviewRecheck: 'none' })).toMatchObject({ recheck: 'none' });
+    expect(planFromOptions({ reviewRecheck: 'Contested.' })).toMatchObject({
+      recheck: 'contested',
+    });
+    expect(() => planFromOptions({ reviewRecheck: 'twice' })).toThrow(
+      'Unknown review recheck',
+    );
+  });
+
+  test('prepare stores Review recheck from the SKILL line', () => {
+    const { repo } = renderedRun();
+    const skill = join(dirname(config), 'SKILL.md');
+    writeFileSync(
+      skill,
+      'Reviewer model: luna.\n\nReviewer effort: xhigh.\n\nReview passes: 2.\n\nReview lenses: d.\n\nReviewer runner: tracetoon.\n\nReview recheck: none.\n\nBrief layout: toon.\n',
+    );
+    const prepared = ok(repo.root, ['prepare', '--offline'], {
+      TRACETOON_SKILL_MD: skill,
+    });
+    expect(
+      JSON.parse(readFileSync(join(prepared.runDir, 'review-plan.json'), 'utf8')),
+    ).toEqual({
+      v: 1,
+      passes: 2,
+      lenses: ['d'],
+      reviewerModel: 'luna',
+      reviewerEffort: 'xhigh',
+      runner: 'tracetoon',
+      recheck: 'none',
+    });
+    if (prepared.next) {
+      expect(prepared.next).toContain(`tracetoon review run --all --run ${prepared.run}`);
+      expect(prepared.next).not.toContain('--recheck');
+    }
   });
 });

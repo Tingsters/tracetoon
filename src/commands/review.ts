@@ -30,7 +30,15 @@ import {
   type LeanFindings,
 } from '../contribution/leanReview.ts';
 import {
+  MERGED_FILE,
+  mergedMarkdown,
+  mergeFindings,
+  type MergedList,
+} from '../contribution/mergeFindings.ts';
+import {
   loadReviewPlan,
+  recheckStep,
+  type ReviewPlan,
   parseEffort,
   parseLens,
   planEnforced,
@@ -485,6 +493,8 @@ The lens ${lens} reviewer writes ${join(run.dir, lensFindingsFile(lens))}; impor
 export function writeLeanPacket(
   run: Run,
   lens?: ReviewLens,
+  /** Another file name, so parallel general passes don't share one packet. */
+  fileName?: string,
 ): { path: string; packet: Packet } {
   const { input, patch } = renderedInput(run);
   const graph = loadGraph(run);
@@ -501,7 +511,7 @@ export function writeLeanPacket(
     hunkLinks: parts?.hunkLinks,
     ...(lens ? { lens } : {}),
   });
-  const path = join(run.dir, packetFile(lens));
+  const path = join(run.dir, fileName ?? packetFile(lens));
   writeFileSync(path, packet.text, 'utf8');
   return { path, packet };
 }
@@ -591,7 +601,7 @@ export interface ImportOptions {
   /** Recorded on the pass by `tracetoon review run` (source, session, verified model). */
   provenance?: Pick<
     ReviewPass,
-    'source' | 'runner' | 'sessionId' | 'verifiedModel' | 'bodySha256'
+    'source' | 'runner' | 'sessionId' | 'verifiedModel' | 'bodySha256' | 'slot'
   >;
 }
 
@@ -813,6 +823,85 @@ export function importLeanReview(
     passes: summaries,
     planMissing: planMissing(plan, summaries),
   };
+}
+
+/** Each pass's label in the merged list: `lens x`, `general`, or `general N` when there are several. */
+export function passLabels(passes: StoredPass[]): Map<StoredPass, string> {
+  const general = passes.filter((p) => !p.lens);
+  const out = new Map<StoredPass, string>();
+  for (const p of passes)
+    out.set(
+      p,
+      p.lens
+        ? `lens ${p.lens}`
+        : p.slot?.startsWith('general')
+          ? p.slot === 'general'
+            ? 'general'
+            : `general ${p.slot.slice(7)}`
+          : general.length > 1
+            ? `general ${general.indexOf(p) + 1}`
+            : 'general',
+    );
+  return out;
+}
+
+/** Build and write `<run>/review-findings-merged.md` from the imported passes. */
+export function writeMergedList(run: Run): MergedList & { path: string; text: string } {
+  const passes = loadPasses(run).sort((a, b) => a.pass - b.pass);
+  const { input } = renderedInput(run);
+  const labels = passLabels(passes);
+  const list = mergeFindings(
+    passes.map((p) => ({ label: labels.get(p)!, findings: p.raw?.findings ?? [] })),
+    {
+      isFixed: (f) =>
+        f.kind === 'claim' &&
+        !!(f.quote ?? '').trim() &&
+        !locateQuote(f.quote!, input.title, input.body),
+    },
+  );
+  const text = mergedMarkdown(run.id, list);
+  const path = join(run.dir, MERGED_FILE);
+  writeFileSync(path, text, 'utf8');
+  return { ...list, path, text };
+}
+
+/** The correction round's next step after a merged list, by the plan's `Review recheck:` setting. */
+export function recheckNext(
+  run: Run,
+  plan: ReviewPlan | undefined,
+  findings: number,
+): string {
+  const render = `tracetoon render --check --json --run ${run.id}`;
+  if (!findings) return `${render}; publish when the review is current`;
+  return `apply ${MERGED_FILE} in ONE edit pass of body.md (check each finding against the lines it cites; fix or reject every flagged claim), ${render}, then ${recheckStep(run.id, plan)}`;
+}
+
+export function reviewMergeCmd(cwd: string, opts: OutOpts & { run?: string }): void {
+  const { run } = openRun(cwd, opts.run);
+  if (!loadPasses(run).length)
+    throw new UserError(
+      `No reviewer pass has been imported for run ${run.id} yet: import each reviewer with tracetoon review import --run ${run.id} first.`,
+    );
+  const plan = loadReviewPlan(run);
+  const merged = writeMergedList(run);
+  const missing = planMissing(
+    plan,
+    loadPasses(run).map(({ raw: _raw, ...p }) => p),
+  );
+  const next = recheckNext(run, plan, merged.items.length);
+  emit(opts, { ...merged, planMissing: missing, next }, () =>
+    [
+      merged.text.trimEnd(),
+      '',
+      `Wrote ${merged.path}.`,
+      planEnforced(plan) && missing.length
+        ? `Review plan (${planSummary(plan)}) still needs:\n${missing.map((m) => `  - ${m}`).join('\n')}`
+        : '',
+      `Next: ${next}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
 }
 
 export function reviewImportCmd(

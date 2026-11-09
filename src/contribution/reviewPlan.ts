@@ -22,6 +22,14 @@ export const REVIEWER_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as con
  */
 export const REVIEWER_RUNNERS = ['agent', 'tracetoon'] as const;
 export type ReviewerRunner = (typeof REVIEWER_RUNNERS)[number];
+/**
+ * Whether reviewers recheck the drafter's correction round (SKILL `Review
+ * recheck:`): `once` (every reviewer confirms the changed lines once),
+ * `contested` (only reviewers whose findings the drafter rejected) or `none`.
+ * Publish never requires a recheck: it is advice, not part of the gate.
+ */
+export const REVIEW_RECHECKS = ['once', 'contested', 'none'] as const;
+export type ReviewRecheck = (typeof REVIEW_RECHECKS)[number];
 
 /** SKILL short model names → Codex model ids. Anything else is used as given. */
 export const CODEX_MODELS: Record<string, string> = {
@@ -42,6 +50,8 @@ export interface ReviewPlan {
   reviewerEffort?: string;
   /** Stored only when `tracetoon`: passes must come from `tracetoon review run`. */
   runner?: 'tracetoon';
+  /** Stored only when not `once` (the default). */
+  recheck?: Exclude<ReviewRecheck, 'once'>;
 }
 
 /** One imported reviewer pass, as review.json `passes` records it. */
@@ -63,6 +73,8 @@ export interface ReviewPass {
   verifiedModel?: string | null;
   /** sha256 of the body text the pass reviewed (for --recheck). */
   bodySha256?: string;
+  /** `tracetoon review run`'s slot: the lens, `general` or `general<k>` (its file names). */
+  slot?: string;
 }
 
 /** SKILL line values that mean "nothing chosen". */
@@ -117,6 +129,20 @@ export function parseRunner(value: unknown): ReviewerRunner | undefined {
   return s as ReviewerRunner;
 }
 
+export function parseRecheck(value: unknown): ReviewRecheck | undefined {
+  const s = clean(value).toLowerCase();
+  if (!s || /^(default|-)$/.test(s)) return undefined;
+  if (!(REVIEW_RECHECKS as readonly string[]).includes(s))
+    throw new Error(
+      `Unknown review recheck "${clean(value)}": use ${REVIEW_RECHECKS.join(', ')}.`,
+    );
+  return s as ReviewRecheck;
+}
+
+/** The plan's recheck setting (default once). */
+export const planRecheck = (plan: ReviewPlan | undefined): ReviewRecheck =>
+  plan?.recheck ?? 'once';
+
 export function parsePasses(value: unknown): number | undefined {
   const s = clean(value);
   if (!s) return undefined;
@@ -132,6 +158,7 @@ export interface PlanOptions {
   reviewerModel?: unknown;
   reviewerEffort?: unknown;
   reviewerRunner?: unknown;
+  reviewRecheck?: unknown;
 }
 
 /** The plan `prepare` was asked for; undefined when no review option was given. */
@@ -141,12 +168,14 @@ export function planFromOptions(opts: PlanOptions): ReviewPlan | undefined {
     opts.reviewLenses === undefined &&
     opts.reviewerModel === undefined &&
     opts.reviewerEffort === undefined &&
-    opts.reviewerRunner === undefined
+    opts.reviewerRunner === undefined &&
+    opts.reviewRecheck === undefined
   )
     return undefined;
   const model = parseModel(opts.reviewerModel);
   const effort = parseEffort(opts.reviewerEffort);
   const runner = parseRunner(opts.reviewerRunner);
+  const recheck = parseRecheck(opts.reviewRecheck);
   return {
     v: 1,
     passes: parsePasses(opts.reviewPasses) ?? 1,
@@ -154,6 +183,7 @@ export function planFromOptions(opts: PlanOptions): ReviewPlan | undefined {
     ...(model ? { reviewerModel: model } : {}),
     ...(effort ? { reviewerEffort: effort } : {}),
     ...(runner === 'tracetoon' ? { runner } : {}),
+    ...(recheck && recheck !== 'once' ? { recheck } : {}),
   };
 }
 
@@ -174,12 +204,36 @@ export function loadReviewPlan(run: Run): ReviewPlan | undefined {
     ...(raw.reviewerModel ? { reviewerModel: raw.reviewerModel } : {}),
     ...(raw.reviewerEffort ? { reviewerEffort: raw.reviewerEffort } : {}),
     ...(raw.runner === 'tracetoon' ? { runner: 'tracetoon' as const } : {}),
+    ...(raw.recheck === 'none' || raw.recheck === 'contested'
+      ? { recheck: raw.recheck }
+      : {}),
   };
 }
 
 /** Whether publish requires passes run (and model-verified) by `tracetoon review run`. */
 export const tracetoonRuns = (plan: ReviewPlan | undefined): boolean =>
   !!plan && plan.runner === 'tracetoon' && !!plan.reviewerModel;
+
+/**
+ * The recheck step after the drafter's one edit pass, by `Review recheck:`.
+ * Every variant ends with the review bound to the new render; none of them is
+ * part of the publish gate.
+ */
+export function recheckStep(run: string, plan: ReviewPlan | undefined): string {
+  const rebind = `\`tracetoon review import --run ${run} --rebind\``;
+  const recheck = planRecheck(plan);
+  if (tracetoonRuns(plan))
+    return recheck === 'none'
+      ? `no reviewer recheck (Review recheck: none): ${rebind}`
+      : recheck === 'contested'
+        ? `only if you rejected a finding, \`tracetoon review run --all --recheck --run ${run}\` (it rechecks just the passes whose findings you rejected; pass your reasons with --note), else ${rebind}`
+        : `\`tracetoon review run --all --recheck --run ${run}\` once`;
+  return recheck === 'none'
+    ? `no reviewer recheck (Review recheck: none): ${rebind}`
+    : recheck === 'contested'
+      ? `only for findings you rejected, send the reviewer that raised them your rejection and its diff line (SendMessage / followup_task) and re-import it; then ${rebind}`
+      : `send the same reviewer(s) the changed lines and your rejections once (SendMessage / followup_task), re-import each, then ${rebind}`;
+}
 
 /** Passes the plan needs: at least one per lens. */
 export const requiredPasses = (plan: ReviewPlan) =>
@@ -205,6 +259,7 @@ export function planSummary(plan: ReviewPlan): string {
     plan.reviewerModel ? `reviewer model ${plan.reviewerModel}` : '',
     plan.reviewerEffort ? `reviewer effort ${plan.reviewerEffort}` : '',
     tracetoonRuns(plan) ? 'run by tracetoon review run' : '',
+    plan.recheck ? `recheck ${plan.recheck}` : '',
   ]
     .filter(Boolean)
     .join(', ');

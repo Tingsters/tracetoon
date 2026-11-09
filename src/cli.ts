@@ -23,7 +23,7 @@ import { sourceCmd } from './commands/source.ts';
 import { queryCmd, ROW_CAP } from './commands/query.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
 import { publishCmd, renderCmd } from './commands/publish.ts';
-import { reviewImportCmd, reviewPacketCmd } from './commands/review.ts';
+import { reviewImportCmd, reviewMergeCmd, reviewPacketCmd } from './commands/review.ts';
 import { reviewRunCmd } from './commands/reviewRun.ts';
 import {
   comicArtCmd,
@@ -215,6 +215,10 @@ program
     '--reviewer-runner <runner>',
     'review plan (SKILL "Reviewer runner:"): agent (the drafter starts the reviewer) or tracetoon (tracetoon review run starts it with the model pinned; publish requires that)',
   )
+  .option(
+    '--review-recheck <mode>',
+    'review plan (SKILL "Review recheck:"): once (each reviewer confirms the correction round), contested (only reviewers whose findings were rejected) or none; publish never requires a recheck',
+  )
   .action((o) => {
     prepareCmd(cwd, { ...g(), ...o });
   });
@@ -311,7 +315,24 @@ review
     '--effort <level>',
     'reviewer effort when the review plan names none (must equal the plan otherwise)',
   )
+  .option(
+    '--all',
+    'run every pass the review plan requires (one per lens plus the general passes) in parallel, import each, and write one merged list (review-findings-merged.md); with --recheck, recheck them',
+  )
+  .option('--fresh', 'with --all: rerun passes already imported for the current body too')
+  .option(
+    '--note <text>',
+    'with --recheck: your rejections and the diff lines behind them, passed to the reviewer',
+  )
   .action(async (o) => reviewRunCmd(cwd, { ...g(), ...o }));
+
+review
+  .command('merge')
+  .description(
+    'merge the findings of every imported reviewer pass into one deduplicated, ordered list (review-findings-merged.md), capped at 12 lines',
+  )
+  .option('--run <id>', 'run id (default: latest)')
+  .action((o) => reviewMergeCmd(cwd, { ...g(), ...o }));
 
 review
   .command('import')

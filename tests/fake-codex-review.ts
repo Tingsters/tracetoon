@@ -8,18 +8,30 @@
  * FAKE_REVIEW_ROLLOUT_MODEL: the model the rollout records (default: the -m value).
  * FAKE_REVIEW_NO_ROLLOUT=1: write no rollout.
  * FAKE_REVIEW_EXIT: exit with this code after printing an error.
+ * FAKE_REVIEW_FAIL_IF: exit 4 when the prompt contains this text (one pass of several fails).
+ * FAKE_REVIEW_DELAY_MS: wait this long before replying (calls log start and end times).
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const args = process.argv.slice(2);
 const prompt = readFileSync(0, 'utf8');
+const start = Date.now();
+const delay = Number(process.env.FAKE_REVIEW_DELAY_MS) || 0;
+if (delay) await new Promise((r) => setTimeout(r, delay));
 if (process.env.FAKE_CODEX_LOG)
-  appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ args, prompt }) + '\n');
+  appendFileSync(
+    process.env.FAKE_CODEX_LOG,
+    JSON.stringify({ args, prompt, start, end: Date.now() }) + '\n',
+  );
 const flag = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
+if (process.env.FAKE_REVIEW_FAIL_IF && prompt.includes(process.env.FAKE_REVIEW_FAIL_IF)) {
+  console.error('fake codex: this pass failed');
+  process.exit(4);
+}
 if (process.env.FAKE_REVIEW_EXIT) {
   console.error('fake codex: something went wrong');
   process.exit(Number(process.env.FAKE_REVIEW_EXIT));

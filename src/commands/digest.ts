@@ -42,6 +42,7 @@ import {
   planEnforced,
   planFromOptions,
   planSummary,
+  recheckStep,
   requiredPasses,
   saveReviewPlan,
   PLAN_FILE,
@@ -397,15 +398,15 @@ export function graphNext(run: string, plan?: ReviewPlan): string {
     ? `${plan.reviewerModel ? ` --reviewer-model ${plan.reviewerModel}` : ''}${plan.reviewerEffort ? ` --reviewer-effort ${plan.reviewerEffort}` : ''}`
     : '';
   const tracetoonReview = enforced && plan.runner === 'tracetoon' && !!plan.reviewerModel;
+  const n = enforced ? requiredPasses(plan) : 1;
+  const onePass = `apply it in ONE edit pass of body.md (check each finding against the lines it cites; fix or reject every flagged claim), \`tracetoon render --check --json --run ${run}\`, then ${recheckStep(run, plan)}`;
   const review = tracetoonReview
-    ? plan.lenses.length
-      ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review run --run ${run} --lens <lens>\` (Tracetoon runs the reviewer on ${plan.reviewerModel}; don't start a reviewer agent); apply the valid findings, \`render --json\`, then \`tracetoon review run --run ${run} --lens <lens> --recheck\` for each lens whose findings you fixed or contested, and \`tracetoon review import --run ${run} --rebind\``
-      : `\`tracetoon review run --run ${run}\` (Tracetoon runs the reviewer on ${plan.reviewerModel}; don't start a reviewer agent); apply the valid findings, \`render --json\`, then \`tracetoon review run --run ${run} --recheck\` once${requiredPasses(plan) > 1 ? `; ${requiredPasses(plan) - 1} more pass(es) need a new reviewer run after that` : ''}`
+    ? `\`tracetoon review run --all --run ${run}\` (Tracetoon runs ${n === 1 ? 'the reviewer' : `all ${n} reviewer passes${plan.lenses.length ? ` (lenses ${plan.lenses.join(', ')}${n > plan.lenses.length ? ' plus general' : ''})` : ''} in parallel`} on ${plan.reviewerModel}, imports each and writes one merged list, review-findings-merged.md; don't start a reviewer agent); ${onePass}`
     : !enforced
-      ? `\`tracetoon review-packet --lean --run ${run}\`; one fresh independent reviewer (not a fork) gets review-packet.md plus references/reviewer-lean.md and writes review-findings.json; \`tracetoon review import --run ${run} --agent-id <its id>\`; one correction round confirmed by the same reviewer`
+      ? `\`tracetoon review-packet --lean --run ${run}\`; one fresh independent reviewer (not a fork) gets review-packet.md plus references/reviewer-lean.md and writes review-findings.json; \`tracetoon review import --run ${run} --agent-id <its id>\`; one correction round, then ${recheckStep(run, plan)}`
       : plan.lenses.length
-        ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review-packet --lean --lens <lens> --run ${run}\`; start one fresh reviewer per lens IN PARALLEL${settings} (packet plus references/reviewer-lens-<lens>.md); import each with \`tracetoon review import --run ${run} --lens <lens> --agent-id <its id>${flags}\`; one correction round, then \`render --json\` and \`review import --run ${run} --rebind\`${requiredPasses(plan) > plan.lenses.length ? `; ${requiredPasses(plan) - plan.lenses.length} more fresh reviewer pass(es) after that` : ''}`
-        : `\`tracetoon review-packet --lean --run ${run}\`; ${requiredPasses(plan)} fresh reviewer pass(es), each a NEW reviewer${settings} (packet plus references/reviewer-lean.md), one after another with a correction round between; import each with \`tracetoon review import --run ${run} --agent-id <its id>${flags}\``;
+        ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review-packet --lean --lens <lens> --run ${run}\`; start one fresh reviewer per lens${requiredPasses(plan) > plan.lenses.length ? ` and ${requiredPasses(plan) - plan.lenses.length} general reviewer(s) (review-packet.md)` : ''} IN PARALLEL (all in one message)${settings} (packet plus references/reviewer-lens-<lens>.md); import each with \`tracetoon review import --run ${run} --lens <lens> --agent-id <its id>${flags}\`; then \`tracetoon review merge --run ${run}\` and ${onePass}`
+        : `\`tracetoon review-packet --lean --run ${run}\`; ${requiredPasses(plan)} fresh reviewer pass(es), each a NEW reviewer${settings} (packet plus references/reviewer-lean.md)${requiredPasses(plan) > 1 ? ', all started in one message' : ''}; import each with \`tracetoon review import --run ${run} --agent-id <its id>${flags}\`; then \`tracetoon review merge --run ${run}\` and ${onePass}`;
   return `take the reviewed brief path (SKILL step 2b): draft title.txt and body.md yourself from the evidence brief (\`tracetoon query brief --run ${run}\`) and the patch, following references/drafting.md (what the PR does and why first; no fixed section list); run the repository's required checks once with tracetoon check; \`tracetoon render --check --json --run ${run}\` until nothing is listed; then \`tracetoon render --json --run ${run}\` and ${review}; publish when the review is current${enforced ? ` (publish refuses until the review plan is met: ${planSummary(plan)})` : ''}. Read every command's whole output (no head or tail). Only on the user's request: the quick path (SKILL step 2a) or the three-role thorough path.`;
 }
 
@@ -432,6 +433,7 @@ export function prepareCmd(cwd: string, given: DigestOpts & PlanOptions) {
     delete skill.reviewPasses;
     delete skill.reviewLenses;
     delete skill.reviewerRunner;
+    delete skill.reviewRecheck;
   }
   const opts = withSkillDefaults(
     given as DigestOpts & PlanOptions & SkillSettings,
