@@ -1052,3 +1052,26 @@ describe('review import evidence', () => {
     expect(review.bodyReview!.transfer.reason).toContain('Something vague');
   });
 });
+
+describe('general reviewers alongside lenses', () => {
+  test('a plan with more passes than lenses is met by one lens pass plus one general pass', async () => {
+    const { planFromOptions, planMissing } =
+      await import('../src/contribution/reviewPlan.ts');
+    const plan = planFromOptions({
+      reviewPasses: '2',
+      reviewLenses: 'd',
+      reviewerEffort: 'xhigh',
+    })!;
+    const pass = (agentId: string, lens?: string) =>
+      ({
+        pass: 1,
+        agentId,
+        effort: 'xhigh',
+        findings: 1,
+        importedAt: '',
+        ...(lens ? { lens } : {}),
+      }) as any;
+    expect(planMissing(plan, [pass('g1')])).not.toEqual([]);
+    expect(planMissing(plan, [pass('g1'), pass('d1', 'd')])).toEqual([]);
+  });
+});

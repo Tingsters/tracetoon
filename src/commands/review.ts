@@ -35,6 +35,7 @@ import {
   planEnforced,
   planMissing,
   planSummary,
+  requiredPasses,
   type ReviewLens,
   type ReviewPass,
 } from '../contribution/reviewPlan.ts';
@@ -620,7 +621,9 @@ export function importLeanReview(
         'No reviewer pass has been imported for this run yet: import one before --rebind.',
       );
   } else {
-    if (plan?.lenses.length && !lens)
+    // General (no-lens) reviewers are allowed when the plan asks for more
+    // passes than it has lenses ("Review passes: 2. Review lenses: d.").
+    if (plan?.lenses.length && !lens && requiredPasses(plan) <= plan.lenses.length)
       throw new UserError(
         `This run's review plan has lenses ${plan.lenses.join(', ')}: import each reviewer with --lens <${plan.lenses.join('|')}>.`,
       );
