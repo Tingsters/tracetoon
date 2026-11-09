@@ -118,6 +118,17 @@ export const LENS_CHECKLISTS: Record<
       '- Paths no test or receipt covers, described as verified.',
     ],
   },
+  d: {
+    title: 'Lens D: completeness',
+    check: [
+      '- Every change unit (CH#) and every commit-message sentence: a body sentence says specifically what it does (the function or command and its new behavior), not just that the area changed.',
+      '- Tests: each added or changed test file is named with what its new tests assert (from `tests` rows and test hunks).',
+      '- Docs, guides, SKILL/README and prompt files the diff changes: each gets a clause saying what changed in it.',
+      '- Old → new values (`was:` rows: models, limits, windows, names, defaults): stated with both values.',
+      '- The reason the code itself gives (code comments in added lines, commit messages): said, attributed.',
+      '- A secondary user-visible change (preview page, output format, CLI flag) the body skips.',
+    ],
+  },
 };
 
 export interface Packet {

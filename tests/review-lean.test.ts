@@ -637,7 +637,7 @@ describe('review plan', () => {
       reviewerModel: 'terra',
       reviewerEffort: 'xhigh',
     });
-    expect(() => planFromOptions({ reviewLenses: 'd' })).toThrow('Unknown review lens');
+    expect(() => planFromOptions({ reviewLenses: 'e' })).toThrow('Unknown review lens');
     expect(() => planFromOptions({ reviewerEffort: 'turbo' })).toThrow(
       'Unknown reviewer effort',
     );

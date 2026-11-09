@@ -12,7 +12,7 @@
 import { readJson, writeJson, type Run } from '../run.ts';
 
 export const PLAN_FILE = 'review-plan.json';
-export const REVIEW_LENSES = ['a', 'b', 'c'] as const;
+export const REVIEW_LENSES = ['a', 'b', 'c', 'd'] as const;
 export type ReviewLens = (typeof REVIEW_LENSES)[number];
 export const REVIEWER_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 /**
