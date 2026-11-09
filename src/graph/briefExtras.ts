@@ -585,7 +585,10 @@ export function entryRow(g: GraphEngine, ctx?: SentenceLinks): Row | undefined {
       if (r.how === 'called' && !what) continue;
       const file = fileOf(r.name);
       const where = file === entryFile ? 'same file' : (file ?? '');
-      const part = `\`${r.name}\` (${[where, r.how].filter(Boolean).join('; ')})${what ? `: ${what.text}` : ''}`;
+      // Call relations are matched from hunk text, not a real call graph, so they
+      // are never printed: only where a function lives and what is tied to it.
+      if (!what) continue;
+      const part = `\`${r.name}\`${where ? ` (${where})` : ''}: ${what.text}`;
       if (
         text.length + head.length + [...parts, part].join('; ').length > ENTRY_CHARS &&
         parts.length
@@ -620,12 +623,9 @@ export function entryRow(g: GraphEngine, ctx?: SentenceLinks): Row | undefined {
     const elsewhere = [
       ...new Set(called.map((c) => definedIn.get(c)!).filter((f) => f !== best.file)),
     ];
-    const lead = `: its changed lines call ${called
-      .slice(0, 4)
-      .map((c) => `\`${c}\``)
-      .join(', ')}${called.length > 4 ? ` and ${called.length - 4} more` : ''}${
-      elsewhere.length ? ` (from ${elsewhere.slice(0, 2).join(', ')})` : ''
-    }`;
+    // `called`/`elsewhere` only rank the entry; call claims are not printed.
+    void elsewhere;
+    const lead = '';
     const related = [
       ...(next
         ? [

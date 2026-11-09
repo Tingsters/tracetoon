@@ -252,7 +252,7 @@ describe('the entry point', () => {
     // Types (`ProviderId`), constants and removed lines are not calls; tests are not entries.
     expect(row).toEqual({
       kind: 'entry',
-      fact: 'Start at `chooseProvider` in src/commands/comic.ts: its changed lines call `providerAvailable`, `providerInfo` (from src/comic/providers.ts).',
+      fact: 'Start at `chooseProvider` in src/commands/comic.ts.',
       cites: ['CH2', 'diff:20-29'],
     });
   });
@@ -588,7 +588,7 @@ describe('the entry row says what each function owns', () => {
   test("the entry's own sentence, and its caller with the branch tied to it", () => {
     const row = withGraph(graph(), (g) => entryRow(g, ctx));
     expect(row?.fact).toBe(
-      'Start at `leadingCd` in src/trace/pathMatch.ts: the changed symbol most named elsewhere (2 other file(s)); tied to it: Commands that start with cd are judged by the directory they… (abc1234#1). Not in `leadingCd`: `belongs` (src/correlate/correlate.ts; calls `leadingCd`): `if (dir) return underAnyRoot(dir, roots)…`.',
+      'Start at `leadingCd` in src/trace/pathMatch.ts: the changed symbol most named elsewhere (2 other file(s)); tied to it: Commands that start with cd are judged by the directory they… (abc1234#1). Not in `leadingCd`: `belongs` (src/correlate/correlate.ts): `if (dir) return underAnyRoot(dir, roots)…`.',
     );
     expect(row?.cites).toContain('abc1234#1');
     expect(String(row?.fact).length).toBeLessThanOrEqual(320);
