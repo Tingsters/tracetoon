@@ -102,7 +102,8 @@ reviewer separate.
    lines near the end of this file; add `--review-lenses <a,b,c>` when
    `Review lenses:` lists lenses, `--reviewer-model <name>` when `Reviewer
    model:` names a model, `--reviewer-effort <level>` when `Reviewer effort:`
-   names a level (publish refuses until that review plan is met). Add `--run
+   names a level, `--reviewer-runner tracetoon` when `Reviewer runner:` says
+   tracetoon (publish refuses until that review plan is met). Add `--run
    <id>` to reuse the run from step 0. It prints the run folder and the digest path. Run it as its
    own command, after any `git commit`, never chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
@@ -153,6 +154,12 @@ reviewer separate.
         hunk→symbol map, selected diff). With lenses: one
         `review-packet --lean --lens <x> --run <id>` per lens
         (`review-packet-<x>.md`).
+        **If `Reviewer runner: tracetoon.`**, don't start a reviewer agent and
+        skip 6–8: run `tracetoon review run --run <id>` (once per lens with
+        `--lens x`); it runs the reviewer on the named model and imports its
+        findings. Apply the valid findings, `render --json`, then
+        `tracetoon review run --run <id> --recheck` once (per lens: `--lens x
+        --recheck`).
      6. Start **one fresh reviewer**, not a fork (a fork costs the same and
         carries your drafting reasoning). Its message is the contents of
         `review-packet.md` followed by
@@ -422,6 +429,8 @@ Reviewer effort: default.
 Review passes: 1.
 
 Review lenses: none.
+
+Reviewer runner: agent.
 
 Brief layout: toon.
 

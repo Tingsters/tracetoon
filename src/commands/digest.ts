@@ -396,11 +396,16 @@ export function graphNext(run: string, plan?: ReviewPlan): string {
   const flags = enforced
     ? `${plan.reviewerModel ? ` --reviewer-model ${plan.reviewerModel}` : ''}${plan.reviewerEffort ? ` --reviewer-effort ${plan.reviewerEffort}` : ''}`
     : '';
-  const review = !enforced
-    ? `\`tracetoon review-packet --lean --run ${run}\`; one fresh independent reviewer (not a fork) gets review-packet.md plus references/reviewer-lean.md and writes review-findings.json; \`tracetoon review import --run ${run} --agent-id <its id>\`; one correction round confirmed by the same reviewer`
-    : plan.lenses.length
-      ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review-packet --lean --lens <lens> --run ${run}\`; start one fresh reviewer per lens IN PARALLEL${settings} (packet plus references/reviewer-lens-<lens>.md); import each with \`tracetoon review import --run ${run} --lens <lens> --agent-id <its id>${flags}\`; one correction round, then \`render --json\` and \`review import --run ${run} --rebind\`${requiredPasses(plan) > plan.lenses.length ? `; ${requiredPasses(plan) - plan.lenses.length} more fresh reviewer pass(es) after that` : ''}`
-      : `\`tracetoon review-packet --lean --run ${run}\`; ${requiredPasses(plan)} fresh reviewer pass(es), each a NEW reviewer${settings} (packet plus references/reviewer-lean.md), one after another with a correction round between; import each with \`tracetoon review import --run ${run} --agent-id <its id>${flags}\``;
+  const tracetoonReview = enforced && plan.runner === 'tracetoon' && !!plan.reviewerModel;
+  const review = tracetoonReview
+    ? plan.lenses.length
+      ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review run --run ${run} --lens <lens>\` (Tracetoon runs the reviewer on ${plan.reviewerModel}; don't start a reviewer agent); apply the valid findings, \`render --json\`, then \`tracetoon review run --run ${run} --lens <lens> --recheck\` for each lens whose findings you fixed or contested, and \`tracetoon review import --run ${run} --rebind\``
+      : `\`tracetoon review run --run ${run}\` (Tracetoon runs the reviewer on ${plan.reviewerModel}; don't start a reviewer agent); apply the valid findings, \`render --json\`, then \`tracetoon review run --run ${run} --recheck\` once${requiredPasses(plan) > 1 ? `; ${requiredPasses(plan) - 1} more pass(es) need a new reviewer run after that` : ''}`
+    : !enforced
+      ? `\`tracetoon review-packet --lean --run ${run}\`; one fresh independent reviewer (not a fork) gets review-packet.md plus references/reviewer-lean.md and writes review-findings.json; \`tracetoon review import --run ${run} --agent-id <its id>\`; one correction round confirmed by the same reviewer`
+      : plan.lenses.length
+        ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review-packet --lean --lens <lens> --run ${run}\`; start one fresh reviewer per lens IN PARALLEL${settings} (packet plus references/reviewer-lens-<lens>.md); import each with \`tracetoon review import --run ${run} --lens <lens> --agent-id <its id>${flags}\`; one correction round, then \`render --json\` and \`review import --run ${run} --rebind\`${requiredPasses(plan) > plan.lenses.length ? `; ${requiredPasses(plan) - plan.lenses.length} more fresh reviewer pass(es) after that` : ''}`
+        : `\`tracetoon review-packet --lean --run ${run}\`; ${requiredPasses(plan)} fresh reviewer pass(es), each a NEW reviewer${settings} (packet plus references/reviewer-lean.md), one after another with a correction round between; import each with \`tracetoon review import --run ${run} --agent-id <its id>${flags}\``;
   return `take the reviewed brief path (SKILL step 2b): draft title.txt and body.md yourself from the evidence brief (\`tracetoon query brief --run ${run}\`) and the patch, following references/drafting.md; run the repository's required checks once with tracetoon check; \`tracetoon render --check --json --run ${run}\` until nothing is listed; then \`tracetoon render --json --run ${run}\` and ${review}; publish when the review is current${enforced ? ` (publish refuses until the review plan is met: ${planSummary(plan)})` : ''}. Read every command's whole output (no head or tail). Only on the user's request: the quick path (SKILL step 2a) or the three-role thorough path.`;
 }
 
@@ -426,6 +431,7 @@ export function prepareCmd(cwd: string, given: DigestOpts & PlanOptions) {
     delete skill.reviewerEffort;
     delete skill.reviewPasses;
     delete skill.reviewLenses;
+    delete skill.reviewerRunner;
   }
   const opts = withSkillDefaults(
     given as DigestOpts & PlanOptions & SkillSettings,

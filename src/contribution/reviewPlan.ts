@@ -15,6 +15,22 @@ export const PLAN_FILE = 'review-plan.json';
 export const REVIEW_LENSES = ['a', 'b', 'c'] as const;
 export type ReviewLens = (typeof REVIEW_LENSES)[number];
 export const REVIEWER_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+/**
+ * Who runs the reviewer: `agent` (the drafting agent starts it and reports its
+ * id and model) or `tracetoon` (`tracetoon review run` starts `codex exec` with
+ * the model pinned and verifies it from the session rollout).
+ */
+export const REVIEWER_RUNNERS = ['agent', 'tracetoon'] as const;
+export type ReviewerRunner = (typeof REVIEWER_RUNNERS)[number];
+
+/** SKILL short model names → Codex model ids. Anything else is used as given. */
+export const CODEX_MODELS: Record<string, string> = {
+  terra: 'gpt-6.1-terra',
+  luna: 'gpt-6-luna',
+  sol: 'gpt-6.1-sol',
+};
+export const resolveCodexModel = (name: string): string =>
+  CODEX_MODELS[name.trim().toLowerCase()] ?? name.trim();
 
 export interface ReviewPlan {
   v: 1;
@@ -24,6 +40,8 @@ export interface ReviewPlan {
   lenses: ReviewLens[];
   reviewerModel?: string;
   reviewerEffort?: string;
+  /** Stored only when `tracetoon`: passes must come from `tracetoon review run`. */
+  runner?: 'tracetoon';
 }
 
 /** One imported reviewer pass, as review.json `passes` records it. */
@@ -36,6 +54,15 @@ export interface ReviewPass {
   /** How many findings the pass reported. */
   findings: number;
   importedAt: string;
+  /** Set by `tracetoon review run`: Tracetoon started the reviewer itself. */
+  source?: 'tracetoon-run';
+  runner?: 'codex-exec';
+  /** The Codex session (thread) id of the reviewer. */
+  sessionId?: string;
+  /** The model the session rollout says it ran on; null when no rollout was found. */
+  verifiedModel?: string | null;
+  /** sha256 of the body text the pass reviewed (for --recheck). */
+  bodySha256?: string;
 }
 
 /** SKILL line values that mean "nothing chosen". */
@@ -80,6 +107,16 @@ export function parseModel(value: unknown): string | undefined {
   return UNSET.test(s) ? undefined : s;
 }
 
+export function parseRunner(value: unknown): ReviewerRunner | undefined {
+  const s = clean(value).toLowerCase();
+  if (!s || /^(default|none|-)$/.test(s)) return undefined;
+  if (!(REVIEWER_RUNNERS as readonly string[]).includes(s))
+    throw new Error(
+      `Unknown reviewer runner "${clean(value)}": use ${REVIEWER_RUNNERS.join(' or ')}.`,
+    );
+  return s as ReviewerRunner;
+}
+
 export function parsePasses(value: unknown): number | undefined {
   const s = clean(value);
   if (!s) return undefined;
@@ -94,6 +131,7 @@ export interface PlanOptions {
   reviewLenses?: unknown;
   reviewerModel?: unknown;
   reviewerEffort?: unknown;
+  reviewerRunner?: unknown;
 }
 
 /** The plan `prepare` was asked for; undefined when no review option was given. */
@@ -102,17 +140,20 @@ export function planFromOptions(opts: PlanOptions): ReviewPlan | undefined {
     opts.reviewPasses === undefined &&
     opts.reviewLenses === undefined &&
     opts.reviewerModel === undefined &&
-    opts.reviewerEffort === undefined
+    opts.reviewerEffort === undefined &&
+    opts.reviewerRunner === undefined
   )
     return undefined;
   const model = parseModel(opts.reviewerModel);
   const effort = parseEffort(opts.reviewerEffort);
+  const runner = parseRunner(opts.reviewerRunner);
   return {
     v: 1,
     passes: parsePasses(opts.reviewPasses) ?? 1,
     lenses: parseLenses(opts.reviewLenses),
     ...(model ? { reviewerModel: model } : {}),
     ...(effort ? { reviewerEffort: effort } : {}),
+    ...(runner === 'tracetoon' ? { runner } : {}),
   };
 }
 
@@ -132,8 +173,13 @@ export function loadReviewPlan(run: Run): ReviewPlan | undefined {
     ),
     ...(raw.reviewerModel ? { reviewerModel: raw.reviewerModel } : {}),
     ...(raw.reviewerEffort ? { reviewerEffort: raw.reviewerEffort } : {}),
+    ...(raw.runner === 'tracetoon' ? { runner: 'tracetoon' as const } : {}),
   };
 }
+
+/** Whether publish requires passes run (and model-verified) by `tracetoon review run`. */
+export const tracetoonRuns = (plan: ReviewPlan | undefined): boolean =>
+  !!plan && plan.runner === 'tracetoon' && !!plan.reviewerModel;
 
 /** Passes the plan needs: at least one per lens. */
 export const requiredPasses = (plan: ReviewPlan) =>
@@ -158,6 +204,7 @@ export function planSummary(plan: ReviewPlan): string {
     plan.lenses.length ? `one per lens ${plan.lenses.join(', ')}` : '',
     plan.reviewerModel ? `reviewer model ${plan.reviewerModel}` : '',
     plan.reviewerEffort ? `reviewer effort ${plan.reviewerEffort}` : '',
+    tracetoonRuns(plan) ? 'run by tracetoon review run' : '',
   ]
     .filter(Boolean)
     .join(', ');
@@ -182,7 +229,9 @@ export function planMissing(
     const pass = list.find((p) => p.lens === lens && !lensAgents.has(p.agentId));
     if (!pass)
       missing.push(
-        `lens ${lens}: no pass from its own reviewer (tracetoon review-packet --lean --lens ${lens}, then review import --lens ${lens})`,
+        tracetoonRuns(plan)
+          ? `lens ${lens}: no pass from its own reviewer (tracetoon review run --lens ${lens})`
+          : `lens ${lens}: no pass from its own reviewer (tracetoon review-packet --lean --lens ${lens}, then review import --lens ${lens})`,
       );
     else lensAgents.set(pass.agentId, lens);
   }
@@ -196,6 +245,20 @@ export function planMissing(
       missing.push(
         `${label} ${want}: pass ${off.map((p) => `${p.pass} (${p[key] ?? 'not recorded'})`).join(', ')} — start that reviewer with ${label} ${want} and import it with ${flag} ${want}`,
       );
+  }
+  if (tracetoonRuns(plan)) {
+    const want = resolveCodexModel(plan.reviewerModel!);
+    for (const p of list) {
+      const rerun = `tracetoon review run${p.lens ? ` --lens ${p.lens}` : ''}`;
+      if (p.source !== 'tracetoon-run')
+        missing.push(
+          `pass ${p.pass} (${p.agentId}) was not run by Tracetoon: this plan's reviewer runner is tracetoon, so run ${rerun} instead of starting a reviewer agent`,
+        );
+      else if (p.verifiedModel !== want)
+        missing.push(
+          `pass ${p.pass}: its session ${p.verifiedModel ? `ran on ${p.verifiedModel}` : 'rollout shows no model'}, not ${want}; run ${rerun} again`,
+        );
+    }
   }
   return missing;
 }

@@ -24,6 +24,7 @@ import { queryCmd, ROW_CAP } from './commands/query.ts';
 import { emit, exitCodeOf, UserError } from './commands/output.ts';
 import { publishCmd, renderCmd } from './commands/publish.ts';
 import { reviewImportCmd, reviewPacketCmd } from './commands/review.ts';
+import { reviewRunCmd } from './commands/reviewRun.ts';
 import {
   comicArtCmd,
   comicRerollCmd,
@@ -210,6 +211,10 @@ program
     '--reviewer-effort <level>',
     'review plan (SKILL "Reviewer effort:"): low, medium, high, xhigh, max or default; every pass must record it',
   )
+  .option(
+    '--reviewer-runner <runner>',
+    'review plan (SKILL "Reviewer runner:"): agent (the drafter starts the reviewer) or tracetoon (tracetoon review run starts it with the model pinned; publish requires that)',
+  )
   .action((o) => {
     prepareCmd(cwd, { ...g(), ...o });
   });
@@ -282,9 +287,33 @@ program
   )
   .action((o) => reviewPacketCmd(cwd, { ...g(), ...o }));
 
-program
-  .command('review')
-  .description('lean reviewer handoffs')
+const review = program.command('review').description('lean reviewer handoffs');
+
+review
+  .command('run')
+  .description(
+    "run the lean reviewer as a codex exec session pinned to the review plan's reviewer model, verify the model from its rollout, and import its findings",
+  )
+  .option('--run <id>', 'run id (default: latest)')
+  .option(
+    '--lens <a|b|c>',
+    'run the lens reviewer (review-packet-<lens>.md, reviewer-lens-<lens>.md)',
+  )
+  .option(
+    '--recheck',
+    'confirmation round: resume the same reviewer session with the changed body lines and its previous findings',
+  )
+  .option(
+    '--model <name>',
+    'reviewer model when the review plan names none (must equal the plan otherwise)',
+  )
+  .option(
+    '--effort <level>',
+    'reviewer effort when the review plan names none (must equal the plan otherwise)',
+  )
+  .action(async (o) => reviewRunCmd(cwd, { ...g(), ...o }));
+
+review
   .command('import')
   .description(
     "turn the lean reviewer's review-findings.json into review.json v2 for the current render",

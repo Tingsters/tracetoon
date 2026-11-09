@@ -15,6 +15,8 @@ const SKILL = [
   '',
   'Review lenses: a, b, c.',
   '',
+  'Reviewer runner: tracetoon.',
+  '',
   'Brief layout: neighborhood-wide.',
 ].join('\n');
 
@@ -25,6 +27,7 @@ describe('skill settings', () => {
       reviewerEffort: 'xhigh',
       reviewPasses: '3',
       reviewLenses: 'a, b, c',
+      reviewerRunner: 'tracetoon',
       layout: 'neighborhood-wide',
     });
   });
@@ -42,6 +45,7 @@ describe('skill settings', () => {
       reviewerEffort: 'default',
       reviewPasses: '1',
       reviewLenses: 'none',
+      reviewerRunner: 'agent',
       layout: 'toon',
     });
   });

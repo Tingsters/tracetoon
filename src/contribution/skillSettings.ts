@@ -1,7 +1,7 @@
 /**
  * The variant lines at the end of the skill's Workflow section
  * (`Brief layout:`, `Reviewer model:`, `Reviewer effort:`, `Review passes:`,
- * `Review lenses:`), read from the SKILL.md that ships next to this runtime.
+ * `Review lenses:`, `Reviewer runner:`), read from the SKILL.md that ships next to this runtime.
  *
  * `prepare` uses them as defaults when the agent passes no matching flag, so a
  * configured reviewer plan holds even when the agent forgets to pass it on.
@@ -16,6 +16,7 @@ export interface SkillSettings {
   reviewerEffort?: string;
   reviewPasses?: string;
   reviewLenses?: string;
+  reviewerRunner?: string;
 }
 
 const LINES: Record<string, keyof SkillSettings> = {
@@ -24,6 +25,7 @@ const LINES: Record<string, keyof SkillSettings> = {
   'Reviewer effort': 'reviewerEffort',
   'Review passes': 'reviewPasses',
   'Review lenses': 'reviewLenses',
+  'Reviewer runner': 'reviewerRunner',
 };
 
 /** Parse the variant lines out of SKILL.md text. */
@@ -37,13 +39,19 @@ export function parseSkillSettings(text: string): SkillSettings {
   return out;
 }
 
+/** The skill folder next to this runtime (SKILL.md, references/, assets/). */
+export function skillDir(): string | undefined {
+  const assets = assetsDir();
+  return assets ? dirname(assets) : undefined;
+}
+
 /** The SKILL.md next to this runtime; `TRACETOON_SKILL_MD` overrides (tests). */
 export function skillSettings(): SkillSettings {
   const path =
     process.env.TRACETOON_SKILL_MD ??
     (() => {
-      const assets = assetsDir();
-      return assets ? join(dirname(assets), 'SKILL.md') : undefined;
+      const dir = skillDir();
+      return dir ? join(dir, 'SKILL.md') : undefined;
     })();
   if (!path || !existsSync(path)) return {};
   try {

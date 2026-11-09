@@ -411,14 +411,14 @@ export function leanPacket(input: PacketInput): Packet {
   return { text: out.join('\n') + '\n', mode, diffChars, shownHunks: [...shownIds] };
 }
 
-function openRun(cwd: string, id?: string): { run: Run; root: string } {
+export function openRun(cwd: string, id?: string): { run: Run; root: string } {
   const repo = repository(cwd);
   const run = findRun(repo.gitDir, id);
   assertRunOwner(run, repo.root, repo.branch);
   return { run, root: repo.root };
 }
 
-function renderedInput(run: Run): { input: ReviewInput; patch: string } {
+export function renderedInput(run: Run): { input: ReviewInput; patch: string } {
   const input = readJson<ReviewInput>(run, 'review-input.json');
   const patch = readText(run, 'changes.patch');
   if (!input || patch === undefined)
@@ -451,6 +451,28 @@ export function reviewPacketCmd(
     throw new UserError((e as Error).message);
   }
   const { run } = openRun(cwd, opts.run);
+  const { path, packet } = writeLeanPacket(run, lens);
+  emit(
+    opts,
+    {
+      path,
+      chars: packet.text.length,
+      mode: packet.mode,
+      ...(lens ? { lens, findingsFile: join(run.dir, lensFindingsFile(lens)) } : {}),
+    },
+    () =>
+      lens
+        ? `${path}
+The lens ${lens} reviewer writes ${join(run.dir, lensFindingsFile(lens))}; import it with tracetoon review import --run ${run.id} --lens ${lens} --agent-id <its id>.`
+        : path,
+  );
+}
+
+/** Build and write the run's lean packet (review-packet[-lens].md) for the current render. */
+export function writeLeanPacket(
+  run: Run,
+  lens?: ReviewLens,
+): { path: string; packet: Packet } {
   const { input, patch } = renderedInput(run);
   const graph = loadGraph(run);
   const parts = storedBrief(run, graph);
@@ -468,20 +490,7 @@ export function reviewPacketCmd(
   });
   const path = join(run.dir, packetFile(lens));
   writeFileSync(path, packet.text, 'utf8');
-  emit(
-    opts,
-    {
-      path,
-      chars: packet.text.length,
-      mode: packet.mode,
-      ...(lens ? { lens, findingsFile: join(run.dir, lensFindingsFile(lens)) } : {}),
-    },
-    () =>
-      lens
-        ? `${path}
-The lens ${lens} reviewer writes ${join(run.dir, lensFindingsFile(lens))}; import it with tracetoon review import --run ${run.id} --lens ${lens} --agent-id <its id>.`
-        : path,
-  );
+  return { path, packet };
 }
 
 const NO_GUIDANCE: GuidanceResult = { status: 'missing', issues: [], sha256: '' };
@@ -517,10 +526,10 @@ function incompleteReasons(run: Run, root: string, input: ReviewInput): string[]
 
 /** Every imported pass with its findings, so each import can rebuild review.json from all of them. */
 export const PASSES_FILE = 'review-passes.json';
-interface StoredPass extends ReviewPass {
+export interface StoredPass extends ReviewPass {
   raw: LeanFindings;
 }
-const loadPasses = (run: Run): StoredPass[] =>
+export const loadPasses = (run: Run): StoredPass[] =>
   readJson<{ passes?: StoredPass[] }>(run, PASSES_FILE)?.passes ?? [];
 const passSummary = ({ raw: _raw, ...pass }: StoredPass): ReviewPass => pass;
 
@@ -534,6 +543,11 @@ export interface ImportOptions {
   lens?: string;
   /** Rebuild review.json for the current render from the passes already imported. */
   rebind?: boolean;
+  /** Recorded on the pass by `tracetoon review run` (source, session, verified model). */
+  provenance?: Pick<
+    ReviewPass,
+    'source' | 'runner' | 'sessionId' | 'verifiedModel' | 'bodySha256'
+  >;
 }
 
 function readFindingsFile(file: string): ReturnType<typeof parseFindings> {
@@ -655,6 +669,7 @@ export function importLeanReview(
       ...(lens ? { lens } : {}),
       findings: parsed.findings.findings.length,
       importedAt: new Date().toISOString(),
+      ...(opts.provenance ?? {}),
       raw: parsed.findings,
     };
   }

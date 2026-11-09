@@ -9,6 +9,7 @@ import {
   planEnforced,
   planGate,
   planMissing,
+  tracetoonRuns,
   planSummary,
   requiredPasses,
   type ReviewPass,
@@ -684,10 +685,10 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? 'Not ready to publish: fix what the leak scan found (above), then render again.'
           : briefMode === 'lean'
             ? planEnforced(plan)
-              ? `Next: tracetoon render --json --run ${run.id}, then the reviewer passes the review plan asks for (SKILL step 2b.5-7). ${planText}`
+              ? `Next: tracetoon render --json --run ${run.id}, then ${tracetoonRuns(plan) ? `tracetoon review run --run ${run.id}${plan.lenses.length ? ' --lens <lens> for each lens' : ''} (Tracetoon starts the reviewer on ${plan.reviewerModel}), apply valid findings, render --json, then tracetoon review run --run ${run.id} --recheck once` : 'the reviewer passes the review plan asks for (SKILL step 2b.5-7)'}. ${planText}`
               : `Next: tracetoon render --json --run ${run.id}, then one fresh independent reviewer writes review.json v2 (SKILL step 2b.5). Quick path only: the slim reviewer (references/quick-path.md step 7), then render --reviewed.`
             : planNeeds.length
-              ? `Next: not ready to publish. ${planText}\nImport each pass with tracetoon review import --run ${run.id}, then render again.`
+              ? `Next: not ready to publish. ${planText}\n${tracetoonRuns(plan) ? `Run each missing pass with tracetoon review run --run ${run.id}${plan!.lenses.length ? ' --lens <lens>' : ''} (Tracetoon starts the reviewer; don't start a reviewer agent), then render again.` : `Import each pass with tracetoon review import --run ${run.id}, then render again.`}`
               : `${planText ? `${planText}\n` : ''}Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)
@@ -955,7 +956,9 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
   const planProblem = planGate(run);
   if (planProblem)
     throw new UserError(
-      `${planProblem}\nImport each missing pass with tracetoon review import --run ${run.id}, render again, then publish.`,
+      tracetoonRuns(loadReviewPlan(run))
+        ? `${planProblem}\nRun each missing pass with tracetoon review run --run ${run.id} (with --lens <lens> for lens plans), render again, then publish.`
+        : `${planProblem}\nImport each missing pass with tracetoon review import --run ${run.id}, render again, then publish.`,
     );
   // On a brief path the brief check is the review: open items block publishing.
   const briefOpen = briefPathOpen(run);
