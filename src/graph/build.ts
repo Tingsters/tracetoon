@@ -577,6 +577,85 @@ function decisionAnswers(
 }
 
 const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.');
+
+/** Code run by hand or by tooling, not shipped: `scripts/`, `tools/`, `bin/`, benchmarks, examples. */
+const SCRIPT_PATH = /^(?:scripts?|tools?|bin|bench(?:marks?)?|examples?)\//i;
+/** A file's part in a change unit: shipped source, a script, a test, or other (docs, config…). */
+export function unitRole(
+  file: string,
+  role: string,
+): 'src' | 'scripts' | 'tests' | 'other' {
+  if (role === 'tests') return 'tests';
+  if (role !== 'behavior') return 'other';
+  return SCRIPT_PATH.test(file) ? 'scripts' : 'src';
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Whether any of the names appears as a whole word in the hunks' changed lines. */
+const namesIn = (names: string[], hs: PatchHunk[]) => {
+  const text = hs.flatMap((h) => [...h.lines, ...h.gone, ...h.code]).join('\n');
+  return names.some(
+    (n) => n.length >= 3 && new RegExp(`\\b${escapeRe(n)}\\b`).test(text),
+  );
+};
+/** Words of symbols and file names: what a test about that code would mention. */
+const unitWords = (hs: PatchHunk[]) =>
+  new Set(
+    hs.flatMap((h) => [
+      ...[...h.touched, ...h.fresh, ...h.symbols].flatMap(wordsOf),
+      ...wordsOf(
+        (h.file.split('/').pop() ?? '').replace(/\.[^.]+$/, '').replace(/[-_.]/g, ' '),
+      ),
+    ]),
+  );
+
+/**
+ * One commit or request can hold a source change and an unrelated script
+ * change (an eval harness pinned in the same commit). When a unit's source and
+ * script hunks name none of each other's symbols, the script hunks become a
+ * change of their own, and each test file goes with the side whose symbol and
+ * file words its titles and lines share most (ties stay with the source).
+ * Docs, config and version files stay with the source. Deterministic: the new
+ * unit's key is the old key plus `|scripts`.
+ */
+export function splitScriptUnits(
+  groups: Map<string, PatchHunk[]>,
+  roleOf: (f: string) => string,
+): void {
+  for (const [key, hs] of [...groups]) {
+    const part = (h: PatchHunk) => unitRole(h.file, roleOf(h.file));
+    const src = hs.filter((h) => part(h) === 'src');
+    const scripts = hs.filter((h) => part(h) === 'scripts');
+    if (!src.length || !scripts.length) continue;
+    const names = (xs: PatchHunk[]) => [
+      ...new Set(xs.flatMap((h) => [...h.touched, ...h.fresh, ...h.symbols])),
+    ];
+    if (namesIn(names(src), scripts) || namesIn(names(scripts), src)) continue;
+    const srcWords = unitWords(src);
+    const scriptWords = unitWords(scripts);
+    const toScripts = new Set<string>(scripts.map((h) => h.file));
+    const testFiles = [
+      ...new Set(hs.filter((h) => part(h) === 'tests').map((h) => h.file)),
+    ];
+    for (const f of testFiles) {
+      const words = new Set(
+        hs
+          .filter((h) => h.file === f)
+          .flatMap((h) => [...h.words, ...h.tests.flatMap(wordsOf)]),
+      );
+      const score = (side: Set<string>) => [...side].filter((w) => words.has(w)).length;
+      if (score(scriptWords) > score(srcWords)) toScripts.add(f);
+    }
+    groups.set(
+      key,
+      hs.filter((h) => !toScripts.has(h.file)),
+    );
+    groups.set(
+      `${key}|scripts`,
+      hs.filter((h) => toScripts.has(h.file)),
+    );
+  }
+}
 const RUN_WHEN: Record<string, string> = {
   'no later edits seen':
     'after the last edit the logs captured (edits outside the logs are not ruled out)',
@@ -671,6 +750,9 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       title: s.title ?? null,
       failedCommands: failing.reduce((n, c) => n + c.failures, 0),
       failedCommand: failing[0]?.cmd ?? null,
+      failedCmds: failing
+        .slice(0, 8)
+        .map((c) => `${c.cmd} (failed ${c.failures} of ${c.count})`),
     });
     for (const p of s.prompts) factSession.set(p, s.ref);
     for (const p of s.prompts)
@@ -920,6 +1002,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       groups.set(sub, [...(groups.get(sub) ?? []), h]);
     }
   }
+  splitScriptUnits(groups, roleOf);
   const weight = (hs: PatchHunk[]) =>
     hs
       .filter((h) => roleOf(h.file) === 'behavior')
