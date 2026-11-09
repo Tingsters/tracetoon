@@ -175,6 +175,9 @@ reviewer separate.
           waiting), each with its `review-packet-<x>.md` followed by
           [references/reviewer-lens-<x>.md](references/reviewer-lens-a.md)
           instead of reviewer-lean.md; it writes `review-findings-<x>.json`.
+          If `Review passes:` is larger than the number of lenses, also start
+          that many more general reviewers in the same message (the plain
+          `review-packet.md` with reviewer-lean.md, imported without `--lens`).
         - **Reviewer model (required when named).** Read the `Reviewer model:`
           line at the end of this Workflow section. If it names a model (e.g.
           `Reviewer model: sonnet.`), the reviewer call MUST pass that exact
