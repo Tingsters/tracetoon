@@ -203,6 +203,19 @@ const TEST_RUNNERS = [
 /** Leading `NAME=value` assignments, quoted values included (`X="$(pwd)/a b"`). */
 const ENV_PREFIX = /^([A-Z_][A-Z0-9_]*=("[^"]*"|'[^']*'|\S*)\s+)+/;
 
+/** Words of the PR's changed lines, once per line index. */
+const prWordCache = new WeakMap<object, Set<string>>();
+function prWordsOf(prSets: Map<string, Set<string>>): Set<string> {
+  let w = prWordCache.get(prSets);
+  if (!w) {
+    w = new Set<string>();
+    for (const lines of prSets.values())
+      for (const l of lines) for (const x of outWords(l)) w.add(x);
+    prWordCache.set(prSets, w);
+  }
+  return w;
+}
+
 /** The part of a chained command that runs tests, if any. */
 export function testSegment(cmd: string): string | undefined {
   return splitCommands(cmd)
@@ -495,6 +508,66 @@ export type TrailEvent =
 export interface SessionTrail {
   ref: string;
   events: TrailEvent[];
+  /** Commands other than checks that ran the project's own code (see `invocationsOf`). */
+  invocations?: Invocation[];
+}
+
+/**
+ * A command other than a check or a file utility, as plain words: the program
+ * and its arguments without flags, assignments, quotes or redirections
+ * (`bun src/cli.ts comic art codex`), and the words of its output that the
+ * PR's own changed lines also contain. Only the evidence graph reads it.
+ */
+export interface Invocation {
+  t?: string;
+  cmd: string;
+  out: string[];
+}
+
+/** Programs that read, move or inspect files: running one runs none of the project's code. */
+const UTILITY =
+  /^(for|while|until|if|then|else|do|done|fi|case|esac|function|\[\[?|cd|pushd|popd|ls|dir|cat|type|sed|awk|grep|egrep|rg|ag|head|tail|less|more|wc|echo|printf|git|gh|find|fd|which|where|whereis|command|test|true|false|sleep|mkdir|rmdir|rm|cp|mv|ln|touch|chmod|chown|diff|cmp|sort|uniq|cut|tr|xargs|tee|jq|yq|curl|wget|tar|zip|unzip|stat|file|du|df|ps|kill|pwd|export|set|unset|source|\.|read|exit|wait|history|clear|date|open|start|explorer|code|vim|nano|python3?\s+-c|node\s+-e|bun\s+-e)(?=\s|$)/;
+/** Wrappers before the real program. */
+const WRAPPER = /^(?:\(\s*)?(?:(?:time|env|exec|nohup|sudo|command)\s+)+/;
+const outWords = (s: string) =>
+  (s.match(/[A-Za-z][a-z]+|[A-Z]+(?![a-z])/g) ?? [])
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length >= 3);
+
+/** The non-check segments of a command that run something, as `Invocation`s. */
+export function invocationsOf(
+  cmd: string,
+  output: string | undefined,
+  prWords: Set<string>,
+  scrub: Scrubber,
+): Omit<Invocation, 't'>[] {
+  const out: Omit<Invocation, 't'>[] = [];
+  for (const raw of splitCommands(cmd)) {
+    const seg = raw.replace(ENV_PREFIX, '').replace(WRAPPER, '').trim();
+    if (!seg || UTILITY.test(seg)) continue;
+    if (TEST_RUNNERS.some((re) => re.test(seg)) || VERIFY.some(([, re]) => re.test(seg)))
+      continue;
+    const words: string[] = [];
+    for (const tok of seg.split(/\s+/)) {
+      if (/^\d?[<>|&;]/.test(tok)) break; // redirections and what follows
+      const t = tok.replace(/\)+$/, '');
+      if (!t || t.startsWith('-') || /[=<>|&;"'`$(){}\\]/.test(t)) continue;
+      // Long mixed tokens may be keys or ids: never kept.
+      if (t.length >= 20 && /\d/.test(t) && /[A-Za-z]/.test(t) && !/[./]/.test(t))
+        continue;
+      words.push(t);
+      if (words.length >= 10) break;
+    }
+    if (words.length < 2) continue;
+    out.push({
+      cmd: clip(scrub.text(words.join(' ')), 120),
+      out: [...new Set(outWords(output ?? '').filter((w) => prWords.has(w)))].slice(
+        0,
+        40,
+      ),
+    });
+  }
+  return out;
 }
 
 function sessionDigest(
@@ -504,6 +577,7 @@ function sessionDigest(
   prSets: Map<string, Set<string>>,
   scrub: Scrubber,
   trail: TrailEvent[] = [],
+  invocations: Invocation[] = [],
 ): DigestSession {
   const recs = m.kept;
   const models = new Set<string>();
@@ -613,6 +687,8 @@ function sessionDigest(
         break;
       }
       case 'command': {
+        for (const x of invocationsOf(r.cmd, r.output, prWordsOf(prSets), scrub))
+          if (invocations.length < 60) invocations.push({ t: r.ts, ...x });
         for (const run of commandRuns(r.cmd, r.isError, r.output)) {
           const fact: Run = {
             t: r.ts,
@@ -914,6 +990,7 @@ function buildFullDigest(
   const trails: SessionTrail[] = [];
   const sessions = chosen.map((m) => {
     const events: TrailEvent[] = [];
+    const invocations: Invocation[] = [];
     const s = sessionDigest(
       m,
       refOf.get(m.session.sessionId)!,
@@ -921,8 +998,9 @@ function buildFullDigest(
       prSets,
       scrub,
       events,
+      invocations,
     );
-    trails.push({ ref: s.ref, events });
+    trails.push({ ref: s.ref, events, invocations });
     if (opts.include?.some((x) => x === s.ref || x === m.session.sessionId))
       s.band = 'included';
     return s;

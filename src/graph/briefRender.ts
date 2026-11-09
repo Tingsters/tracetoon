@@ -12,6 +12,7 @@
  */
 import type { Section } from './queries.ts';
 import { existingSymbols, housekeepingOverclaim } from './doNotSay.ts';
+import { wordsOf } from './codeEvidence.ts';
 
 export const VALIDATION_MARKER = '<!-- tracetoon:validation -->';
 
@@ -20,6 +21,8 @@ export interface BriefParts {
   unchecked: string[];
   /** Symbols (or files) whose changed lines branch or fall back. */
   branchy?: string[];
+  /** Changed source functions and the stemmed words the brief ties to each (`functionProfiles`). */
+  owners?: { name: string; file: string; nameWords: string[]; words: string[] }[];
 }
 
 export interface BriefApplied {
@@ -448,6 +451,11 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
           'only a commit message says this: write "the commit message says…" or leave it out.',
       });
   }
+  // A review pointer that pins a behavior on the wrong function.
+  for (const unit of proseUnits(body)) {
+    const p = misplacedFocus(unit.replace(TAG, '').trim(), b.owners ?? []);
+    if (p) flags.push(p);
+  }
   // "Version bump only" / "no logic changes" while the diff changes more.
   for (const unit of proseUnits(body)) {
     const clean = unit.replace(TAG, '').trim();
@@ -536,3 +544,55 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
 
 const uniqList = (xs: string[]) => [...new Set(xs)];
 const clipped = (s: string) => (s.length > 100 ? `${s.slice(0, 99)}…` : s);
+
+/** "Start at / review `fn`, especially <behavior>": the behavior clause. */
+const FOCUS =
+  /\b(especially|particularly|in particular|(?:with a )?focus(?:ing)? on|above all|mainly)\b([^.;!?]*)/i;
+const POINTER = /\b(start|starting|begin|beginning|review|reviewers?)\b/i;
+
+/**
+ * A sentence pointing reviewers at a function (`start`/`begin`/`review` and a
+ * backticked function) with an "especially <behavior>" clause, where the
+ * behavior's words match what the brief ties to another changed function
+ * (its name counts double) better than the named one's: the writer has
+ * pinned a caller's or callee's behavior on the entry point.
+ */
+export function misplacedFocus(
+  sentence: string,
+  owners: NonNullable<BriefParts['owners']>,
+): BriefApplied['flags'][number] | undefined {
+  if (!owners.length || !POINTER.test(sentence)) return undefined;
+  const focus = FOCUS.exec(sentence);
+  if (!focus) return undefined;
+  const byName = new Map(owners.map((o) => [o.name, o]));
+  const named = [
+    ...new Set(
+      [...sentence.matchAll(/`([A-Za-z_$][\w$]*)(?:\(\))?`/g)].map((m) => m[1]!),
+    ),
+  ].filter((n) => byName.has(n));
+  if (!named.length) return undefined;
+  const behavior = [...wordsOf(focus[2]!.replace(/`[^`]*`/g, ' '))];
+  if (!behavior.length) return undefined;
+  const score = (o: NonNullable<BriefParts['owners']>[number]) =>
+    behavior.reduce(
+      (n, w) => n + (o.nameWords.includes(w) ? 2 : 0) + (o.words.includes(w) ? 1 : 0),
+      0,
+    );
+  const mine = Math.max(...named.map((n) => score(byName.get(n)!)));
+  const ranked = owners
+    .filter((o) => !named.includes(o.name))
+    .map((o) => ({ o, n: score(o) }))
+    .sort((a, b) => b.n - a.n || a.o.name.localeCompare(b.o.name));
+  const top = ranked[0];
+  if (!top || top.n < 2 || top.n <= mine) return undefined;
+  // Functions that fit equally well: name them all (at most two).
+  const rivals = ranked
+    .filter((r) => r.n === top.n)
+    .slice(0, 2)
+    .map((r) => `\`${r.o.name}\` (${r.o.file})`);
+  return {
+    sentence,
+    severity: 'check',
+    problem: `"${focus[1]}${clipped(focus[2]!).trimEnd()}": the brief ties that to ${rivals.join(' or ')}, not to ${named.map((n) => `\`${n}\``).join(', ')}. Name the function that owns it, or drop the clause.`,
+  };
+}

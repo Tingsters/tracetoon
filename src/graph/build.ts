@@ -738,6 +738,19 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
 
   // Sessions and their facts.
   const factSession = new Map<object, string>();
+  // Per session: each distinct command (at most 40) → its output words.
+  const invocationsBy = new Map(
+    trails.map((t) => {
+      const m = new Map<string, Set<string>>();
+      for (const x of t.invocations ?? []) {
+        if (!m.has(x.cmd) && m.size >= 40) continue;
+        const w = m.get(x.cmd) ?? new Set<string>();
+        for (const o of x.out) if (w.size < 40) w.add(o);
+        m.set(x.cmd, w);
+      }
+      return [t.ref, m];
+    }),
+  );
   for (const s of full.sessions) {
     // Failed commands other than checks (checks are Run nodes with outcomes).
     const checkKeys = new Set(
@@ -758,6 +771,12 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       failedCmds: failing
         .slice(0, 8)
         .map((c) => `${c.cmd} (failed ${c.failures} of ${c.count})`),
+      // Commands other than checks that ran something (as plain words), and
+      // (same position) the words of their output the PR's changed lines also contain.
+      invoked: [...(invocationsBy.get(s.ref) ?? new Map()).keys()],
+      invokedOut: [...(invocationsBy.get(s.ref) ?? new Map()).values()].map((w) =>
+        [...w].join(' '),
+      ),
     });
     for (const p of s.prompts) factSession.set(p, s.ref);
     for (const p of s.prompts)

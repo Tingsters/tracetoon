@@ -12,6 +12,7 @@
 import type { GraphEngine } from './engine.ts';
 import { fileRole as pathRole } from '../digest/build.ts';
 import { unitRole } from './build.ts';
+import { wordsOf } from './codeEvidence.ts';
 
 type Row = Record<string, unknown>;
 
@@ -119,17 +120,128 @@ const splitName = (s: string) =>
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/[^A-Za-z]+/g, ' ');
 
+/** Recorded commands that ran something (Session `invoked`), and the code they could reach. */
+export interface LiveEvidence {
+  invocations: { cmd: string; out: string[] }[];
+  /** Source hunks: file, scope, touched, symbols, fresh, code (added lines). */
+  hunks: Row[];
+}
+
+/** What `remotePathRows` needs to see live runs: included sessions' commands and the source hunks. */
+export function liveEvidence(g: GraphEngine): LiveEvidence {
+  const invocations: LiveEvidence['invocations'] = [];
+  for (const s of g.run(
+    `MATCH (s:Session {band: 'included'}) RETURN s.invoked AS cmds, s.invokedOut AS out`,
+  ).rows) {
+    const outs = ((s.out as string[]) ?? []).map(String);
+    ((s.cmds as string[]) ?? []).forEach((c, i) =>
+      invocations.push({
+        cmd: String(c),
+        out: (outs[i] ?? '').split(' ').filter(Boolean),
+      }),
+    );
+  }
+  const hunks = g.run(
+    `MATCH (h:Hunk) RETURN h.file AS file, h.scope AS scope, h.touched AS touched,
+            h.symbols AS symbols, h.fresh AS fresh, h.code AS code`,
+  ).rows;
+  return { invocations, hunks };
+}
+
+const lowerWords = (s: string) =>
+  (s.match(/[A-Za-z][a-z]+|[A-Z]+(?![a-z])|\d+/g) ?? []).map((w) => w.toLowerCase());
+/** Words of a command's bare arguments: tokens that are not paths or file names. */
+const bareWords = (cmd: string) =>
+  cmd
+    .split(/\s+/)
+    .filter((t) => !/[/\\.~:]/.test(t))
+    .flatMap(lowerWords);
+/** Name words that only say "this is a command handler". */
+const HANDLER_WORD = new Set(['cmd', 'command', 'handler', 'action', 'run', 'main']);
+const HANDLER = /(?:Cmd|Command|Handler|Action)$/;
+
+/** Literal values a remote file's changed branches choose between (`id === 'gemini'`, `case 'openai'`). */
+function routesOf(conds: string[]): string[] {
+  const byVar = new Map<string, Set<string>>();
+  const cases = new Set<string>();
+  for (const c of conds) {
+    for (const m of c.matchAll(/([\w$.]+)\s*[!=]==?\s*'([a-z][\w-]{2,})'/g)) {
+      const v = m[1]!.split('.').pop()!;
+      byVar.set(v, (byVar.get(v) ?? new Set()).add(m[2]!));
+    }
+    for (const m of c.matchAll(/\bcase\s+'([a-z][\w-]{2,})'/g)) cases.add(m[1]!);
+  }
+  const top = [...byVar.values()].sort((a, b) => b.size - a.size)[0];
+  if (!top || top.size < 2) return [];
+  return [...new Set([...top, ...cases])].sort();
+}
+
+/**
+ * The recorded commands that reach a remote file's changed code: a command
+ * whose words name a changed command handler (`comicArtCmd` ← `… comic art`)
+ * in a file whose changed lines call that file's changed symbols (or in the
+ * file itself), or name such a calling file (`comic.ts` ← `… comic …`).
+ * Matching by words leans toward "reached": a wrong match drops a limit, it
+ * never claims one.
+ */
+function reachingRuns(file: string, live: LiveEvidence): LiveEvidence['invocations'] {
+  if (!live.invocations.length) return [];
+  const own = live.hunks.filter((h) => String(h.file) === file);
+  const defined = new Set(
+    own
+      .flatMap((h) => [
+        ...((h.symbols as string[]) ?? []),
+        ...((h.fresh as string[]) ?? []),
+        ...((h.touched as string[]) ?? []),
+      ])
+      .map(String)
+      .filter((x) => x.length >= 4),
+  );
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const calls = (code: unknown) => {
+    const text = addedCode(code);
+    return [...defined].some((d) => new RegExp(`\\b${esc(d)}\\b`).test(text));
+  };
+  // Files that reach the remote file: itself, and those whose added lines name its symbols.
+  const reaching = new Set([
+    file,
+    ...live.hunks
+      .filter((h) => String(h.file) !== file && calls(h.code))
+      .map((h) => String(h.file)),
+  ]);
+  const handlers = live.hunks
+    .filter((h) => reaching.has(String(h.file)))
+    .flatMap((h) => [h.scope, ...((h.touched as string[]) ?? [])])
+    .filter((x): x is string => typeof x === 'string' && HANDLER.test(x))
+    .map((x) => lowerWords(x).filter((w) => !HANDLER_WORD.has(w)))
+    .filter((ws) => ws.length);
+  const fileWords = [...reaching]
+    .filter((f) => f !== file && unitRole(f, pathRole(f)) === 'src')
+    .map((f) => lowerWords((f.split('/').pop() ?? '').replace(/\.[^.]+$/, '')))
+    .filter((ws) => ws.length && ws.every((w) => w.length >= 4));
+  return live.invocations.filter((inv) => {
+    // Bare arguments only (subcommands, values): a path argument (a formatter
+    // given `src/commands/comic.ts`) runs nothing of that file.
+    const words = new Set(bareWords(inv.cmd));
+    return [...handlers, ...fileWords].some((ws) => ws.every((w) => words.has(w)));
+  });
+}
+
 /**
  * Added branches in a source file that calls out to a remote service (its
  * changed lines fetch, use http or a socket, and its path or symbols name a
  * provider, route, client or API) and that no recorded check run's command
  * names: tests and checks don't show those paths running against the real
  * service. Conservative: both signals, added branches, at most two files.
+ * A recorded command that reaches the file's code (`reachingRuns`) ran it
+ * live: the row then names only the routes (`id === 'x'` values) no such
+ * run names, when every such run names its route; otherwise it is dropped.
  */
 export function remotePathRows(
   hunkRows: Row[],
   fileRole: Map<string, string>,
   scopedRuns: Row[],
+  live?: LiveEvidence,
 ): Row[] {
   const byFile = new Map<string, Row[]>();
   for (const h of hunkRows) {
@@ -138,7 +250,13 @@ export function remotePathRows(
     byFile.set(f, [...(byFile.get(f) ?? []), h]);
   }
   const cmds = scopedRuns.map((r) => String(r.cmd ?? '')).join('\n');
-  const out: { file: string; change: string; branches: number; syms: string[] }[] = [];
+  const out: {
+    file: string;
+    change: string;
+    branches: number;
+    syms: string[];
+    open?: { routes: string[]; used: string[]; cmd: string };
+  }[] = [];
   for (const [file, hs] of [...byFile].sort((a, b) => a[0].localeCompare(b[0]))) {
     const branches = hs.reduce((n, h) => n + Number(h.branches ?? 0), 0);
     if (!branches) continue;
@@ -162,15 +280,43 @@ export function remotePathRows(
     const top = [...hs].sort(
       (a, b) => Number(b.branches ?? 0) - Number(a.branches ?? 0),
     )[0]!;
-    out.push({ file, change: String(top.change), branches, syms: syms.slice(0, 3) });
+    const row = { file, change: String(top.change), branches, syms: syms.slice(0, 3) };
+    const ran = live ? reachingRuns(file, live) : [];
+    if (ran.length) {
+      // Live runs reached this code: only routes none of them names stay open.
+      const routes = routesOf(
+        hs.flatMap((h) => ((h.conds as string[]) ?? []).map(String)),
+      );
+      const usedBy = ran.map((inv) => {
+        const ws = new Set([...bareWords(inv.cmd), ...inv.out]);
+        return routes.filter((r) => lowerWords(r).every((w) => ws.has(w)));
+      });
+      const used = [...new Set(usedBy.flat())].sort();
+      // A run naming no route may have taken any: unsure, so no row.
+      if (!routes.length || usedBy.some((u) => !u.length) || used.length >= routes.length)
+        continue;
+      out.push({
+        ...row,
+        open: {
+          routes: routes.filter((r) => !used.includes(r)),
+          used,
+          cmd: ran.find((inv, i) => usedBy[i]!.length)!.cmd,
+        },
+      });
+      continue;
+    }
+    out.push(row);
   }
+  const ticks = (xs: string[]) => xs.map((s) => `\`${s}\``).join(', ');
   return out
     .sort((a, b) => b.branches - a.branches || a.file.localeCompare(b.file))
     .slice(0, 2)
     .map((x) => ({
       change: x.change,
       kind: 'open',
-      limit: `${x.file} adds branches that call a remote service${x.syms.length ? ` (${x.syms.map((s) => `\`${s}\``).join(', ')})` : ''}; no recorded check run shows those paths running against the real service.`,
+      limit: x.open
+        ? `${x.file} adds branches that call a remote service; the recorded run of \`${x.open.cmd}\` used ${ticks(x.open.used)}, and no recorded run shows ${ticks(x.open.routes)} running against the real service.`
+        : `${x.file} adds branches that call a remote service${x.syms.length ? ` (${ticks(x.syms)})` : ''}; no recorded check run shows those paths running against the real service.`,
     }));
 }
 
@@ -212,6 +358,132 @@ const CALLABLE = /^[a-z_$][\w$]*[a-z][\w$]*$/;
 const uniqStr = (xs: string[]) => [...new Set(xs)];
 const MIN_CALLS = 2;
 
+/** Commit-message rows and their `→ H#` links (structural and search), for ownership. */
+export interface SentenceLinks {
+  sentences: { ref: string; text: string }[];
+  links: Record<string, string[]>;
+}
+
+/**
+ * What the graph ties to one changed function: the commit sentences linked to
+ * a hunk only it owns (the one function the hunk defines, or the only one it
+ * touches) or naming it outright, and the added branches of those hunks.
+ * `words` (stemmed) is everything said about it, for matching prose.
+ */
+export interface FnProfile {
+  name: string;
+  file: string;
+  sentences: { ref: string; text: string }[];
+  conds: string[];
+  /** Stemmed words of the name. */
+  nameWords: string[];
+  /** Stemmed words of its sentences, its own hunks' words and its branches. */
+  words: string[];
+}
+
+const fnNames = (h: Row) =>
+  uniqStr(
+    [h.scope, ...((h.touched as string[]) ?? []), ...((h.symbols as string[]) ?? [])]
+      .filter((x): x is string => typeof x === 'string')
+      .filter((x) => NAME.test(x) && CALLABLE.test(x) && x.length >= 4),
+  );
+/** The one function a hunk belongs to, when it is clear: it defines one, or touches one. */
+const soleOf = (h: Row): string | undefined => {
+  const defined = ((h.symbols as string[]) ?? [])
+    .map(String)
+    .filter((x) => NAME.test(x) && CALLABLE.test(x) && x.length >= 4);
+  if (defined.length === 1) return defined[0];
+  if (defined.length) return undefined;
+  const all = fnNames(h);
+  return all.length === 1 ? all[0] : undefined;
+};
+const nameWordsOf = (name: string) =>
+  [...wordsOf(name)].filter((w) => !HANDLER_WORD.has(w));
+
+/** Per changed source function, what the graph ties to it (see `FnProfile`). */
+export function functionProfiles(
+  g: GraphEngine,
+  ctx?: SentenceLinks,
+): Map<string, FnProfile> {
+  const hunks = g
+    .run(
+      `MATCH (h:Hunk)-[:OF]->(f:File)
+       RETURN h.id AS id, h.file AS file, f.role AS role, h.scope AS scope, h.touched AS touched,
+              h.symbols AS symbols, h.conds AS conds, h.words AS words`,
+    )
+    .rows.filter((h) => unitRole(String(h.file), String(h.role ?? '')) === 'src')
+    .sort((a, b) => Number(String(a.id).slice(1)) - Number(String(b.id).slice(1)));
+  const out = new Map<string, FnProfile>();
+  const sole = new Map<string, Row[]>();
+  for (const h of hunks) {
+    for (const n of fnNames(h))
+      if (!out.has(n))
+        out.set(n, {
+          name: n,
+          file: String(h.file),
+          sentences: [],
+          conds: [],
+          nameWords: nameWordsOf(n),
+          words: [],
+        });
+    const one = soleOf(h);
+    if (one) {
+      sole.set(one, [...(sole.get(one) ?? []), h]);
+      out.get(one)!.file = String(h.file);
+    }
+  }
+  const sentences = ctx?.sentences ?? [];
+  const linkCount = (ref: string) => (ctx?.links[ref] ?? []).length || 99;
+  for (const p of out.values()) {
+    const own = sole.get(p.name) ?? [];
+    const ownIds = new Set(own.map((h) => String(h.id)));
+    const esc = p.name.replace(/[$]/g, '\\$');
+    p.sentences = sentences
+      .filter((x) => {
+        if ((ctx?.links[x.ref] ?? []).some((id) => ownIds.has(id))) return true;
+        if (new RegExp(`\`${esc}\``).test(x.text)) return true;
+        const ws = wordsOf(x.text);
+        return p.nameWords.length >= 2 && p.nameWords.every((w) => ws.has(w));
+      })
+      .sort((a, b) => linkCount(a.ref) - linkCount(b.ref));
+    p.conds = uniqStr(
+      own
+        .flatMap((h) => ((h.conds as string[]) ?? []).map(String))
+        .filter((c) => c.startsWith('+ '))
+        .map((c) => c.slice(2).trim()),
+    );
+    p.words = [
+      ...new Set([
+        ...p.sentences.flatMap((x) => [...wordsOf(x.text)]),
+        ...own.flatMap((h) => [...wordsOf(((h.words as string[]) ?? []).join(' '))]),
+        ...p.conds.flatMap((c) => [...wordsOf(c)]),
+      ]),
+    ];
+  }
+  return out;
+}
+
+const clipAt = (s: string, n: number) => {
+  const t = s.replace(/\s+/g, ' ').trim();
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n * 0.6)).replace(/[\s,;:]+$/, '')}…`;
+};
+/** What the graph ties to a function, short: its most specific sentence, else its longest added branch. */
+function ownedBy(
+  p: FnProfile | undefined,
+  n: number,
+): { text: string; cite?: string } | undefined {
+  if (!p) return undefined;
+  const s = p.sentences[0];
+  if (s) return { text: `${clipAt(s.text, n)} (${s.ref})`, cite: s.ref };
+  const c = [...p.conds].sort((a, b) => b.length - a.length)[0];
+  return c ? { text: `\`${clipAt(c, n - 6).replace(/`/g, "'")}\`` } : undefined;
+}
+
+/** Above this the entry row stops adding functions. */
+const ENTRY_CHARS = 300;
+
 /**
  * Where a reviewer starts: the changed function in a shipped source file
  * (not a test or script) whose new lines call the most changed symbols of
@@ -219,8 +491,13 @@ const MIN_CALLS = 2;
  * (the one it starts in), else the first it touches. Needs MIN_CALLS distinct
  * calls; otherwise the most-referenced changed symbol from the head scan, if
  * a source file defines it. Undefined when neither holds.
+ *
+ * The row also says what each function owns (`functionProfiles`): what the
+ * graph ties to the entry, then its changed callees, the next function in its
+ * file and its changed callers, each with what is tied to it, so a writer
+ * doesn't pin a caller's or callee's behavior on the entry.
  */
-export function entryRow(g: GraphEngine): Row | undefined {
+export function entryRow(g: GraphEngine, ctx?: SentenceLinks): Row | undefined {
   const hunks = g
     .run(
       `MATCH (c:Change)-[:HAS]->(h:Hunk)-[:OF]->(f:File)
@@ -247,17 +524,15 @@ export function entryRow(g: GraphEngine): Row | undefined {
       )
       .rows.map((r) => [String(r.term), r]),
   );
-  const owners = new Map<
-    string,
-    {
-      name: string;
-      file: string;
-      change: string;
-      calls: Set<string>;
-      diff: string[];
-      branches: number;
-    }
-  >();
+  type Owner = {
+    name: string;
+    file: string;
+    change: string;
+    calls: Set<string>;
+    diff: string[];
+    branches: number;
+  };
+  const owners = new Map<string, Owner>();
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const h of hunks) {
     const owner = [h.scope, ...((h.touched as string[]) ?? [])]
@@ -289,6 +564,43 @@ export function entryRow(g: GraphEngine): Row | undefined {
     o.branches += Number(h.branches ?? 0);
     owners.set(key, o);
   }
+  const profiles = functionProfiles(g, ctx);
+  const fileOf = (n: string) => profiles.get(n)?.file ?? definedIn.get(n);
+  /** The entry's own clause, then one clause per related function while the row stays short. */
+  const compose = (
+    entry: string,
+    entryFile: string,
+    lead: string,
+    related: { name: string; how: string }[],
+  ) => {
+    const cites: string[] = [];
+    const mine = ownedBy(profiles.get(entry), 64);
+    if (mine?.cite) cites.push(mine.cite);
+    let text = `Start at \`${entry}\` in ${entryFile}${lead}${mine ? `; tied to it: ${mine.text}` : ''}.`;
+    const head = ` Not in \`${entry}\`: `;
+    const parts: string[] = [];
+    for (const r of related) {
+      const what = ownedBy(profiles.get(r.name), 48);
+      // A callee the lead already names adds something only with what is tied to it.
+      if (r.how === 'called' && !what) continue;
+      const file = fileOf(r.name);
+      const where = file === entryFile ? 'same file' : (file ?? '');
+      const part = `\`${r.name}\` (${[where, r.how].filter(Boolean).join('; ')})${what ? `: ${what.text}` : ''}`;
+      if (
+        text.length + head.length + [...parts, part].join('; ').length > ENTRY_CHARS &&
+        parts.length
+      )
+        break;
+      parts.push(part);
+      if (what?.cite) cites.push(what.cite);
+    }
+    if (parts.length) text += `${head}${parts.join('; ')}.`;
+    return { text, cites };
+  };
+  const callersOf = (name: string) =>
+    [...owners.values()]
+      .filter((o) => o.name !== name && o.calls.has(name))
+      .sort((a, b) => a.file.localeCompare(b.file) || a.name.localeCompare(b.name));
   const refFiles = (n: string) => Number(refsOf.get(n)?.files ?? 0);
   const ranked = [...owners.values()]
     .filter((o) => o.calls.size >= MIN_CALLS)
@@ -308,26 +620,43 @@ export function entryRow(g: GraphEngine): Row | undefined {
     const elsewhere = [
       ...new Set(called.map((c) => definedIn.get(c)!).filter((f) => f !== best.file)),
     ];
+    const lead = `: its changed lines call ${called
+      .slice(0, 4)
+      .map((c) => `\`${c}\``)
+      .join(', ')}${called.length > 4 ? ` and ${called.length - 4} more` : ''}${
+      elsewhere.length ? ` (from ${elsewhere.slice(0, 2).join(', ')})` : ''
+    }`;
+    const related = [
+      ...(next
+        ? [
+            {
+              name: next.name,
+              how: `calls ${[...next.calls]
+                .sort()
+                .slice(0, 3)
+                .map((c) => `\`${c}\``)
+                .join(', ')}`,
+            },
+          ]
+        : []),
+      ...called.map((c) => ({ name: c, how: 'called' })), // already in the lead
+      ...callersOf(best.name).map((o) => ({
+        name: o.name,
+        how: `calls \`${best.name}\``,
+      })),
+    ].filter(
+      (r, i, all) =>
+        r.name !== best.name && all.findIndex((x) => x.name === r.name) === i,
+    );
+    const { text, cites } = compose(best.name, best.file, lead, related);
     return {
       kind: 'entry',
-      fact: `Start at \`${best.name}\` in ${best.file}: its changed lines call ${called
-        .slice(0, 4)
-        .map((c) => `\`${c}\``)
-        .join(', ')}${called.length > 4 ? ` and ${called.length - 4} more` : ''}${
-        elsewhere.length ? ` (from ${elsewhere.slice(0, 2).join(', ')})` : ''
-      }${
-        next
-          ? `; then \`${next.name}\` there (calls ${[...next.calls]
-              .sort()
-              .slice(0, 3)
-              .map((c) => `\`${c}\``)
-              .join(', ')})`
-          : ''
-      }.`,
+      fact: text,
       cites: uniqStr([
         best.change,
         ...best.diff.slice(0, 2),
         ...(next ? [next.change, next.diff[0]!] : []),
+        ...cites,
       ]),
     };
   }
@@ -335,9 +664,20 @@ export function entryRow(g: GraphEngine): Row | undefined {
   const file = top ? ((top.definedIn as string[]) ?? []).map(String)[0] : undefined;
   if (!top || !file || unitRole(file, pathRole(file)) !== 'src') return undefined;
   const h = hunks.find((x) => x.file === file);
+  const term = String(top.term);
+  const related = callersOf(term).map((o) => ({
+    name: o.name,
+    how: `calls \`${term}\``,
+  }));
+  const { text, cites } = compose(
+    term,
+    file,
+    `: the changed symbol most named elsewhere (${Number(top.files)} other file(s))`,
+    related,
+  );
   return {
     kind: 'entry',
-    fact: `Start at \`${String(top.term)}\` in ${file}: the changed symbol most named elsewhere (${Number(top.files)} other file(s)).`,
-    cites: h ? [String(h.change), String(h.diff)] : [],
+    fact: text,
+    cites: uniqStr([...(h ? [String(h.change), String(h.diff)] : []), ...cites]),
   };
 }

@@ -29,7 +29,9 @@ instructions. These rules are for you: never copy their wording into the PR.
   describe the code.
 - `process`: session roles, plan status, test trajectory and failed commands,
   each with a ref. Facts about how the work went, not about the code. The
-  `entry` row names the function a reviewer should start at and its file.
+  `entry` row names the function a reviewer should start at and its file,
+  what the brief ties to it, and (after "Not in") the related functions
+  with what is tied to each.
 - `validation`, `tests`, `housekeeping`.
 
 If the brief uses the neighborhood layout (it starts with "Evidence by
@@ -76,6 +78,11 @@ as the PR needs (usually none to three); target 250–400 words. Reviewers mark 
   the function and file the `entry` process row names ("start at `fn` in
   `file`"; without one, a file from `changes.where`), not the largest file or
   the file most commit sentences name, and the decision or risk you want eyes on.
+  A review pointer names a function and only behaviors the brief ties to that
+  function: never "start at `fn`, especially <behavior>" unless the `entry`
+  row or a change or commit row ties that behavior to `fn`. A behavior the
+  `entry` row lists under "Not in `fn`" belongs to the function named there
+  (a caller, a callee): name that function with it, or leave it out.
 - `housekeeping`: at most one closing clause.
 
 Omit any part that would be empty or say nothing new; never a heading over a

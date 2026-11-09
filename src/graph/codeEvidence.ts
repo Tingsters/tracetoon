@@ -104,7 +104,7 @@ const STOP = new Set(
     ' ',
   ),
 );
-const wordsOf = (s: string) =>
+export const wordsOf = (s: string) =>
   new Set(
     (
       s

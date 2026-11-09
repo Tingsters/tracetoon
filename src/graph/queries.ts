@@ -23,6 +23,9 @@ import {
   failedPublishRows,
   noPassAfterCommitRow,
   remotePathRows,
+  liveEvidence,
+  functionProfiles,
+  type FnProfile,
 } from './briefExtras.ts';
 
 export interface Section {
@@ -940,6 +943,8 @@ export function briefParts(
   branchy: string[];
   /** Commit-message row ref → the hunks it describes (`→ H#`), whatever the layout. */
   hunkLinks: Record<string, string[]>;
+  /** Changed source functions and what the graph ties to each (render's review-pointer check). */
+  owners: FnProfile[];
 } {
   const changes = g
     .run(
@@ -1355,7 +1360,7 @@ export function briefParts(
     ...capLimits(
       limits,
       [...(noPass ? [noPass] : []), ...failedPublishRows(g)],
-      remotePathRows(hunkRows, fileRole, scopedRuns),
+      remotePathRows(hunkRows, fileRole, scopedRuns, liveEvidence(g)),
     ),
   );
   limits.forEach((l, i) => (l.ref = `L${i + 1}`));
@@ -1419,7 +1424,14 @@ export function briefParts(
     !!noPass,
   );
   // Where to start reading: the changed function that owns the behavior.
-  const entry = entryRow(g);
+  const links = {
+    sentences: commitText.map((r) => ({
+      ref: String(r.ref),
+      text: String(r.text ?? ''),
+    })),
+    links: hunkLinks,
+  };
+  const entry = entryRow(g, links);
   if (entry) process.push({ ref: `PR${process.length + 1}`, ...entry });
 
   // Open points first: writers often read only the head of the output.
@@ -1495,6 +1507,7 @@ export function briefParts(
     unchecked: uniq(uncheckedAll).sort(),
     branchy: uniq(branchy).sort(),
     hunkLinks,
+    owners: [...functionProfiles(g, links).values()],
   };
 }
 

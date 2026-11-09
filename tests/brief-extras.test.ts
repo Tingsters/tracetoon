@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { applyBrief } from '../src/graph/briefRender.ts';
+import { applyBrief, misplacedFocus } from '../src/graph/briefRender.ts';
 import {
   capLimits,
   entryRow,
   failedPublishRows,
+  functionProfiles,
   noPassAfterCommitRow,
   remotePathRows,
+  type LiveEvidence,
 } from '../src/graph/briefExtras.ts';
+import { invocationsOf } from '../src/digest/build.ts';
 import { splitScriptUnits, unitRole, type PatchHunk } from '../src/graph/build.ts';
 import { withGraph } from '../src/graph/engine.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
@@ -410,4 +413,231 @@ test('drafting guidance: word target, one motive sentence, the entry row', () =>
   expect(drafting).toContain('target 250–400 words');
   expect(drafting).toMatch(/one motive sentence at most: never a list/);
   expect(drafting).toMatch(/`entry` process row names/);
+});
+
+describe('remote paths a recorded live run reached', () => {
+  const roles = new Map([
+    ['src/net/providers.ts', 'behavior'],
+    ['src/commands/draw.ts', 'behavior'],
+  ]);
+  const remote = {
+    change: 'CH1',
+    file: 'src/net/providers.ts',
+    branches: 4,
+    symbols: ['generateImages', 'callGemini'],
+    words: ['fetch', 'provider'],
+    conds: [
+      "+ if (id === 'codex') return codexBatch(jobs);",
+      "+ if (id === 'gemini') return callGemini(job);",
+      "+ case 'openai':",
+    ],
+  };
+  const hunks = [remote];
+  const liveOf = (invocations: LiveEvidence['invocations']): LiveEvidence => ({
+    invocations,
+    hunks: [
+      {
+        file: 'src/net/providers.ts',
+        scope: null,
+        touched: ['generateImages'],
+        symbols: ['generateImages'],
+        fresh: [],
+        code: [],
+      },
+      {
+        file: 'src/commands/draw.ts',
+        scope: 'drawArtCmd',
+        touched: ['drawArtCmd'],
+        symbols: [],
+        fresh: [],
+        code: ['+ const out = await generateImages(jobs, choice.id);'],
+      },
+    ],
+  });
+  const limit = (live?: LiveEvidence) =>
+    remotePathRows(hunks, roles, [], live).map((r) => r.limit);
+
+  test('no live run: the open point stands', () => {
+    expect(limit(liveOf([]))).toEqual([
+      'src/net/providers.ts adds branches that call a remote service (`generateImages`, `callGemini`); no recorded check run shows those paths running against the real service.',
+    ]);
+    // A formatter given the handler's file runs none of it.
+    expect(
+      limit(liveOf([{ cmd: 'bun x prettier src/commands/draw.ts', out: [] }])),
+    ).toHaveLength(1);
+  });
+
+  test("a run of the handler's subcommand naming its route leaves only the other routes open", () => {
+    expect(
+      limit(liveOf([{ cmd: 'bun src/cli.ts draw art 20261023 codex', out: [] }])),
+    ).toEqual([
+      'src/net/providers.ts adds branches that call a remote service; the recorded run of `bun src/cli.ts draw art 20261023 codex` used `codex`, and no recorded run shows `gemini`, `openai` running against the real service.',
+    ]);
+    // The route can come from the run's output.
+    expect(
+      limit(liveOf([{ cmd: 'mytool draw art', out: ['panel', 'gemini'] }]))[0],
+    ).toContain('used `gemini`, and no recorded run shows `codex`, `openai`');
+  });
+
+  test('a live run whose route is unknown, or that used every route, drops the row', () => {
+    expect(limit(liveOf([{ cmd: 'bun src/cli.ts draw art', out: [] }]))).toEqual([]);
+    expect(
+      limit(
+        liveOf([
+          { cmd: 'bun src/cli.ts draw art codex', out: [] },
+          { cmd: 'bun src/cli.ts draw art', out: [] },
+        ]),
+      ),
+    ).toEqual([]);
+    expect(
+      limit(liveOf([{ cmd: 'bun src/cli.ts draw art codex gemini openai', out: [] }])),
+    ).toEqual([]);
+    // A file with no route values: any live run drops it.
+    expect(
+      remotePathRows(
+        [{ ...remote, conds: [] }],
+        roles,
+        [],
+        liveOf([{ cmd: 'bun src/cli.ts draw art codex', out: [] }]),
+      ),
+    ).toEqual([]);
+  });
+
+  test('invocations: plain words of non-check commands, no flags, assignments or redirections', () => {
+    const scrub = { text: (x: string) => x, redactions: 0 } as never;
+    const prWords = new Set(['codex', 'panel']);
+    expect(
+      invocationsOf(
+        'cd repo && TOKEN=abc (time bun src/cli.ts draw art --run 20261023 --provider codex) 2>&1 | tail -12; bun test; grep -n x src/a.ts',
+        'Panel 1 drawn by Codex in 30s',
+        prWords,
+        scrub,
+      ),
+    ).toEqual([
+      { cmd: 'bun src/cli.ts draw art 20261023 codex', out: ['panel', 'codex'] },
+    ]);
+    // Checks, utilities and long key-like tokens are not kept.
+    expect(invocationsOf('bun x tsc --noEmit && git status', '', prWords, scrub)).toEqual(
+      [],
+    );
+    expect(
+      invocationsOf('mytool login sk0123456789abcdefghijklmn', '', prWords, scrub),
+    ).toEqual([{ cmd: 'mytool login', out: [] }]);
+  });
+});
+
+describe('the entry row says what each function owns', () => {
+  const files = [
+    fileNode('src/trace/pathMatch.ts'),
+    fileNode('src/correlate/correlate.ts'),
+  ];
+  const hunks = [
+    hunkNode('H1', 'src/trace/pathMatch.ts', {
+      scope: 'includesPath',
+      symbols: ['leadingCd'],
+      touched: ['leadingCd'],
+      words: ['directory', 'command', 'leading', 'cwd'],
+      code: ['+ export function leadingCd(cmd: string, cwd?: string) {'],
+      branches: 3,
+    }),
+    hunkNode('H2', 'src/correlate/correlate.ts', {
+      scope: 'belongs',
+      touched: ['belongs'],
+      words: ['under', 'root', 'mentions', 'match', 'fallback'],
+      conds: [
+        '+ if (dir) return underAnyRoot(dir, roots) || mentionsAnyRoot(r.cmd, roots);',
+      ],
+      code: ['+ const dir = leadingCd(r.cmd, r.cwd);'],
+      branches: 2,
+    }),
+  ];
+  const rels = [
+    ...hunks.map((h) => R('OF', ['Hunk', h.id], ['File', String(h.props.file)])),
+    ...hunks.map((h) => R('HAS', ['Change', 'CH1'], ['Hunk', h.id])),
+  ];
+  const change = N('Change', 'CH1', {
+    key: 'commit:abc',
+    files: [],
+    roles: [],
+    symbols: [],
+    added: 1,
+    removed: 0,
+    branches: 0,
+  });
+  const headRef = N('HeadRef', 'HR1', {
+    kind: 'most referenced',
+    term: 'leadingCd',
+    fresh: true,
+    definedIn: ['src/trace/pathMatch.ts'],
+    refs: [],
+    files: 2,
+    count: 3,
+  });
+  const ctx = {
+    sentences: [
+      {
+        ref: 'abc1234#1',
+        text: 'Commands that start with cd are judged by the directory they move to.',
+      },
+      { ref: 'abc1234#2', text: 'Found while dogfooding.' },
+    ],
+    links: { 'abc1234#1': ['H1'] },
+  };
+  const graph = () => graphOf([...files, ...hunks, change, headRef], rels);
+
+  test("the entry's own sentence, and its caller with the branch tied to it", () => {
+    const row = withGraph(graph(), (g) => entryRow(g, ctx));
+    expect(row?.fact).toBe(
+      'Start at `leadingCd` in src/trace/pathMatch.ts: the changed symbol most named elsewhere (2 other file(s)); tied to it: Commands that start with cd are judged by the directory they… (abc1234#1). Not in `leadingCd`: `belongs` (src/correlate/correlate.ts; calls `leadingCd`): `if (dir) return underAnyRoot(dir, roots)…`.',
+    );
+    expect(row?.cites).toContain('abc1234#1');
+    expect(String(row?.fact).length).toBeLessThanOrEqual(320);
+  });
+
+  test('profiles: a sentence goes to the one function its hunk defines, branches to their hunk', () => {
+    const p = withGraph(graph(), (g) => functionProfiles(g, ctx));
+    expect(p.get('leadingCd')?.sentences.map((x) => x.ref)).toEqual(['abc1234#1']);
+    // `includesPath` is only where the hunk starts: nothing is tied to it.
+    expect(p.get('includesPath')?.sentences).toEqual([]);
+    expect(p.get('belongs')?.conds[0]).toContain('mentionsAnyRoot');
+    expect(p.get('belongs')?.words).toContain('fallback');
+  });
+
+  test('render flags "start at `fn`, especially <behavior>" tied to another function', () => {
+    const owners = withGraph(graph(), (g) => [...functionProfiles(g, ctx).values()]);
+    const flag = misplacedFocus(
+      'Start review at `leadingCd`, especially the root matching fallback.',
+      owners,
+    );
+    expect(flag?.severity).toBe('check');
+    expect(flag?.problem).toContain(
+      '`belongs` (src/correlate/correlate.ts), not to `leadingCd`',
+    );
+    // The behavior tied to the named function, no focus clause, or no pointer: nothing.
+    expect(
+      misplacedFocus(
+        'Start at `leadingCd`, especially the directory a command moves to.',
+        owners,
+      ),
+    ).toBeUndefined();
+    expect(
+      misplacedFocus('Start at `leadingCd` in pathMatch.ts.', owners),
+    ).toBeUndefined();
+    expect(
+      misplacedFocus(
+        '`leadingCd` changed, especially the root matching fallback.',
+        owners,
+      ),
+    ).toBeUndefined();
+    // Through applyBrief, as a soft flag.
+    const r = applyBrief(
+      'Start review at `leadingCd`, especially the root matching fallback. [CH1]\n',
+      {
+        sections: [],
+        unchecked: [],
+        owners,
+      },
+    );
+    expect(r.flags.map((f) => f.severity)).toEqual(['check']);
+  });
 });
