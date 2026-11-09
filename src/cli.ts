@@ -264,6 +264,10 @@ program
   .option('--run <id>', 'run id (default: latest)')
   .option('--findings <path>', 'findings file (default: <run>/review-findings.json)')
   .option('--agent-id <id>', "the reviewer's real host agent id (overrides the file)")
+  .option(
+    '--reviewer-model <name>',
+    'the model the reviewer ran on (SKILL "Reviewer model:" line); recorded as reviewer.model',
+  )
   .action((o) => reviewImportCmd(cwd, { ...g(), ...o }));
 
 program

@@ -434,6 +434,93 @@ export function thisPrTurns(g: GraphEngine): PrTurns {
   };
 }
 
+/** A prompt that only acknowledges or steers ("go ahead", "yes", "/clear"): never a session goal. */
+const ACK =
+  /^(?:\/\S+.*|y(?:es|ep|eah)?|no|ok(?:ay)?|sure|thanks?(?: you)?|go(?: ahead| on| for it)?|continue|proceed|do it|lgtm|looks good|sounds good|please|approved?)[\s.!]*$/i;
+const substantive = (text: unknown) => {
+  const t = String(text ?? '').trim();
+  return !!t && !ACK.test(t) && t.split(/\s+/).length >= 2;
+};
+/** At most this many background rows. */
+const MAX_BACKGROUND = 4;
+
+/**
+ * How the work came about, from the included sessions, when this PR's own
+ * turns don't show it: each session's goal (its first substantive prompt) and
+ * the plans and decisions of earlier turns, which `requests` leaves out because
+ * they didn't produce this PR's edits. Optional context, never this PR's
+ * request; refs already in `requests` are skipped. At most four rows: the
+ * goals first, then the latest earlier plans and decisions, in time order.
+ */
+export function backgroundRows(
+  g: GraphEngine,
+  turns: PrTurns,
+  exclude: Set<string>,
+): Record<string, unknown>[] {
+  const prompts = g.run(
+    `MATCH (p:Prompt)-[:IN_SESSION]->(s:Session {band: 'included'})
+     RETURN p.id AS id, p.t AS t, p.text AS text, s.id AS session`,
+  ).rows;
+  const promptSession = new Map(prompts.map((p) => [String(p.id), String(p.session)]));
+  const promptTime = new Map(prompts.map((p) => [String(p.id), String(p.t ?? '')]));
+  const byTime = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+    String(a.t ?? '').localeCompare(String(b.t ?? '')) ||
+    factOrder(String(a.id ?? a.ref), String(b.id ?? b.ref));
+  const goals: Record<string, unknown>[] = [];
+  for (const session of [...turns.prompts.keys()].sort()) {
+    const first = prompts
+      .filter((p) => String(p.session) === session)
+      .sort(byTime)
+      .find((p) => substantive(p.text));
+    if (!first || exclude.has(String(first.id))) continue;
+    goals.push({
+      ref: String(first.id),
+      kind: "session goal (not this PR's own request)",
+      text: clipText(String(first.text ?? '').trim(), 600),
+      t: first.t,
+    });
+  }
+  // Per session, the last turn that produced this PR's edits or commits:
+  // plans and decisions before it are "earlier in the session".
+  const lastProductive = new Map<string, string>();
+  for (const id of turns.productive) {
+    const s = promptSession.get(id);
+    const t = promptTime.get(id) ?? '';
+    if (s && t > (lastProductive.get(s) ?? '')) lastProductive.set(s, t);
+  }
+  const earlier = g
+    .run(
+      `MATCH (x)-[:IN_TURN]->(p:Prompt) WHERE x:Plan OR x:Decision
+       RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved, x.t AS t,
+              coalesce(x.answers, x.excerpt, x.text) AS text, p.id AS turn, p.t AS turnT`,
+    )
+    .rows.filter((x) => {
+      const turn = String(x.turn);
+      const session = promptSession.get(turn);
+      const until = session ? lastProductive.get(session) : undefined;
+      return (
+        !!until &&
+        !turns.productive.has(turn) &&
+        String(x.turnT ?? '') < until &&
+        !exclude.has(String(x.id))
+      );
+    })
+    .sort(byTime)
+    .map((x) => ({
+      ref: String(x.id),
+      kind:
+        x.label === 'Plan'
+          ? `${planStatus(x.approved)}, earlier in the session`
+          : 'decision, earlier in the session',
+      text: clipText(String(x.text ?? '').trim(), 400),
+      t: x.t,
+    }));
+  const goalRows = goals.slice(0, MAX_BACKGROUND);
+  const room = MAX_BACKGROUND - goalRows.length;
+  const factRows = room > 0 ? earlier.slice(-room) : [];
+  return [...goalRows, ...factRows].map(({ ref, kind, text }) => ({ ref, kind, text }));
+}
+
 /**
  * A change's conditions, quoted from its code hunks: changed conditions first,
  * then added branches and fallbacks with a literal (thresholds, defaults),
@@ -1115,6 +1202,11 @@ export function briefParts(g: GraphEngine): {
     ),
     section('process', ['ref', 'kind', 'fact', 'cites'], process),
     section('requests', ['ref', 'kind', 'text', 'truncated'], requests),
+    section(
+      'background',
+      ['ref', 'kind', 'text'],
+      backgroundRows(g, turns, new Set(requests.map((r) => String(r.ref)))),
+    ),
     section('commitMessages', ['ref', 'text', 'implementedBy'], commitText),
     section('tests', ['ref', 'file', 'titles'], tests),
     section('housekeeping', ['ref', 'what', 'files'], housekeeping),

@@ -15,6 +15,7 @@ import {
   parseFindings,
   placeholderAgentId,
 } from '../src/contribution/leanReview.ts';
+import { reviewLine } from '../src/contribution/review.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
 import { publishProblem } from '../src/workflow/readiness.ts';
 import { repository, tasks } from '../src/workflow/state.ts';
@@ -120,6 +121,107 @@ describe('lean review packet', () => {
     expect(packet.text).toContain('export const named = 1;');
     expect(packet.text).toContain('toBe("hello Ada")');
     expect(packet.text).toMatch(/- H1 src\/quiet\.ts diff:\S+ .*\| no$/m);
+  });
+});
+
+describe('lean review packet brief rows', () => {
+  test('open limits, background and process rows reach the reviewer', () => {
+    const brief = [
+      {
+        title: 'limits',
+        columns: ['ref', 'change', 'kind', 'limit'],
+        rows: [
+          {
+            ref: 'L1',
+            change: ['CH2'],
+            kind: 'open',
+            limit: 'No user request was recorded for CH2.',
+          },
+        ],
+      },
+      {
+        title: 'requests',
+        columns: ['ref', 'kind', 'text', 'truncated'],
+        rows: [{ ref: 'S3', kind: 'user request', text: 'Go ahead', truncated: null }],
+      },
+      {
+        title: 'background',
+        columns: ['ref', 'kind', 'text'],
+        rows: [
+          {
+            ref: 'S1',
+            kind: "session goal (not this PR's own request)",
+            text: 'Make greetings configurable',
+          },
+          {
+            ref: 'P1',
+            kind: 'plan (not approved as written), earlier in the session',
+            text: 'Limit v1',
+          },
+        ],
+      },
+      {
+        title: 'process',
+        columns: ['ref', 'kind', 'fact', 'cites'],
+        rows: [
+          {
+            ref: 'PR3',
+            kind: 'test',
+            fact: '2 test run(s); 1 failed (R2); last R2 failed; no passing run recorded after the last commit.',
+            cites: ['R2'],
+          },
+        ],
+      },
+    ];
+    const text = leanPacket({
+      runId: 'r3',
+      title: 'Greet',
+      body: 'Greets by name.',
+      patch: branchy + '\n',
+      fingerprint: 'f',
+      brief,
+    }).text;
+    expect(text).toContain('- L1 [CH2]: No user request was recorded for CH2.');
+    expect(text).toContain(
+      `- S1 (session goal (not this PR's own request)): "Make greetings configurable"`,
+    );
+    expect(text).toContain(
+      '- P1 (plan (not approved as written), earlier in the session): "Limit v1"',
+    );
+    expect(text).toContain(
+      '- PR3 (test): 2 test run(s); 1 failed (R2); last R2 failed; no passing run recorded after the last commit.',
+    );
+    // background comes after requests, process last
+    expect(text.indexOf('background (')).toBeGreaterThan(text.indexOf('requests ('));
+    expect(text.indexOf('process (')).toBeGreaterThan(text.indexOf('background ('));
+  });
+
+  test('a review line names the reviewer model, or says it was not recorded', () => {
+    const base = {
+      status: 'current' as const,
+      mode: 'delegated' as const,
+      issues: [],
+      guidanceStatus: 'current' as const,
+      assessments: [],
+      requirements: [],
+      sources: [],
+    };
+    expect(reviewLine({ ...base, reviewerModel: 'sonnet' })).toContain(
+      'Reviewer model: sonnet.',
+    );
+    expect(reviewLine({ ...base, reviewerModel: null })).toContain(
+      'Reviewer model: not recorded.',
+    );
+    expect(reviewLine(base)).not.toContain('Reviewer model');
+  });
+
+  test('reviewer.model in the findings file must be a name', () => {
+    const f = { v: 1, reviewer: { agentId: 'a1b2c3', model: '' }, findings: [] };
+    expect(() => parseFindings(f)).toThrow('"reviewer.model" must be a model name');
+    expect(
+      parseFindings({ ...f, reviewer: { agentId: 'a1b2c3', model: 'sonnet' } }).findings
+        .reviewer.model,
+    ).toBe('sonnet');
   });
 });
 
@@ -376,6 +478,30 @@ describe('lean review import', () => {
     expect(
       publishProblem(repo.root, run, readLocal(join(run.dir, 'approval.json'))!),
     ).toBeUndefined();
+    // No model given: render says so.
+    expect(imported.reviewerModel).toBeNull();
+    expect(after.contributionReview.reviewerModel).toBeNull();
+    // --reviewer-model is recorded as reviewer.model; render reports it.
+    const withModel = ok(
+      repo.root,
+      'review',
+      'import',
+      '--run',
+      run.id,
+      '--agent-id',
+      'a7c3e19f2b',
+      '--reviewer-model',
+      'sonnet',
+    );
+    expect(withModel.reviewerModel).toBe('sonnet');
+    expect(readLocal<any>(join(run.dir, 'review.json'))!.reviewer).toEqual({
+      mode: 'delegated',
+      agentId: 'a7c3e19f2b',
+      model: 'sonnet',
+    });
+    const modelled = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    expect(modelled.contributionReview.status).toBe('current');
+    expect(modelled.contributionReview.reviewerModel).toBe('sonnet');
 
     // A body that no longer holds the quoted claim is refused, naming the quote.
     writeFileSync(join(run.dir, 'body.md'), 'Greets people.\n\nSee src/greet.ts.\n');

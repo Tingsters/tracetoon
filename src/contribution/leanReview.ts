@@ -30,7 +30,8 @@ export interface LeanFinding {
 
 export interface LeanFindings {
   v: 1;
-  reviewer: { agentId: string };
+  /** `model`: the model the reviewer ran on, when the coordinator chose one. */
+  reviewer: { agentId: string; model?: string };
   /** Optional two-line cold read of the title and body. */
   coldRead?: { change?: string; start?: string };
   findings: LeanFinding[];
@@ -88,6 +89,11 @@ export function parseFindings(value: unknown): {
   if (value.v !== 1) errors.push('"v" must be 1');
   if (!record(value.reviewer) || typeof value.reviewer.agentId !== 'string')
     errors.push('"reviewer" must be {"agentId": "<your real agent id>"}');
+  else if (
+    value.reviewer.model !== undefined &&
+    (typeof value.reviewer.model !== 'string' || !value.reviewer.model.trim())
+  )
+    errors.push('"reviewer.model" must be a model name when given');
   if (
     value.coldRead !== undefined &&
     (!record(value.coldRead) ||
@@ -329,6 +335,8 @@ export function leanToReview(
   agentId: string,
   inputFingerprint: string,
   ctx: ImportContext,
+  /** The model the reviewer ran on (`--reviewer-model`), recorded as reviewer.model. */
+  reviewerModel?: string,
 ): { review: ContributionReview; warnings: string[] } {
   const warnings: string[] = [];
   const unplaced: string[] = [];
@@ -440,7 +448,11 @@ export function leanToReview(
       v: 2,
       inputFingerprint,
       drafter: { mode: 'inline' },
-      reviewer: { mode: 'delegated', agentId },
+      reviewer: {
+        mode: 'delegated',
+        agentId,
+        ...(reviewerModel?.trim() ? { model: reviewerModel.trim() } : {}),
+      },
       assessments: [],
       bodyReview,
     },

@@ -159,6 +159,18 @@ function briefLines(brief: Section[] | undefined): string[] {
     for (const r of requests)
       out.push(`- ${show(r.ref)} (${oneLine(r.kind, 120)}): "${oneLine(r.text, 600)}"`);
   }
+  const background = rows('background');
+  if (background.length) {
+    out.push("background (how the work came about; context, never this PR's request):");
+    for (const r of background)
+      out.push(`- ${show(r.ref)} (${oneLine(r.kind, 80)}): "${oneLine(r.text, 300)}"`);
+  }
+  const process = rows('process');
+  if (process.length) {
+    out.push('process (recorded facts about how the work went):');
+    for (const r of process)
+      out.push(`- ${show(r.ref)} (${show(r.kind)}): ${oneLine(r.fact, 300)}`);
+  }
   return out.length ? out : ['(The brief has no rows for this run.)'];
 }
 
@@ -264,7 +276,7 @@ export function leanPacket(input: PacketInput): Packet {
     `# Lean review packet: run ${input.runId}`,
     '',
     `review-input fingerprint: ${input.fingerprint}`,
-    'Cite: body:N (body line), diff:N (changes.patch line, left of each diff line), brief refs (CH#, commit:<sha>#n, L#, T#, S#), or path:line.',
+    'Cite: body:N (body line), diff:N (changes.patch line, left of each diff line), brief refs (CH#, commit:<sha>#n, L#, T#, S#, P#, D#, PR#), or path:line.',
     '',
     '## Title',
     '',
@@ -401,8 +413,14 @@ function incompleteReasons(run: Run, root: string, input: ReviewInput): string[]
 export function importLeanReview(
   run: Run,
   root: string,
-  opts: { findings?: string; agentId?: string },
-): { path: string; warnings: string[]; incomplete: string[] } {
+  opts: { findings?: string; agentId?: string; reviewerModel?: string },
+): {
+  path: string;
+  warnings: string[];
+  incomplete: string[];
+  /** reviewer.model as recorded in review.json; null when none was given. */
+  reviewerModel: string | null;
+} {
   const { input, patch } = renderedInput(run);
   const file = opts.findings
     ? isAbsolute(opts.findings)
@@ -463,7 +481,13 @@ export function importLeanReview(
   };
   let built: ReturnType<typeof leanToReview>;
   try {
-    built = leanToReview(parsed.findings, agentId, input.fingerprint, ctx);
+    built = leanToReview(
+      parsed.findings,
+      agentId,
+      input.fingerprint,
+      ctx,
+      opts.reviewerModel ?? parsed.findings.reviewer.model,
+    );
     // The same check render applies, so render never finds the import invalid.
     parseBodyReview(built.review.bodyReview, contractRef, {
       body: input.body,
@@ -481,12 +505,18 @@ export function importLeanReview(
     path,
     warnings: [...parsed.warnings, ...built.warnings],
     incomplete: incompleteReasons(run, root, input),
+    reviewerModel: built.review.reviewer.model ?? null,
   };
 }
 
 export function reviewImportCmd(
   cwd: string,
-  opts: OutOpts & { run?: string; findings?: string; agentId?: string },
+  opts: OutOpts & {
+    run?: string;
+    findings?: string;
+    agentId?: string;
+    reviewerModel?: string;
+  },
 ): void {
   const { run, root } = openRun(cwd, opts.run);
   const result = importLeanReview(run, root, opts);
@@ -494,6 +524,7 @@ export function reviewImportCmd(
   emit(opts, { ...result, next }, () =>
     [
       `Wrote ${result.path}.`,
+      `Reviewer model: ${result.reviewerModel ?? 'not recorded (pass --reviewer-model <name> when SKILL.md names one)'}.`,
       ...result.warnings.map((w) => `  warning: ${w}`),
       result.incomplete.length
         ? `Render will report the review incomplete (publishing still allowed): ${result.incomplete.join('; ')}.`

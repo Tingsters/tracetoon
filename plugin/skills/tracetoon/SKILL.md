@@ -155,16 +155,21 @@ reviewer separate.
           that prompt; ask it to finish within about 4 turns.
         - **Codex:** `spawn_agent` with `fork_turns: "none"` and the packet and
           reviewer-lean.md in the message.
-        - **Reviewer model.** If this skill's config names a reviewer model (see
-          'Reviewer model' line below), pass it to the reviewer call (Claude
-          Agent `model`, Codex spawn_agent `model`); otherwise the reviewer uses
-          your model. The line is at the end of this Workflow section.
+        - **Reviewer model (required when named).** Read the `Reviewer model:`
+          line at the end of this Workflow section. If it names a model (e.g.
+          `Reviewer model: sonnet.`), the reviewer call MUST pass that exact
+          name: Claude Code `Agent` with `model: "<name>"`; Codex
+          `spawn_agent` with `model: "<name>"`. Never drop or swap it, even
+          when it differs from your own model. Only `same as the main agent`
+          means pass no model.
 
         The reviewer writes `<run>/review-findings.json`:
         `{"v":1,"reviewer":{"agentId":"<real id>"},"findings":[{"kind":"claim"|"omission","quote":"…","verdict":"contradicted"|"overstated"|"unsupported"|"missing","evidence":"diff:N | brief ref | path:line","fix":"…"}]}`.
      7. `tracetoon review import --run <id> --agent-id <its real id>` turns the
         findings into `review.json` v2 (drafter inline, reviewer delegated).
-        Never invent an agent id.
+        Never invent an agent id. When the `Reviewer model:` line names a model,
+        add `--reviewer-model <name>` (recorded as `reviewer.model`); render's
+        review line then shows `Reviewer model: <name>`, or `not recorded`.
      8. One correction round: check each finding against the patch, apply the
         ones that hold, `render --json`, then send the **same** reviewer only
         the changed lines and its previous findings to confirm or re-flag

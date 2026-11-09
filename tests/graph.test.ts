@@ -258,6 +258,7 @@ describe('evidence graph', () => {
       'changes',
       'process',
       'requests',
+      'background',
       'commitMessages',
       'tests',
       'housekeeping',
@@ -273,6 +274,8 @@ describe('evidence graph', () => {
     expect(of('src/farewell.ts')).not.toBe(of('src/greet.ts'));
     expect(sec('requests').map((x: any) => x.ref)).toEqual(['S1', 'S2']);
     expect(sec('requests')[0].text).toContain('greet helper');
+    // The goal is this PR's own request already: no background row repeats it.
+    expect(sec('background')).toEqual([]);
     // The last run of each command; it ran before farewell's final edit.
     const v = sec('validation');
     expect(v.map((x: any) => x.check)).toEqual(['R2']);
@@ -1413,6 +1416,7 @@ describe('the brief states recorded process and behavior', () => {
       'changes',
       'process',
       'requests',
+      'background',
       'commitMessages',
       'tests',
       'housekeeping',
@@ -1430,6 +1434,50 @@ describe('the brief states recorded process and behavior', () => {
       ['P2', null],
     ]);
     expect(sec('requests')[2]!.kind).toBe('plan (approved) in the turn of S3');
+  });
+
+  test('background: the session goal and earlier plans and decisions, outside requests', () => {
+    expect(sec('background').map((r) => [r.ref, r.kind, r.text])).toEqual([
+      ['S1', "session goal (not this PR's own request)", 'Earlier work'],
+      ['D0', 'decision, earlier in the session', 'Old question'],
+      ['P1', 'plan (not approved as written), earlier in the session', 'Limit v1'],
+    ]);
+    // Optional context: refs render accepts, never required for coverage.
+    const r = applyBrief(
+      'The limit is now 12. [CH1]\n\nIt started from earlier work. [S1]',
+      b,
+    );
+    expect(r.unknownRefs).toEqual([]);
+    expect(r.uncovered.filter((u) => /^(S1|D0|P1)\b/.test(u))).toEqual([]);
+    expect(
+      applyBrief('The limit is now 12. [CH1]', b).uncovered.filter((u) =>
+        /^(S1|D0|P1)\b/.test(u),
+      ),
+    ).toEqual([]);
+  });
+
+  test('background: at most four rows, clipped text, acknowledgments are no goal', () => {
+    const more: EvidenceGraph = structuredClone(graph);
+    more.nodes.find((n) => n.id === 'S1')!.props.text = 'go ahead';
+    more.nodes.find((n) => n.id === 'S2')!.props.text =
+      `Plan the limit ${'x'.repeat(700)}`;
+    for (const i of [5, 6, 7, 8]) {
+      more.nodes.push(
+        N('Decision', `D${i}`, {
+          t: t(2),
+          text: `Q${i} ${'y'.repeat(500)}`,
+          session: 'h:s',
+        }),
+      );
+      more.rels.push(R('IN_TURN', ['Decision', `D${i}`], ['Prompt', 'S2']));
+    }
+    const rows = withGraph(more, (g) => briefParts(g)).sections.find(
+      (s) => s.title === 'background',
+    )!.rows;
+    expect(rows.map((r) => r.ref)).toEqual(['S2', 'D7', 'D8', 'P1']);
+    expect(String(rows[0]!.text).length).toBe(600);
+    expect(String(rows[1]!.text).length).toBe(400);
+    expect(String(rows[1]!.text).endsWith('…')).toBe(true);
   });
 
   test('process rows: session role, plan history, test trajectory, failed commands', () => {

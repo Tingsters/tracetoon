@@ -3,6 +3,8 @@ export interface AgentRole {
   mode: 'delegated' | 'inline';
   /** The actual host invocation id, not an invented persona or model name. */
   agentId?: string;
+  /** The model the host ran this agent on, as the coordinator passed it (e.g. `sonnet`). */
+  model?: string;
 }
 
 export interface SourceRef {
@@ -221,4 +223,9 @@ export interface ReviewResult {
   sources: GuidanceSource[];
   comicReview?: ComicReview;
   bodyReview?: BodyReview;
+  /**
+   * review.json's reviewer.model; null when a review.json was read but names
+   * no model. Absent when there is no readable review.json.
+   */
+  reviewerModel?: string | null;
 }
