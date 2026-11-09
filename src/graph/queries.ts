@@ -16,6 +16,7 @@ import {
 } from './runHistory.ts';
 import { fileRole as pathRole } from '../digest/build.ts';
 import { isNeighborhood, type BriefLayout } from './layout.ts';
+import { addSearchEvidence, fillSearchLinks } from './searchBrief.ts';
 
 export interface Section {
   title: string;
@@ -1099,6 +1100,8 @@ export function briefParts(
       link(m.id, String(k.commit), m.text);
     }
   }
+  // Search links (TIED_TO) fill what the structural links leave empty.
+  fillSearchLinks(g, commitText, hunkLinks);
   const hunkSection = isNeighborhood(opts.layout)
     ? hunkRowsFor(g, changeRows, hunkRows, hunkLinks, seen, fileRole)
     : [];
@@ -1428,6 +1431,8 @@ export function briefParts(
     0,
     section('doNotSay', DO_NOT_SAY_COLUMNS, doNotSayRows(sections, uniq(branchy).sort())),
   );
+  // Key code lines under commit sentences, and commit-vs-code doNotSay rows.
+  addSearchEvidence(g, sections, hunkLinks, { codeCells: !isNeighborhood(opts.layout) });
   return {
     sections,
     unchecked: uniq(uncheckedAll).sort(),

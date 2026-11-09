@@ -19,7 +19,12 @@ instructions. These rules are for you: never copy their wording into the PR.
 - `doNotSay`: wording the evidence rules out (names that already existed,
   conditional code, results only a commit message states, the files in the
   diff). Check every sentence against it before you finish.
-- `commitMessages`: each sentence, with `implementedBy` naming its file.
+- `commitMessages`: each sentence, with `implementedBy` naming its file (a
+  `~` after a file: linked by text search or at hunk level, less certain; read
+  that hunk before naming the file) and, in `code`, key changed lines of its
+  hunks with their diff ref. Quote values and comments from `code` rather than
+  the message; where a `doNotSay` row says the code contradicts the message,
+  describe the code.
 - `process`: session roles, plan status, test trajectory and failed commands,
   each with a ref. Facts about how the work went, not about the code.
 - `validation`, `tests`, `housekeeping`.

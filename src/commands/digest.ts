@@ -33,6 +33,12 @@ import {
 } from '../graph/evidence.ts';
 import { LAYOUT_FILE, parseLayout, runLayout, saveRunLayout } from '../graph/layout.ts';
 import {
+  SEARCH_FILE,
+  parseGraphSearch,
+  saveRunGraphSearch,
+  storedGraphSearch,
+} from '../graph/search.ts';
+import {
   skillSettings,
   withSkillDefaults,
   type SkillSettings,
@@ -91,6 +97,8 @@ export interface DigestOpts extends ScanOpts {
   budget?: number;
   /** Brief layout for this run (`prepare --layout`); kept for later commands. */
   layout?: string;
+  /** Search links in the graph (`prepare --graph-search`, SKILL `Graph search:`); kept for refreshes. */
+  graphSearch?: string;
 }
 
 export function digestHash(d: TraceDigest): string {
@@ -106,14 +114,18 @@ export function digestCmd(
 ) {
   const { truth, matches } = shared ?? scan(cwd, { base: opts.base, noGh: opts.offline });
   let layout;
+  let search;
   try {
     layout = parseLayout(opts.layout);
+    search = parseGraphSearch(opts.graphSearch);
   } catch (e) {
     throw new UserError((e as Error).message);
   }
   const run = opts.run ? findRun(truth.gitDir, opts.run) : newRun(truth.gitDir);
   assertRunOwner(run, truth.toplevel, truth.head);
   if (layout) saveRunLayout(run, layout);
+  if (search) saveRunGraphSearch(run, search);
+  search ??= storedGraphSearch(run) ?? 'none';
   const config = loadConfig(truth.toplevel);
   const selected = readJson<{ include?: string[]; exclude?: string[] }>(
     run,
@@ -137,7 +149,7 @@ export function digestCmd(
     ...build,
     interop,
     budgetTokens: opts.budget ?? config.budgetTokens,
-    enrich: graphEnricher(truth, graph, verification),
+    enrich: graphEnricher(truth, graph, verification, search),
   });
   try {
     recordTiming(run, 'digest-extraction', extractionMs);
@@ -427,6 +439,7 @@ export function prepareCmd(cwd: string, given: DigestOpts & PlanOptions) {
     }
   })();
   if (existing && existsSync(join(existing.dir, LAYOUT_FILE))) delete skill.layout;
+  if (existing && existsSync(join(existing.dir, SEARCH_FILE))) delete skill.graphSearch;
   if (existing && existsSync(join(existing.dir, PLAN_FILE))) {
     delete skill.reviewerModel;
     delete skill.reviewerEffort;

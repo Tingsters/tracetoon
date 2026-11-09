@@ -15,6 +15,7 @@ import { evidenceLine } from '../correlate/correlate.ts';
 import type { Run as DigestRun } from '../digest/build.ts';
 import { buildEvidenceGraph } from './build.ts';
 import { addHeadScan } from './headScan.ts';
+import { addSearchLinks, type GraphSearch } from './search.ts';
 import { annotateDigest, deriveFromGraphJson, type GraphDerived } from './derive.ts';
 import type { EvidenceGraph } from './model.ts';
 import { withGraph } from './engine.ts';
@@ -109,17 +110,34 @@ export function graphEnricher(
   out: GraphOutcome,
   /** Exact-content check receipts, so the graph can tell fresh checks from logged ones. */
   verification?: DigestRun[],
+  /** Search links (TIED_TO) to add: `prepare`'s Graph search; none when omitted. */
+  search: GraphSearch = 'none',
 ): (full: TraceDigest, trails: SessionTrail[]) => Relevance | undefined {
   return (full, trails) => {
     try {
       if (verification) full.verification = verification;
+      const patch = submission(truth).patch;
       const graph = measured('graph.build', () =>
         buildEvidenceGraph({
           full,
           trails,
-          patch: submission(truth).patch,
+          patch,
           commitFiles: commitFiles(truth),
           commitLines: commitLines(truth),
+        }),
+      );
+      // Key lines per hunk, and search links from commit text, requests and plans.
+      measured('graph.search', () =>
+        addSearchLinks({
+          graph,
+          patch,
+          mode: search,
+          prompts: full.sessions.flatMap((s) =>
+            s.prompts.flatMap((p) => (p.id ? [{ id: p.id, text: p.text }] : [])),
+          ),
+          plans: full.sessions.flatMap((s) =>
+            s.plans.flatMap((p) => (p.id ? [{ id: p.id, text: p.excerpt }] : [])),
+          ),
         }),
       );
       // What the head tree still says about removed names, and who calls the changed ones.

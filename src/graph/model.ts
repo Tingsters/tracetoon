@@ -46,7 +46,8 @@ export type RelType =
   | 'ASKED_BEFORE'
   | 'HAS'
   | 'ASKED_BY'
-  | 'EXPLAINED_BY';
+  | 'EXPLAINED_BY'
+  | 'TIED_TO';
 
 export type Value = string | number | boolean | null | string[];
 
@@ -97,7 +98,7 @@ export const SCHEMA_DOC = {
       'id (V#), cmd, kind, outcome, summary, when: a check run on the submitted content',
     Edit: 'id (E#), t, file, added, removed, surviving (lines still in the PR), inPr, via (shell when made by a command), session',
     File: 'id (repo-relative path), role (behavior|tests|docs|config|generated|version), inPr, added, removed, unmatched',
-    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (symbol git names after @@), symbols (defined on added lines), touched (symbols whose bodies the changed lines are in), branches, pairs (old → new values), conds (changed conditions old → new, + added branch or fallback, - removed condition), code (up to 24 key changed lines: `- old ⇒ + new` pairs, definitions and branches first)',
+    Hunk: 'id (H#), file, start, end (new-file lines), added, removed, diff (changes.patch lines, e.g. diff:120-141, citable in change-map behaviorChecks), context, scope (symbol git names after @@), symbols (defined on added lines), touched (symbols whose bodies the changed lines are in), branches, pairs (old → new values), conds (changed conditions old → new, + added branch or fallback, - removed condition), code (up to 24 key changed lines: `- old ⇒ + new` pairs, definitions and branches first), keyLines (up to 8 lines worth quoting: added comments, then literal values and pairs, then conditions; added lines for docs), literals (number and version tokens of the changed lines)',
     Commit: 'id (short SHA), subject, body (message body; null when none), t',
     CommitClaim:
       'id (<sha>#n), commit, text (one sentence of the commit message), assertsResult (reports a result: commit-message assertion, not a run)',
@@ -128,6 +129,8 @@ export const SCHEMA_DOC = {
     ASKED_BY: '(Change)-[:ASKED_BY {how}]->(Prompt)',
     EXPLAINED_BY:
       '(Change)-[:EXPLAINED_BY]->(Commit): commits whose lines are in the change',
+    TIED_TO:
+      "(CommitClaim|Commit|Prompt|Plan)-[:TIED_TO {score, rankers}]->(Hunk): search link (prepare's Graph search): BM25 over the hunk's path, symbols and changed lines agreeing with an exact name/path mention (or vectors), or a dominant BM25 hit; a commit's text only links its own hunks; score 0..1, rankers e.g. bm25 mention",
   },
   notes: [
     'Timestamps (t) are ISO strings; compare them as strings.',

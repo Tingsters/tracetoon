@@ -70,6 +70,9 @@ export interface PatchHunk {
   lines: Set<string>;
   /** Normalized removed lines, for matching commits that only delete. Never written out. */
   gone: Set<string>;
+  /** Raw removed and added lines, for search indexing and key lines. Never written out. */
+  minus?: string[];
+  plus?: string[];
 }
 
 const KEYWORDS = new Set([
@@ -263,6 +266,8 @@ export function patchHunks(patch: string): PatchHunk[] {
     h.tests = uniqStrings(ch.plus.flatMap(testTitles)).slice(0, 8);
     h.words = uniqStrings([...ch.minus, ...ch.plus].flatMap(wordsOf)).slice(0, 400);
     h.code = keyCodeLines(ch.minus, ch.plus);
+    h.minus = ch.minus;
+    h.plus = ch.plus;
   }
   return hunks;
 }

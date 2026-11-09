@@ -47,6 +47,13 @@ import { assertRunOwner, findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
 import { recordTiming } from './workflow/publication.ts';
 import { saveProfile } from './util/profile.ts';
+import { skillSettings } from './contribution/skillSettings.ts';
+import {
+  initGraphSearch,
+  parseGraphSearch,
+  storedGraphSearch,
+  type GraphSearch,
+} from './graph/search.ts';
 
 const list = (v: string) =>
   v
@@ -65,6 +72,36 @@ const program = new Command()
 
 const g = () => program.opts<{ json?: boolean }>();
 let timedAction: { name: string; run?: string; started: number } | undefined;
+/**
+ * The Graph search mode a prepare or digest will build with (flag, then the
+ * run's stored mode, then for prepare the SKILL line), so SQLite (and the
+ * embedding model) can load before the synchronous graph build.
+ */
+function graphSearchFor(
+  name: string,
+  o: Record<string, unknown>,
+): GraphSearch | undefined {
+  if (name !== 'prepare' && name !== 'digest') return undefined;
+  try {
+    const given = parseGraphSearch(o.graphSearch);
+    if (given) return given;
+  } catch {
+    return undefined; // the command reports the bad value
+  }
+  if (typeof o.run === 'string')
+    try {
+      const stored = storedGraphSearch(findRun(repository(cwd).gitDir, o.run));
+      if (stored) return stored;
+    } catch {
+      /* the command reports a bad run itself */
+    }
+  if (name !== 'prepare') return undefined;
+  try {
+    return parseGraphSearch(skillSettings().graphSearch);
+  } catch {
+    return undefined;
+  }
+}
 program.hook('preAction', (_command, action) => {
   if (
     action.opts().run &&
@@ -78,6 +115,9 @@ program.hook('preAction', (_command, action) => {
     run: action.opts().run,
     started: performance.now(),
   };
+  const search = graphSearchFor(action.name(), action.opts());
+  // Fails open: without SQLite the graph is built without search links.
+  if (search && search !== 'none') return initGraphSearch(search);
 });
 
 program
@@ -194,6 +234,10 @@ program
   .option(
     '--layout <layout>',
     'evidence brief layout for this run: toon (default), neighborhood or neighborhood-wide; later commands use it',
+  )
+  .option(
+    '--graph-search <mode>',
+    'search links in the evidence graph (SKILL "Graph search:"): bm25, bm25+vector or none; refreshes of the run keep it',
   )
   .option(
     '--review-passes <n>',
