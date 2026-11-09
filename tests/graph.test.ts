@@ -304,6 +304,67 @@ describe('evidence graph', () => {
     ]);
   });
 
+  test('prepare stores the review plan and its next step follows it', () => {
+    const { repo, cli } = scenario();
+    const prepared = cli(
+      repo.root,
+      '--json',
+      'prepare',
+      '--offline',
+      '--review-passes',
+      '3',
+      '--review-lenses',
+      'a, b, c.',
+      '--reviewer-model',
+      'terra',
+      '--reviewer-effort',
+      'xhigh',
+    );
+    const run = prepared.json.run;
+    const plan = JSON.parse(
+      readFileSync(join(prepared.json.runDir, 'review-plan.json'), 'utf8'),
+    );
+    expect(plan).toEqual({
+      v: 1,
+      passes: 3,
+      lenses: ['a', 'b', 'c'],
+      reviewerModel: 'terra',
+      reviewerEffort: 'xhigh',
+    });
+    expect(prepared.json.reviewPlan).toEqual(plan);
+    expect(prepared.json.next).toContain('IN PARALLEL');
+    expect(prepared.json.next).toContain(
+      `tracetoon review-packet --lean --lens <lens> --run ${run}`,
+    );
+    expect(prepared.json.next).toContain('references/reviewer-lens-<lens>.md');
+    expect(prepared.json.next).toContain(
+      '--reviewer-model terra --reviewer-effort xhigh',
+    );
+    expect(prepared.json.next).toContain('--rebind');
+    // SKILL defaults store a default plan, and the next step is the single reviewer.
+    const plain = cli(
+      repo.root,
+      '--json',
+      'prepare',
+      '--offline',
+      '--run',
+      run,
+      '--review-passes',
+      '1',
+      '--review-lenses',
+      'none',
+      '--reviewer-effort',
+      'default',
+    );
+    expect(
+      JSON.parse(readFileSync(join(plain.json.runDir, 'review-plan.json'), 'utf8')),
+    ).toEqual({ v: 1, passes: 1, lenses: [] });
+    expect(plain.json.reviewPlan).toBeUndefined();
+    expect(plain.json.next).toContain('one fresh independent reviewer');
+    const bad = cli(repo.root, '--json', 'prepare', '--offline', '--review-lenses', 'z');
+    expect(bad.json.error).toContain('Unknown review lens');
+  });
+
   test('lean render writes the Validation section and checks ref tags', () => {
     const { repo, cli } = scenario();
     const prepared = cli(repo.root, '--json', 'prepare', '--offline');

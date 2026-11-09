@@ -194,6 +194,22 @@ program
     '--layout <layout>',
     'evidence brief layout for this run: toon (default), neighborhood or neighborhood-wide; later commands use it',
   )
+  .option(
+    '--review-passes <n>',
+    'review plan (SKILL "Review passes:"): fresh reviewer passes from distinct reviewer agents that publish requires (default 1)',
+  )
+  .option(
+    '--review-lenses <list>',
+    'review plan (SKILL "Review lenses:"): a, b, c or none; one reviewer pass per lens',
+  )
+  .option(
+    '--reviewer-model <name>',
+    'review plan (SKILL "Reviewer model:"): every pass must record this model; "same" or omitted for none',
+  )
+  .option(
+    '--reviewer-effort <level>',
+    'review plan (SKILL "Reviewer effort:"): low, medium, high, xhigh, max or default; every pass must record it',
+  )
   .action((o) => {
     prepareCmd(cwd, { ...g(), ...o });
   });
@@ -260,6 +276,10 @@ program
   )
   .option('--run <id>', 'run id (default: latest)')
   .option('--lean', 'the lean packet (the only one)')
+  .option(
+    '--lens <a|b|c>',
+    'a lens reviewer packet (review-packet-<lens>.md): the lens checklist first, unused brief rows left out',
+  )
   .action((o) => reviewPacketCmd(cwd, { ...g(), ...o }));
 
 program
@@ -275,6 +295,22 @@ program
   .option(
     '--reviewer-model <name>',
     'the model the reviewer ran on (SKILL "Reviewer model:" line); recorded as reviewer.model',
+  )
+  .option(
+    '--reviewer-effort <level>',
+    'the effort the reviewer ran at (SKILL "Reviewer effort:" line); recorded on the pass',
+  )
+  .option(
+    '--pass <n>',
+    "which reviewer pass this is (default: this reviewer's earlier pass with the same lens, else the next)",
+  )
+  .option(
+    '--lens <a|b|c>',
+    'the lens this reviewer checked (default findings file: review-findings-<lens>.json)',
+  )
+  .option(
+    '--rebind',
+    'rebuild review.json for the current render from the passes already imported (claims whose quote is gone count as fixed)',
   )
   .action((o) => reviewImportCmd(cwd, { ...g(), ...o }));
 

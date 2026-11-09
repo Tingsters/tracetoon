@@ -4,6 +4,15 @@
  * something changed since or the leak scan found something. The only edits
  * after rendering fill in where the comic image is hosted.
  */
+import {
+  loadReviewPlan,
+  planEnforced,
+  planGate,
+  planMissing,
+  planSummary,
+  requiredPasses,
+  type ReviewPass,
+} from '../contribution/reviewPlan.ts';
 import { createHash } from 'node:crypto';
 import {
   contributionPolicy,
@@ -595,6 +604,17 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ? 'Check the draft against the evidence brief (`tracetoon query brief`, also at the top of evidence-notes.md): every claim within its change, reason and validation row, nothing references/drafting.md rules out. Then render again.'
       : undefined;
   const briefFirst = briefCheck.tags || briefMode;
+  // The review plan prepare stored (SKILL "Review passes/lenses", reviewer model/effort).
+  const plan = loadReviewPlan(run);
+  const planNeeds = planMissing(
+    plan,
+    readJson<{ passes?: ReviewPass[] }>(run, 'review.json')?.passes,
+  );
+  const planText = planEnforced(plan)
+    ? planNeeds.length
+      ? `Review plan (${planSummary(plan)}) still needs:\n${planNeeds.map((m) => `  - ${m}`).join('\n')}`
+      : `Review plan (${planSummary(plan)}): met.`
+    : '';
   emit(
     opts,
     {
@@ -610,6 +630,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         ? join(run.dir, 'comic-observation-input.json')
         : null,
       reviewFingerprint: reviewPacket.fingerprint,
+      ...(planEnforced(plan)
+        ? { reviewPlan: { ...plan, required: requiredPasses(plan), missing: planNeeds } }
+        : {}),
       ...(leakBlocks(approval) ? { leakNotice: leakNotice(approval) } : {}),
       changeMap: changeMapFindings,
       ...(titleNote ? { titleNote } : {}),
@@ -660,8 +683,12 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         findings.length && !approval.allowFindings
           ? 'Not ready to publish: fix what the leak scan found (above), then render again.'
           : briefMode === 'lean'
-            ? `Next: tracetoon render --json --run ${run.id}, then one fresh independent reviewer writes review.json v2 (SKILL step 2b.5). Quick path only: the slim reviewer (references/quick-path.md step 7), then render --reviewed.`
-            : `Next: tracetoon publish --run ${run.id}`,
+            ? planEnforced(plan)
+              ? `Next: tracetoon render --json --run ${run.id}, then the reviewer passes the review plan asks for (SKILL step 2b.5-7). ${planText}`
+              : `Next: tracetoon render --json --run ${run.id}, then one fresh independent reviewer writes review.json v2 (SKILL step 2b.5). Quick path only: the slim reviewer (references/quick-path.md step 7), then render --reviewed.`
+            : planNeeds.length
+              ? `Next: not ready to publish. ${planText}\nImport each pass with tracetoon review import --run ${run.id}, then render again.`
+              : `${planText ? `${planText}\n` : ''}Next: tracetoon publish --run ${run.id}`,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -924,6 +951,12 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     if (!opts.noReview) throw new UserError(unreviewed);
     writeJson(run, 'no-review.json', { at: new Date().toISOString() });
   }
+  // The review plan from prepare: its passes, lenses, model and effort.
+  const planProblem = planGate(run);
+  if (planProblem)
+    throw new UserError(
+      `${planProblem}\nImport each missing pass with tracetoon review import --run ${run.id}, render again, then publish.`,
+    );
   // On a brief path the brief check is the review: open items block publishing.
   const briefOpen = briefPathOpen(run);
   if (briefOpen) {

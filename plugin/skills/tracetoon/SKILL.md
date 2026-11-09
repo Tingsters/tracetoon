@@ -97,9 +97,13 @@ reviewer separate.
    - When you suggest a command for the user to run themselves, use
      `command.run` from `tracetoon status --json` (the launcher's full path if
      `tracetoon` isn't on their PATH).
-2. **Prepare.** `tracetoon prepare --json --layout <layout>`, with the layout
-   from the `Brief layout:` line near the end of this file (add `--run <id>` to
-   reuse the run from step 0). It prints the run folder and the digest path. Run it as its
+2. **Prepare.** `tracetoon prepare --json --layout <layout> --review-passes <n>`,
+   with the layout and pass count from the `Brief layout:` and `Review passes:`
+   lines near the end of this file; add `--review-lenses <a,b,c>` when
+   `Review lenses:` lists lenses, `--reviewer-model <name>` when `Reviewer
+   model:` names a model, `--reviewer-effort <level>` when `Reviewer effort:`
+   names a level (publish refuses until that review plan is met). Add `--run
+   <id>` to reuse the run from step 0. It prints the run folder and the digest path. Run it as its
    own command, after any `git commit`, never chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
    Keep the selected run ID and pass `--run <id>` to subsequent commands that
@@ -146,7 +150,9 @@ reviewer separate.
      5. `tracetoon render --json --run <id>`, then
         `tracetoon review-packet --lean --run <id>`; it writes
         `<run>/review-packet.md` (line-numbered body, compact brief rows,
-        hunk→symbol map, selected diff).
+        hunk→symbol map, selected diff). With lenses: one
+        `review-packet --lean --lens <x> --run <id>` per lens
+        (`review-packet-<x>.md`).
      6. Start **one fresh reviewer**, not a fork (a fork costs the same and
         carries your drafting reasoning). Its message is the contents of
         `review-packet.md` followed by
@@ -156,6 +162,12 @@ reviewer separate.
           that prompt; ask it to finish within about 4 turns.
         - **Codex:** `spawn_agent` with `fork_turns: "none"` and the packet and
           reviewer-lean.md in the message.
+        - **Lenses.** When `Review lenses:` lists lenses, start one fresh
+          reviewer per lens **in parallel** (Claude Code: several `Agent`
+          calls in one message; Codex: several `spawn_agent` calls before
+          waiting), each with its `review-packet-<x>.md` followed by
+          [references/reviewer-lens-<x>.md](references/reviewer-lens-a.md)
+          instead of reviewer-lean.md; it writes `review-findings-<x>.json`.
         - **Reviewer model (required when named).** Read the `Reviewer model:`
           line at the end of this Workflow section. If it names a model (e.g.
           `Reviewer model: sonnet.`), the reviewer call MUST pass that exact
@@ -163,6 +175,12 @@ reviewer separate.
           `spawn_agent` with `model: "<name>"`. Never drop or swap it, even
           when it differs from your own model. Only `same as the main agent`
           means pass no model.
+        - **Reviewer effort (required when named).** If `Reviewer effort:`
+          names a level (e.g. `xhigh`), every reviewer call MUST pass it:
+          Claude Code `Agent` with `effort: "<level>"` (low, medium, high,
+          xhigh, max); Codex `spawn_agent`'s reasoning-effort argument (pass
+          it if your spawn tool supports a reasoning effort). Only `default`
+          means pass none.
 
         The reviewer writes `<run>/review-findings.json`:
         `{"v":1,"reviewer":{"agentId":"<real id>"},"findings":[{"kind":"claim"|"omission","quote":"…","verdict":"contradicted"|"overstated"|"unsupported"|"missing","evidence":"diff:N | brief ref | path:line","fix":"…"}]}`.
@@ -171,11 +189,22 @@ reviewer separate.
         Never invent an agent id. When the `Reviewer model:` line names a model,
         add `--reviewer-model <name>` (recorded as `reviewer.model`); render's
         review line then shows `Reviewer model: <name>`, or `not recorded`.
+        Likewise `--reviewer-effort <level>`, and `--lens <x>` for a lens
+        reviewer. Each import records a pass in `review.json` `passes`;
+        render lists, and publish refuses, until the plan's passes (distinct
+        reviewer ids, one per lens, the named model and effort) are imported.
      8. One correction round: check each finding against the patch, apply the
         ones that hold, `render --json`, then send the **same** reviewer only
         the changed lines and its previous findings to confirm or re-flag
         (Claude Code: SendMessage; Codex: `followup_task`). It rewrites
         `review-findings.json`; run `review import` again.
+        With lenses: apply the valid findings of all lens reviewers in one
+        round, `render --json`, re-check only contested findings with the
+        reviewer that raised them (re-import it with its `--lens`), then
+        `tracetoon review import --run <id> --rebind` so `review.json`
+        matches the new render. With `Review passes:` above 1 and no lenses,
+        each further pass is a NEW fresh reviewer after the correction round
+        (new `review-packet`, then `review import` with its own id).
      9. Comic if wanted (step 5), then publish (step 7) once render reports the
         review current.
 3. **Context.**
@@ -387,6 +416,12 @@ reviewer separate.
      rules. Creating the PR does not require ending the turn.
 
 Reviewer model: same as the main agent.
+
+Reviewer effort: default.
+
+Review passes: 1.
+
+Review lenses: none.
 
 Brief layout: toon.
 

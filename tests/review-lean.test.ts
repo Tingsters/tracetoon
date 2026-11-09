@@ -16,6 +16,11 @@ import {
   placeholderAgentId,
 } from '../src/contribution/leanReview.ts';
 import { reviewLine } from '../src/contribution/review.ts';
+import {
+  planFromOptions,
+  planGate,
+  planMissing,
+} from '../src/contribution/reviewPlan.ts';
 import { lifecycle } from '../src/hook/lifecycle.ts';
 import { publishProblem } from '../src/workflow/readiness.ts';
 import { repository, tasks } from '../src/workflow/state.ts';
@@ -541,5 +546,370 @@ describe('lean review import', () => {
     expect(
       publishProblem(repo.root, run, readLocal(join(run.dir, 'approval.json'))!),
     ).toBeUndefined();
+  });
+});
+
+/** A task run rendered with a change map, ready for reviewer passes. */
+function renderedRun() {
+  const repo = makeRepo();
+  const remote = tempDir('tracetoon-plan-remote-');
+  expect(git(remote, ['init', '-q', '--bare']).ok).toBe(true);
+  expect(git(repo.root, ['remote', 'add', 'origin', remote]).ok).toBe(true);
+  const p = { cwd: repo.root, session_id: 'review-plan' };
+  lifecycle('codex', 'SessionStart', p, env());
+  repo.commit(
+    'src/greet.ts',
+    "export function greet(name?: string) {\n  if (!name) return 'hello';\n  return `hello ${name}`;\n}\n",
+    'Greet by name',
+  );
+  lifecycle(
+    'codex',
+    'PreToolUse',
+    { ...p, tool_input: { command: 'gh pr create --fill' } },
+    env(),
+  );
+  const run = findRun(
+    repository(repo.root).gitDir,
+    tasks(repository(repo.root).gitDir)[0]!.run.id,
+  );
+  ok(repo.root, 'digest', '--run', run.id, '--offline');
+  ok(repo.root, 'context', '--run', run.id, '--offline');
+  writeFileSync(
+    join(run.dir, 'body.md'),
+    'The greeting always uses the given name.\n\nIt previously only said hello.\n\nSee src/greet.ts.\n',
+  );
+  writeFileSync(join(run.dir, 'title.txt'), 'Greet by name');
+  ok(repo.root, 'render', '--run', run.id, '--no-comic');
+  const patch = readFileSync(join(run.dir, 'changes.patch'), 'utf8').split('\n');
+  const ifLine = patch.findIndex((l) => l.includes('if (!name)')) + 1;
+  writeLocal(join(run.dir, 'change-map.json'), {
+    groups: [
+      {
+        idea: 'Greeting',
+        behavior: 'Greets by name, else hello.',
+        kind: 'behavior',
+        paths: ['src/greet.ts'],
+        behaviorChecks: [{ behavior: 'No name: hello', evidence: [`diff:${ifLine}`] }],
+      },
+    ],
+  });
+  ok(repo.root, 'render', '--run', run.id, '--no-comic');
+  const claim = (quote: string) => ({
+    kind: 'claim',
+    quote,
+    verdict: 'overstated',
+    evidence: `diff:${ifLine}`,
+    fix: 'Qualify it.',
+  });
+  const findings = (agentId: string, ...items: unknown[]) => ({
+    v: 1,
+    reviewer: { agentId },
+    findings: items,
+  });
+  return { repo, run, claim, findings };
+}
+
+describe('review plan', () => {
+  test('plan options parse SKILL line values', () => {
+    expect(planFromOptions({})).toBeUndefined();
+    expect(
+      planFromOptions({
+        reviewPasses: '1',
+        reviewLenses: 'none.',
+        reviewerModel: 'same as the main agent',
+        reviewerEffort: 'default',
+      }),
+    ).toEqual({ v: 1, passes: 1, lenses: [] });
+    expect(
+      planFromOptions({
+        reviewLenses: 'a, b, c.',
+        reviewerEffort: 'xhigh',
+        reviewerModel: 'terra',
+      }),
+    ).toEqual({
+      v: 1,
+      passes: 1,
+      lenses: ['a', 'b', 'c'],
+      reviewerModel: 'terra',
+      reviewerEffort: 'xhigh',
+    });
+    expect(() => planFromOptions({ reviewLenses: 'd' })).toThrow('Unknown review lens');
+    expect(() => planFromOptions({ reviewerEffort: 'turbo' })).toThrow(
+      'Unknown reviewer effort',
+    );
+    expect(() => planFromOptions({ reviewPasses: '0' })).toThrow('Review passes');
+  });
+
+  test('missing passes, lenses, model and effort are listed', () => {
+    const at = '2026-01-01T00:00:00.000Z';
+    const plan = {
+      v: 1 as const,
+      passes: 1,
+      lenses: ['a', 'b'] as ('a' | 'b')[],
+      reviewerModel: 'sonnet',
+    };
+    expect(planMissing({ v: 1, passes: 1, lenses: [] }, [])).toEqual([]);
+    expect(planMissing(undefined, [])).toEqual([]);
+    const one = [
+      {
+        pass: 1,
+        agentId: 'r1',
+        lens: 'a' as const,
+        model: 'sonnet',
+        findings: 0,
+        importedAt: at,
+      },
+    ];
+    const missing = planMissing(plan, one);
+    expect(missing.join('\n')).toContain(
+      '1 of 2 imported from distinct reviewer agent ids',
+    );
+    expect(missing.join('\n')).toContain('lens b');
+    // The same agent for both lenses does not count twice.
+    const same = [...one, { ...one[0]!, pass: 2, lens: 'b' as const }];
+    expect(planMissing(plan, same).join('\n')).toContain('lens b');
+    const both = [
+      ...one,
+      { pass: 2, agentId: 'r2', lens: 'b' as const, findings: 1, importedAt: at },
+    ];
+    expect(planMissing(plan, both)).toEqual([
+      'reviewer model sonnet: pass 2 (not recorded) — start that reviewer with reviewer model sonnet and import it with --reviewer-model sonnet',
+    ]);
+    expect(planMissing(plan, [one[0]!, { ...both[1]!, model: 'sonnet' }])).toEqual([]);
+  });
+
+  test('a lens packet leads with its checklist and drops rows the lens does not use', () => {
+    const patch = [branchy, testFile].join('\n') + '\n';
+    const brief = [
+      {
+        title: 'changes',
+        rows: [{ change: 'CH1', where: ['src/greet.ts (greet)'], newSymbols: ['greet'] }],
+      },
+      {
+        title: 'requests',
+        rows: [{ ref: 'S1', kind: 'prompt', text: 'make greet take a name' }],
+      },
+      {
+        title: 'limits',
+        rows: [{ ref: 'L1', kind: 'open', limit: 'no test for the empty name' }],
+      },
+    ] as any;
+    const base = {
+      runId: 'r1',
+      title: 'Greet',
+      body: 'Adds greet.',
+      patch,
+      fingerprint: 'f',
+      brief,
+    };
+    const plain = leanPacket(base).text;
+    const a = leanPacket({ ...base, lens: 'a' }).text;
+    const c = leanPacket({ ...base, lens: 'c' }).text;
+    expect(plain).not.toContain('checklist');
+    expect(a).toContain('## Lens A: place: checklist');
+    expect(a).toContain('at most 6 findings');
+    expect(a).toContain('CH1 where:');
+    expect(a).not.toContain('make greet take a name');
+    expect(a).not.toContain('no test for the empty name');
+    expect(a.length).toBeLessThan(plain.length + 800);
+    expect(c).toContain('Lens C: omissions');
+    expect(c).toContain('make greet take a name');
+    expect(c).toContain('no test for the empty name');
+  });
+
+  test('prepare-style plan: lens passes from distinct reviewers, model and effort enforced', () => {
+    const { repo, run, claim, findings } = renderedRun();
+    writeLocal(join(run.dir, 'review-plan.json'), {
+      v: 1,
+      passes: 1,
+      lenses: ['a', 'b'],
+      reviewerModel: 'sonnet',
+      reviewerEffort: 'xhigh',
+    });
+    // render --check names the plan in its next step.
+    const checked = ok(repo.root, 'render', '--check', '--run', run.id, '--no-comic');
+    expect(checked.reviewPlan.required).toBe(2);
+    expect(checked.reviewPlan.missing.join(' ')).toContain('lens a');
+    const checkText = cli(repo.root, [
+      'render',
+      '--check',
+      '--run',
+      run.id,
+      '--no-comic',
+    ]);
+    expect(checkText.code).toBe(0);
+    ok(repo.root, 'render', '--run', run.id, '--no-comic');
+
+    // A lens packet goes to its own file.
+    const packet = ok(
+      repo.root,
+      'review-packet',
+      '--lean',
+      '--lens',
+      'a',
+      '--run',
+      run.id,
+    );
+    expect(packet.path).toBe(join(run.dir, 'review-packet-a.md'));
+    expect(readFileSync(packet.path, 'utf8')).toContain('Lens A: place');
+
+    writeLocal(
+      join(run.dir, 'review-findings-a.json'),
+      findings('agent-a1', claim('always uses the given name')),
+    );
+    writeLocal(
+      join(run.dir, 'review-findings-b.json'),
+      findings('agent-b2', claim('previously only said hello')),
+    );
+    const base = ['review', 'import', '--run', run.id];
+    // Lenses are required by the plan; an unknown lens or a wrong model is refused.
+    expect(cli(repo.root, base).json.error).toContain('--lens <a|b>');
+    expect(cli(repo.root, [...base, '--lens', 'c']).json.error).toContain(
+      'not in this run',
+    );
+    expect(
+      cli(repo.root, [...base, '--lens', 'a', '--reviewer-model', 'haiku']).json.error,
+    ).toContain('names reviewer model sonnet, but this reviewer ran with haiku');
+    expect(
+      cli(repo.root, [
+        ...base,
+        '--lens',
+        'a',
+        '--reviewer-model',
+        'sonnet',
+        '--reviewer-effort',
+        'low',
+      ]).json.error,
+    ).toContain('names reviewer effort xhigh');
+
+    // Lens a imported without effort: recorded, flagged, publish refuses.
+    const a = ok(repo.root, ...base, '--lens', 'a', '--reviewer-model', 'sonnet');
+    expect(a.pass).toMatchObject({
+      pass: 1,
+      agentId: 'agent-a1',
+      lens: 'a',
+      model: 'sonnet',
+      findings: 1,
+    });
+    expect(a.warnings.join(' ')).toContain('No reviewer effort recorded');
+    expect(a.planMissing.join(' ')).toContain('lens b');
+    const rendered = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    expect(rendered.reviewPlan.missing.join(' ')).toContain('reviewer effort xhigh');
+    const refused = cli(repo.root, ['publish', '--run', run.id]);
+    expect(refused.code).not.toBe(0);
+    expect(refused.json.error).toContain('review plan');
+    expect(refused.json.error).toContain('lens b');
+
+    // Re-importing the same reviewer and lens updates its pass, not a new one.
+    const a2 = ok(
+      repo.root,
+      ...base,
+      '--lens',
+      'a',
+      '--reviewer-model',
+      'sonnet',
+      '--reviewer-effort',
+      'xhigh',
+    );
+    expect(a2.pass.pass).toBe(1);
+    expect(a2.passes).toHaveLength(1);
+    // Lens b by the same agent id does not satisfy the distinct-reviewer rule.
+    const twin = ok(
+      repo.root,
+      ...base,
+      '--lens',
+      'b',
+      '--agent-id',
+      'agent-a1',
+      '--reviewer-model',
+      'sonnet',
+      '--reviewer-effort',
+      'xhigh',
+    );
+    expect(twin.warnings.join(' ')).toContain('distinct reviewer agents');
+    expect(twin.planMissing.join(' ')).toContain('1 of 2');
+    const b = ok(
+      repo.root,
+      ...base,
+      '--lens',
+      'b',
+      '--pass',
+      '2',
+      '--reviewer-model',
+      'sonnet',
+      '--reviewer-effort',
+      'xhigh',
+    );
+    expect(b.planMissing).toEqual([]);
+    const review = readLocal<any>(join(run.dir, 'review.json'))!;
+    expect(
+      review.passes.map((p: any) => [p.pass, p.agentId, p.lens, p.model, p.effort]),
+    ).toEqual([
+      [1, 'agent-a1', 'a', 'sonnet', 'xhigh'],
+      [2, 'agent-b2', 'b', 'sonnet', 'xhigh'],
+    ]);
+    // Both passes' findings are in the body review.
+    expect(review.bodyReview.claims.map((c: any) => c.quote).sort()).toEqual([
+      'always uses the given name',
+      'previously only said hello',
+    ]);
+    const met = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    expect(met.reviewPlan.missing).toEqual([]);
+    expect(met.contributionReview.status).toMatch(/current|incomplete/);
+    expect(planGate(run)).toBeUndefined();
+
+    // The correction: lens b's claim is fixed; --rebind binds review.json to the new render.
+    writeFileSync(
+      join(run.dir, 'body.md'),
+      'The greeting always uses the given name.\n\nSee src/greet.ts.\n',
+    );
+    const corrected = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    expect(corrected.contributionReview.status).toBe('stale');
+    const rebound = ok(repo.root, ...base, '--rebind');
+    expect(rebound.pass).toBeUndefined();
+    expect(rebound.warnings.join(' ')).toContain('Pass 2: 1 claim finding(s)');
+    const after = readLocal<any>(join(run.dir, 'review.json'))!;
+    expect(after.passes).toHaveLength(2);
+    expect(after.bodyReview.claims.map((c: any) => c.quote)).toEqual([
+      'always uses the given name',
+    ]);
+    const final = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    expect(final.contributionReview.status).toMatch(/current|incomplete/);
+    expect(final.reviewPlan.missing).toEqual([]);
+  });
+
+  test('without a plan, passes accumulate but nothing new is required', () => {
+    const { repo, run, claim, findings } = renderedRun();
+    writeLocal(
+      join(run.dir, 'review-findings.json'),
+      findings('agent-x1', claim('always uses the given name')),
+    );
+    const first = ok(repo.root, 'review', 'import', '--run', run.id);
+    expect(first.pass.pass).toBe(1);
+    expect(first.planMissing).toEqual([]);
+    writeLocal(join(run.dir, 'review-findings.json'), findings('agent-x2'));
+    const second = ok(repo.root, 'review', 'import', '--run', run.id);
+    expect(second.pass.pass).toBe(2);
+    const review = readLocal<any>(join(run.dir, 'review.json'))!;
+    expect(review.reviewer.agentId).toBe('agent-x2');
+    expect(review.passes.map((p: any) => p.agentId)).toEqual(['agent-x1', 'agent-x2']);
+    expect(planGate(run)).toBeUndefined();
+    const rendered = ok(repo.root, 'render', '--run', run.id, '--no-comic');
+    expect(rendered.reviewPlan).toBeUndefined();
+  });
+
+  test('two passes without lenses need two distinct reviewers', () => {
+    const { repo, run, findings } = renderedRun();
+    writeLocal(join(run.dir, 'review-plan.json'), { v: 1, passes: 2, lenses: [] });
+    writeLocal(join(run.dir, 'review-findings.json'), findings('agent-p1'));
+    ok(repo.root, 'review', 'import', '--run', run.id);
+    expect(planGate(run)).toContain('1 of 2 imported from distinct reviewer agent ids');
+    const checked = cli(repo.root, ['render', '--run', run.id, '--no-comic']);
+    expect(checked.json.reviewPlan.missing.join(' ')).toContain(
+      '1 more fresh reviewer pass',
+    );
+    writeLocal(join(run.dir, 'review-findings.json'), findings('agent-p2'));
+    ok(repo.root, 'review', 'import', '--run', run.id);
+    expect(planGate(run)).toBeUndefined();
   });
 });
