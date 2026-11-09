@@ -57,6 +57,13 @@ export interface PatchHunk {
   tests: string[];
   /** Lowercased words of the changed lines (identifiers split, strings), for matching prose to code. */
   words: string[];
+  /**
+   * Up to 24 key changed lines, in patch order, for the neighborhood brief:
+   * `- old ⇒ + new` for a removed line and its closest added line, then lines
+   * that define a symbol or branch, then the rest; blank, brace-only and import
+   * lines last. Each clipped to 160 characters.
+   */
+  code: string[];
   /** Normalized added lines, for matching edits. Never written out. */
   lines: Set<string>;
   /** Normalized removed lines, for matching commits that only delete. Never written out. */
@@ -218,6 +225,7 @@ export function patchHunks(patch: string): PatchHunk[] {
         conds: [],
         tests: [],
         words: [],
+        code: [],
         lines: new Set(),
         gone: new Set(),
       };
@@ -246,8 +254,83 @@ export function patchHunks(patch: string): PatchHunk[] {
     h.conds = PROSE_FILE.test(h.file) ? [] : conditionFacts(ch.minus, ch.plus, h.pairs);
     h.tests = uniqStrings(ch.plus.flatMap(testTitles)).slice(0, 8);
     h.words = uniqStrings([...ch.minus, ...ch.plus].flatMap(wordsOf)).slice(0, 400);
+    h.code = keyCodeLines(ch.minus, ch.plus);
   }
   return hunks;
+}
+
+const KEY_LINES = 24;
+const KEY_TOKEN = /[A-Za-z_$][\w$]*|\d[\d_.]*|'[^']*'|"[^"]*"|`[^`]*`/g;
+const tokSet = (l: string) => new Set(l.match(KEY_TOKEN) ?? []);
+const clipCode = (l: string) => {
+  const t = l.replace(/\s+/g, ' ').trim();
+  return t.length > 160 ? `${t.slice(0, 157)}…` : t;
+};
+
+/**
+ * The few changed lines that say most about a hunk (see `PatchHunk.code`).
+ * Exported for tests.
+ */
+export function keyCodeLines(minus: string[], plus: string[], max = KEY_LINES): string[] {
+  type Cand = { order: number; text: string; rank: number };
+  const cands: Cand[] = [];
+  const low = (l: string) =>
+    !l.trim() ||
+    /^\s*[{}()[\];,]*\s*$/.test(l) ||
+    /^\s*(import\b|from\s+\S+\s+import\b|#\s*include\b|use\s)/.test(l) ||
+    isComment(l);
+  // Pair each removed line with its most similar added line (shared tokens).
+  const usedPlus = new Set<number>();
+  const pairedMinus = new Set<number>();
+  minus.forEach((r, i) => {
+    if (low(r)) return;
+    const rt = tokSet(r);
+    if (!rt.size) return;
+    let best = -1;
+    let score = 0;
+    plus.forEach((a, j) => {
+      if (usedPlus.has(j) || low(a)) return;
+      const at = tokSet(a);
+      let shared = 0;
+      for (const t of rt) if (at.has(t)) shared++;
+      const s = shared / Math.max(rt.size, at.size);
+      if (s > score) {
+        score = s;
+        best = j;
+      }
+    });
+    if (best >= 0 && score >= 0.5 && r.trim() !== plus[best]!.trim()) {
+      usedPlus.add(best);
+      pairedMinus.add(i);
+      cands.push({
+        order: best,
+        text: `- ${clipCode(r)}  ⇒  + ${clipCode(plus[best]!)}`,
+        rank: 0,
+      });
+    }
+  });
+  const rankOf = (l: string) =>
+    low(l) ? 3 : definedSymbol(l) || (BRANCHING.test(l) && !isComment(l)) ? 1 : 2;
+  plus.forEach((a, j) => {
+    if (!usedPlus.has(j))
+      cands.push({ order: j, text: `+ ${clipCode(a)}`, rank: rankOf(a) });
+  });
+  // Removed lines without a partner sort after the added lines near them.
+  minus.forEach((r, i) => {
+    if (!pairedMinus.has(i))
+      cands.push({
+        order: (i / Math.max(1, minus.length)) * plus.length + 0.5,
+        text: `- ${clipCode(r)}`,
+        rank: rankOf(r),
+      });
+  });
+  const useful = cands.some((c) => c.rank < 3);
+  return cands
+    .filter((c) => c.text.length > 2 && (c.rank < 3 || !useful))
+    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .slice(0, max)
+    .sort((a, b) => a.order - b.order)
+    .map((c) => c.text);
 }
 
 const uniqStrings = (xs: string[]) => [...new Set(xs)];
@@ -555,6 +638,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       conds: h.conds,
       tests: h.tests,
       words: h.words,
+      code: h.code,
     });
     rel('OF', ['Hunk', h.id], ['File', h.file]);
   }

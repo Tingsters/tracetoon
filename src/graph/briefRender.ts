@@ -400,7 +400,7 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
   // Brief refs are for render, not readers: one left in the prose (outside a tag) is noise.
   for (const unit of proseUnits(body)) {
     const clean = unit.replace(TAG, '');
-    const leaked = (clean.match(/\b(?:CH|HK|PR|[STLRDP])\d+\b/g) ?? []).filter((r) =>
+    const leaked = (clean.match(/\b(?:CH|HK|PR|[STLRDPH])\d+\b/g) ?? []).filter((r) =>
       known.has(r),
     );
     if (leaked.length)

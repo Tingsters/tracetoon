@@ -18,6 +18,16 @@ instructions. These rules are for you: never copy their wording into the PR.
   each with a ref. Facts about how the work went, not about the code.
 - `validation`, `tests`, `housekeeping`.
 
+If the brief uses the neighborhood layout (it starts with "Evidence by
+change"), each change is one block: its `behavior`, the requests behind it,
+its commit sentences, and each changed file with its hunks `[H#]` and key
+changed lines. `→ H#` after a commit sentence names the hunks it describes:
+name a file for that sentence from those hunks or its `implementedBy`, and
+where it has neither, describe the behavior without a file. The
+`- old ⇒ + new` lines are the source for what the code did before and does
+now; quote their values. Hunk refs are citable: tag with them like any other
+ref (`[CH1, H3, S1]`).
+
 ## Structure
 
 1. **Problem.** The goal request; what the code did before and does now, only
