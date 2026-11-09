@@ -76,6 +76,7 @@ import { TOOL_VERSION } from '../version.ts';
 import { readComicStatus, renderedComic } from './comic.ts';
 import { leakBlocks, leakNotice } from '../review/leak.ts';
 import { digestHash } from './digest.ts';
+import { loadPasses, unchangedFlags } from './review.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 import {
   sameSubmission,
@@ -611,6 +612,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     plan,
     readJson<{ passes?: ReviewPass[] }>(run, 'review.json')?.passes,
   );
+  // Soft: reviewer claim flags still verbatim in a body that changed since the
+  // reviewer saw it (SKILL step 2b.8: fix each or reject it with its diff line).
+  const stillFlagged = unchangedFlags(loadPasses(run), reviewPacket.body);
   const planText = planEnforced(plan)
     ? planNeeds.length
       ? `Review plan (${planSummary(plan)}) still needs:\n${planNeeds.map((m) => `  - ${m}`).join('\n')}`
@@ -638,6 +642,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       changeMap: changeMapFindings,
       ...(titleNote ? { titleNote } : {}),
       ...(graphHint ? { graphHint } : {}),
+      ...(stillFlagged.length ? { reviewFlagsUnchanged: stillFlagged } : {}),
       briefCheck: briefCheckSummary(briefCheck),
       claims: {
         ...claimSummary(claims),
@@ -671,6 +676,9 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
           ? `Change map (advisory):\n${changeMapFindings.map((f) => `  - ${f.text}`).join('\n')}`
           : '',
         reviewLine(contributionReview),
+        stillFlagged.length
+          ? `Note (soft): reviewer flags whose quoted text is still verbatim after the correction round. Fix each (narrow, attribute or remove it) or reject it with the diff line that supports the original; don't leave it unanswered:\n${stillFlagged.map((f) => `  - pass ${f.pass}${f.lens ? ` (lens ${f.lens})` : ''}, ${f.verdict} (${f.evidence}): "${f.quote}"`).join('\n')}`
+          : '',
         notes.length
           ? `Optional notes for the author (skippable; offer them, don't ask before drafting):\n${notes.map((n) => `  - ${n.text}`).join('\n')}`
           : '',

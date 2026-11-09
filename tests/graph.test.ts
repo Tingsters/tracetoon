@@ -375,6 +375,7 @@ describe('evidence graph', () => {
     // drafting.md, one fresh reviewer on the lean packet; quick path is opt-in.
     expect(prepared.json.next).toContain('reviewed brief path');
     expect(prepared.json.next).toContain('references/drafting.md');
+    expect(prepared.json.next).toContain('no fixed section list');
     expect(prepared.json.next).toContain(`tracetoon review-packet --lean --run ${run}`);
     expect(prepared.json.next).toContain('one fresh independent reviewer');
     expect(prepared.json.next).toContain('references/reviewer-lean.md');

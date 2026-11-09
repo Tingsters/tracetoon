@@ -40,5 +40,8 @@ findings**, most consequential first.
   line, without the number).
 - `evidence` (required): `diff:N`, a brief ref (`L4`, `S1`, `P2`, `CH2`,
   `commit:<sha>#3`) or `path:line`; several separated by `|`.
+- `fix`: one line on what the cited lines show and what to change. The
+  drafter checks it against the patch before using it, so state the fact,
+  not ready-to-paste body prose.
 - `agentId`: the id your host gave you, never "reviewer" or a placeholder; if
   you don't know it, say so in your reply.

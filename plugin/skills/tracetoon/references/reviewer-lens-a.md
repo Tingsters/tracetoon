@@ -37,5 +37,8 @@ problems: **at most 6 findings**, most consequential first.
 - `evidence` (required): `diff:N`, a brief ref (`CH2`, `commit:<sha>#3`,
   `H4`) or `path:line`; several separated by `|`.
 - `quote`: verbatim from one numbered body line, without the number.
+- `fix`: one line on what the cited lines show and what to change. The
+  drafter checks it against the patch before using it, so state the fact,
+  not ready-to-paste body prose.
 - `agentId`: the id your host gave you, never "reviewer" or a placeholder; if
   you don't know it, say so in your reply.

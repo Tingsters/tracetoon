@@ -102,7 +102,8 @@ export function validationSection(b: BriefParts): string {
   // Every check Tracetoon ran on the submitted content (V receipts) is shown,
   // whatever its kind (a dropped `bun run bundle` receipt cost a dev19 pair);
   // session-log runs fill the rest, one per kind with no receipt, up to three
-  // lines in all. Earlier failures are process facts, not repeated here.
+  // lines in all. An earlier failure of a shown kind gets one clause; the
+  // whole history is a process fact, not repeated here.
   const shown: { kind: string; line: string; when: string; current: boolean }[] = [];
   const perKind = new Map<string, number>();
   const rows = rowsOf(b, 'validation').filter(
@@ -140,11 +141,20 @@ export function validationSection(b: BriefParts): string {
     // A run from the session logs is history: its own result lines, which the
     // session shows next to the command, and the files edited after it by name.
     const edited = editedList(r.editedAfter);
+    // An earlier failure of the kind, in one clause (the brief's `earlier`
+    // column: "`cmd` failed (4 pass, 1 fail)"), when this run passed.
+    const earlier =
+      r.outcome === 'passed' && typeof r.earlier === 'string' && r.earlier.trim()
+        ? r.earlier
+            .trim()
+            .replace(/[.;]+$/, '')
+            .replace(/;\s*/g, ', ')
+        : '';
     shown.push({
       kind,
       // A run with later edits says so even when they aren't PR files, as
       // the claim check (digest/claims.ts) requires of a stale run.
-      line: `- \`${cmd}\`: ${String(r.outcome)} (${plain(r.result).replace(/;\s*/g, ', ')}) in the session logs${edited ? `, before later edits to ${edited}` : String(r.when ?? '').startsWith('before later edits') ? ', before later edits' : ''}.`,
+      line: `- \`${cmd}\`: ${String(r.outcome)} (${plain(r.result).replace(/;\s*/g, ', ')}) in the session logs${edited ? `, before later edits to ${edited}` : String(r.when ?? '').startsWith('before later edits') ? ', before later edits' : ''}.${earlier ? ` An earlier run of ${earlier}.` : ''}`,
       when: String(r.when ?? ''),
       current: false,
     });

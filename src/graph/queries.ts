@@ -8,11 +8,13 @@ import { shownCommand } from './briefRender.ts';
 import { SCHEMA_DOC } from './model.ts';
 import { DO_NOT_SAY_COLUMNS, doNotSayRows } from './doNotSay.ts';
 import {
+  earlierFailure,
   lastRunOfEach,
   runHistory,
   selectValidationRuns,
   HISTORY_KINDS,
 } from './runHistory.ts';
+import { fileRole as pathRole } from '../digest/build.ts';
 import { isNeighborhood, type BriefLayout } from './layout.ts';
 
 export interface Section {
@@ -1147,7 +1149,29 @@ export function briefParts(
   // runHistory.ts). A kind Tracetoon checked itself on the submitted content
   // (a V receipt) needs no log run.
   const receiptKinds = new Set(receipts.map((v) => String(v.kind)));
-  const chosen = selectValidationRuns(scopedRuns, { skip: receiptKinds, current });
+  // Edits after a run that only touched files no check reads as code (a
+  // version bump, docs, config) leave it on the final code for choosing; the
+  // row still names those files.
+  const MINOR_ROLES = new Set(['version', 'docs', 'generated', 'config']);
+  const minorLater = (r: Record<string, unknown>) => {
+    const later = (r.later as string[]) ?? [];
+    return later.length > 0 && later.every((f) => MINOR_ROLES.has(pathRole(f)));
+  };
+  const chosen = selectValidationRuns(scopedRuns, {
+    skip: receiptKinds,
+    current,
+    minorLater,
+  });
+  // An earlier failure of the kind before the chosen pass, said in one clause
+  // (the process row has the whole history).
+  const earlierOf = (r: Record<string, unknown>): string | null => {
+    const f = earlierFailure(scopedRuns, r);
+    if (!f) return null;
+    const cmd = shownCommand(f.cmd);
+    if (!cmd || /‹withheld›|<withheld>/.test(cmd)) return null;
+    const summary = ((f.summary as string[]) ?? []).filter(Boolean).join(', ');
+    return `\`${cmd}\` failed${summary ? ` (${summary})` : ''}`;
+  };
   const validation: Record<string, unknown>[] = (
     [
       ...receipts.map((v) => ({ ...v, editedAfter: [] as string[] })),
@@ -1168,6 +1192,7 @@ export function briefParts(
       : r.when,
     editedAfter: r.editedAfter,
     cmd: r.cmd,
+    earlier: /^V\d/.test(String(r.id ?? '')) ? null : earlierOf(r),
   }));
 
   for (const m of g
@@ -1183,6 +1208,7 @@ export function briefParts(
       when: `not a run: commit ${String(m.commit)} says so`,
       editedAfter: [],
       cmd: m.text,
+      earlier: null,
     });
 
   const checks = new Map(checksAfterLastEdit(g).map((c) => [c.file, c]));
@@ -1387,7 +1413,7 @@ export function briefParts(
     section('housekeeping', ['ref', 'what', 'files'], housekeeping),
     section(
       'validation',
-      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'cmd'],
+      ['check', 'kind', 'outcome', 'result', 'when', 'editedAfter', 'cmd', 'earlier'],
       validation,
     ),
   ];

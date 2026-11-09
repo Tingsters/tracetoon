@@ -49,4 +49,20 @@ describe('skill settings', () => {
       layout: 'toon',
     });
   });
+  test('step 2b: no fixed template, model and effort on every reviewer, findings checked', async () => {
+    const skill = await Bun.file('plugin/skills/tracetoon/SKILL.md').text();
+    const drafting = await Bun.file(
+      'plugin/skills/tracetoon/references/drafting.md',
+    ).text();
+    // The rigid Problem / Changes / Consequences / Tests / … template is gone.
+    expect(drafting).toContain('No fixed section list');
+    expect(drafting).not.toMatch(/^\d\. \*\*(Problem|Tests|Open points)/m);
+    expect(skill).toContain('no fixed section list');
+    // Model and effort are passed together, lens and general reviewers included.
+    expect(skill).toMatch(/model: "<name>"` and\s+`effort: "<level>"`/);
+    expect(skill).toMatch(/each lens reviewer, each general reviewer/);
+    // Findings are checked against the patch; flagged claims are fixed or rejected.
+    expect(skill).toContain('never paste its wording unchecked');
+    expect(skill).toMatch(/rejected with the diff\s+line/);
+  });
 });

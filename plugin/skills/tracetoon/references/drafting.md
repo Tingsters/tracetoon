@@ -36,29 +36,46 @@ ref (`[CH1, H3, S1]`).
 
 ## Structure
 
-1. **Problem.** The goal request; what the code did before and does now, only
-   where the removed lines or `changes.was` show the old behavior (quote values:
-   30 minutes → 5 minutes); the trigger, as the request or commit message states it.
-   When a `background` row or a change's `why` row exists, write one sentence
-   on the motive or trigger, attributed to the session ("the session started
-   from…", "an earlier plan…") and tagged. Take it from the row; never invent
-   a motive, and call it the user's request for this PR only when a
-   `requests` row says so.
-2. **Changes**, grouped by behavior, not file by file, covering every
-   commit-message sentence. Name a file for a sentence only from its
-   `implementedBy`; where that is empty, describe the behavior without a file.
-   Give every changed area a clause (docs, skill, config, each test file).
-3. **Consequences.** What changes for users or callers (defaults, output shapes,
-   error paths), the riskiest part, and what is deliberately left alone.
-4. **Tests.** What the added test titles check (`tests` rows), naming each test file.
-5. **Open points** from open `limits` rows and `process` facts (a plan step
-   left undone, a command that kept failing).
-6. **Where to start**: the files to read first (from `implementedBy` or
-   `changes.where`, not the largest file, not functions) and the feedback wanted.
-7. One closing line for `housekeeping`.
+No fixed section list. Write what a reviewer needs, once, in as few headings
+as the PR needs (usually none to three); a typical PR takes about 250–450
+words. Reviewers mark a section-per-topic template down as "inventory-like".
+
+- **Lead with what the PR does and why**, in one short paragraph: the goal
+  request (the user's motive, in their terms) and the result. Frame the title
+  around that goal too. Give old → new behavior only where the removed lines or
+  `changes.was` show the old value (quote it: 30 minutes → 5 minutes). When a
+  `background` row or a change's `why` row exists, one clause on the motive or
+  trigger, attributed to the session ("the session started from…", "an earlier
+  plan…"). Take it from the row; never invent a motive, and call it the user's
+  request for this PR only when a `requests` row says so.
+- **The changes**, as connected prose or a few bullets grouped by behavior
+  (not file by file), covering every commit-message sentence. Name a file for
+  a sentence only from its `implementedBy`; where that is empty, describe the
+  behavior without a file. Docs, skill, config and version changes get one
+  clause together, unless one changes behavior.
+- **Tests go with the change they test** ("…; `tests/x.test.ts` covers the
+  quoted-script case"), or in one short line naming the test files and what
+  they check (`tests` rows). Never a list of test titles. Don't restate runs or
+  results: the generated Validation section says them.
+- **Consequences** worth a reviewer's attention, in a sentence or two: what
+  changes for users or callers (defaults, output shapes, error paths), the
+  riskiest part, what is deliberately left alone. Skip what is obvious.
+- **Open points** from open `limits` rows and `process` facts (a plan step left
+  undone, a command that kept failing), each a clause, folded in where they
+  belong or in one short paragraph.
+- **Where to start and the feedback wanted**, in one or two lines at the end:
+  the file to read first (from `implementedBy` or `changes.where`, not the
+  largest file, not functions) and the decision or risk you want eyes on.
+- `housekeeping`: at most one closing clause.
+
+Omit any part that would be empty or say nothing new; never a heading over a
+single line. State each fact once: if a sentence repeats an earlier one, a
+commit message or the Validation section, cut it.
 
 Put `<!-- tracetoon:validation -->` on its own line where the Validation
-section belongs; `render` writes it from the validation rows.
+section belongs (usually after the changes); `render` writes it from the
+validation rows. A validation row's `earlier` column names an earlier failure
+of that check; render mentions it there, so don't repeat it in prose.
 
 ## Tagging
 
@@ -96,7 +113,7 @@ strips tags and lists untagged sentences and unknown refs.
 - Keep the concrete values rows give (names, counts, versions, shapes) instead
   of a vaguer paraphrase.
 - Don't count tests or name test helpers.
-- Say each thing once.
+- Say each thing once: no recap, no second list of the same changes.
 
 ## change-map.json (optional)
 

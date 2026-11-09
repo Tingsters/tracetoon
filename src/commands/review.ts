@@ -7,6 +7,7 @@
  * which symbol owns each hunk, and the diff (whole when small; otherwise the
  * hunks the body cites, every branching hunk and the test assertion lines).
  */
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileRole } from '../digest/build.ts';
@@ -544,6 +545,38 @@ export interface StoredPass extends ReviewPass {
 export const loadPasses = (run: Run): StoredPass[] =>
   readJson<{ passes?: StoredPass[] }>(run, PASSES_FILE)?.passes ?? [];
 const passSummary = ({ raw: _raw, ...pass }: StoredPass): ReviewPass => pass;
+const bodyHash = (s: string) => createHash('sha256').update(s).digest('hex');
+
+/**
+ * Claim findings (contradicted, overstated, unsupported) whose quote is still
+ * verbatim in the body after the body changed since that reviewer saw it: a
+ * correction round left them as they were. Each must be fixed or rejected with
+ * the diff line that supports it, so render lists them as a soft note. Passes
+ * with no recorded body (older imports) are skipped.
+ */
+export function unchangedFlags(
+  passes: StoredPass[],
+  body: string,
+): { pass: number; lens?: string; quote: string; verdict: string; evidence: string }[] {
+  const now = bodyHash(body);
+  const out: ReturnType<typeof unchangedFlags> = [];
+  for (const p of passes) {
+    if (!p.bodySha256 || p.bodySha256 === now) continue;
+    for (const f of p.raw?.findings ?? []) {
+      const quote = (f.quote ?? '').trim();
+      if (f.kind !== 'claim' || f.verdict === 'missing' || quote.length < 8) continue;
+      if (!body.includes(quote)) continue;
+      out.push({
+        pass: p.pass,
+        ...(p.lens ? { lens: p.lens } : {}),
+        quote,
+        verdict: f.verdict,
+        evidence: Array.isArray(f.evidence) ? f.evidence.join(' | ') : String(f.evidence),
+      });
+    }
+  }
+  return out;
+}
 
 export interface ImportOptions {
   findings?: string;
@@ -683,6 +716,8 @@ export function importLeanReview(
       ...(lens ? { lens } : {}),
       findings: parsed.findings.findings.length,
       importedAt: new Date().toISOString(),
+      // The body this reviewer saw, so render can tell a correction round happened.
+      bodySha256: bodyHash(input.body),
       ...(opts.provenance ?? {}),
       raw: parsed.findings,
     };

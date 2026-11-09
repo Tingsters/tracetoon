@@ -51,46 +51,80 @@ export function lastRunOfEach(runs: RunRow[]): RunRow[] {
   return [...last.values()];
 }
 
+/**
+ * A test command with no file or filter arguments (flags only): the whole
+ * suite, not a focused rerun of a few files.
+ */
 const WHOLE_SUITE =
-  /^(?:(?:bun|npm|pnpm|yarn)(?: run)? test|pytest|cargo test|go test \.\/\.\.\.)$/;
+  /^(?:(?:bun|npm|pnpm|yarn)(?: run)? test|(?:python3? -m )?pytest|cargo test|go test \.\/\.\.\.|(?:npx |bunx |bun x )?(?:jest|vitest(?: run)?))(?:\s+-[^\s=]+(?:=\S+)?)*$/;
+export const wholeSuite = (cmd: unknown) => WHOLE_SUITE.test(shownCommand(cmd));
+
+/** How many tests a run's result lines say passed (`96 pass`, `12 passed`); 0 when none. */
+const passCount = (r: RunRow) => {
+  for (const line of summaryOf(r)) {
+    const m = /(\d+)\s+pass(?:ed|es)?\b/i.exec(line);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+};
 
 /**
- * One session-log run per kind for the brief's validation rows: among the
- * statable last runs of each command, the latest that saw the final edits,
- * else the latest; at equal standing the whole suite over a focused rerun
- * that ended the same way.
+ * One session-log run per kind for the brief's validation rows, chosen from
+ * the statable last runs of each command:
+ * 1. standing: runs that saw the final edits, or whose later edits are only
+ *    files no check reads as code (`minorLater`: version bumps, docs, config),
+ *    over runs that later code edits made stale;
+ * 2. at that standing, the outcome of the latest run (so a later failure is
+ *    never hidden behind an earlier pass);
+ * 3. among those, the broadest run: the whole suite (no file arguments) over
+ *    a focused rerun, then (on the final code) the one that passed the most
+ *    tests, then the latest. A focused rerun of two unrelated files after the
+ *    full suite says less about the PR than the full suite (pr12).
  * A kind with no statable run keeps its last run when that run's result
  * wasn't captured (an honest "ran, no result"); otherwise it has no row.
  * Kinds in `skip` (checked by a receipt) get none.
  */
 export function selectValidationRuns(
   runs: RunRow[],
-  opts: { skip?: Set<string>; current?: (r: RunRow) => boolean } = {},
+  opts: {
+    skip?: Set<string>;
+    current?: (r: RunRow) => boolean;
+    minorLater?: (r: RunRow) => boolean;
+  } = {},
 ): RunRow[] {
   const current =
     opts.current ??
     ((r: RunRow) =>
       r.revision === 'no later edits seen' &&
       !((r.later as string[] | undefined) ?? []).length);
+  const standing = (r: RunRow) => current(r) || !!opts.minorLater?.(r);
   const sorted = [...runs].sort(byTime);
   const out = new Map<string, RunRow>();
   const kinds = [...new Set(sorted.map((r) => String(r.kind)))];
   for (const kind of kinds) {
     if (opts.skip?.has(kind)) continue;
     const ofKind = sorted.filter((r) => String(r.kind) === kind);
+    const candidates = lastRunOfEach(ofKind).filter(statableRun);
+    const top = candidates.some(standing) ? candidates.filter(standing) : candidates;
+    const latest = top.at(-1);
+    const pool = top.filter((r) => r.outcome === latest?.outcome);
+    const fresh = latest ? standing(latest) : false;
+    const rank = (r: RunRow): number[] => [
+      Number(wholeSuite(r.cmd)),
+      fresh ? passCount(r) : 0,
+      Number(current(r)),
+      pool.indexOf(r),
+    ];
     let best: RunRow | undefined;
-    for (const r of lastRunOfEach(ofKind).filter(statableRun)) {
-      if (
-        !best ||
-        Number(current(r)) > Number(current(best)) ||
-        (current(r) === current(best) &&
-          !(
-            r.outcome === best.outcome &&
-            WHOLE_SUITE.test(shownCommand(best.cmd)) &&
-            !WHOLE_SUITE.test(shownCommand(r.cmd))
-          ))
-      )
+    for (const r of pool) {
+      if (!best) {
         best = r;
+        continue;
+      }
+      const a = rank(r);
+      const b = rank(best);
+      const i = a.findIndex((x, k) => x !== b[k]);
+      if (i >= 0 && a[i]! > b[i]!) best = r;
     }
     // A later run of the kind that ended differently would contradict it.
     if (best) {
@@ -109,6 +143,23 @@ export function selectValidationRuns(
     if (best) out.set(kind, best);
   }
   return [...out.values()];
+}
+
+/**
+ * The last failure of a kind before a passing run, for one short clause in
+ * the Validation section ("an earlier run, `cmd`, failed (4 pass, 1 fail)").
+ * Undefined unless `chosen` passed and an earlier run of its kind failed.
+ */
+export function earlierFailure(runs: RunRow[], chosen: RunRow): RunRow | undefined {
+  if (chosen.outcome !== 'passed') return undefined;
+  const sorted = [...runs].sort(byTime);
+  const at = sorted.indexOf(chosen);
+  const before = sorted.filter(
+    (r, i) =>
+      String(r.kind) === String(chosen.kind) &&
+      (at >= 0 ? i < at : String(r.t ?? '') < String(chosen.t ?? '')),
+  );
+  return before.filter((r) => r.outcome === 'failed' && !compositeCommand(r.cmd)).at(-1);
 }
 
 const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);

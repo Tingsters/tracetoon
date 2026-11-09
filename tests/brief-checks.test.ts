@@ -18,7 +18,11 @@ import {
 } from '../src/graph/headScan.ts';
 import { GRAPH_SCHEMA, type EvidenceGraph } from '../src/graph/model.ts';
 import { renderNeighborhood } from '../src/graph/neighborhood.ts';
-import { runHistory, selectValidationRuns } from '../src/graph/runHistory.ts';
+import {
+  earlierFailure,
+  runHistory,
+  selectValidationRuns,
+} from '../src/graph/runHistory.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo } from './helpers.ts';
 
@@ -134,6 +138,130 @@ describe('session-log validation rows', () => {
         (f) => f.state,
       ),
     ).toEqual(['not established']);
+  });
+});
+
+describe('validation run selection: the broadest run, and an earlier failure', () => {
+  const stale = (r: ReturnType<typeof run>, later: string[]) => ({
+    ...r,
+    revision: 'before later edits',
+    later,
+  });
+  const minor = (r: Record<string, unknown>) =>
+    ((r.later as string[]) ?? []).length > 0 &&
+    ((r.later as string[]) ?? []).every((f) => /VERSION|version\.ts|\.json$/.test(f));
+
+  test('the full suite beats a later focused rerun of other files (pr12)', () => {
+    const runs = [
+      run('R9', 1, 'test', 'bun test tests/shell.test.ts 2>&1', 'failed', [
+        '4 pass',
+        '1 fail',
+      ]),
+      stale(
+        run('R11', 2, 'test', 'bun test > <outside-repo> 2>&1', 'passed', [
+          '96 pass',
+          '0 fail',
+        ]),
+        ['package.json', 'src/version.ts'],
+      ),
+      run(
+        'R15',
+        3,
+        'test',
+        'bun test tests/comic.test.ts tests/flow.test.ts 2>&1',
+        'passed',
+        ['22 pass', '0 fail'],
+      ),
+    ];
+    const chosen = selectValidationRuns(runs, { minorLater: minor });
+    expect(chosen.map((r) => r.id)).toEqual(['R11']);
+    expect(earlierFailure(runs, chosen[0]!)?.id).toBe('R9');
+    // Later code edits make the full suite stale: the run on the final code wins.
+    const code = runs.map((r) =>
+      r.id === 'R11' ? { ...r, later: ['src/util/shell.ts'] } : r,
+    );
+    expect(selectValidationRuns(code, { minorLater: minor }).map((r) => r.id)).toEqual([
+      'R15',
+    ]);
+  });
+
+  test('on the final code, the run with the most passes beats a narrower one', () => {
+    const runs = [
+      run('R1', 1, 'test', 'bun test tests', 'passed', ['80 pass', '0 fail']),
+      run('R2', 2, 'test', 'bun test tests/a.test.ts', 'passed', ['5 pass', '0 fail']),
+    ];
+    expect(selectValidationRuns(runs).map((r) => r.id)).toEqual(['R1']);
+    // A whole-suite command with flags only still counts as the whole suite.
+    const flags = [
+      run('R1', 1, 'test', 'bun test --bail', 'passed', ['8 pass', '0 fail']),
+      run('R2', 2, 'test', 'bun test tests/a.test.ts', 'passed', ['9 pass', '0 fail']),
+    ];
+    expect(selectValidationRuns(flags).map((r) => r.id)).toEqual(['R1']);
+  });
+
+  test('a failure then a pass: the pass is shown with one clause on the failure', () => {
+    const runs = [
+      run('R1', 1, 'test', 'bun test', 'failed', ['8 pass', '1 fail']),
+      run('R2', 2, 'test', 'bun test', 'passed', ['9 pass', '0 fail']),
+    ];
+    // R1 is superseded by R2 (same command), but is still the earlier failure.
+    const chosen = selectValidationRuns(runs);
+    expect(chosen.map((r) => r.id)).toEqual(['R2']);
+    expect(earlierFailure(runs, chosen[0]!)?.id).toBe('R1');
+    expect(earlierFailure(runs, runs[0]!)).toBeUndefined();
+    const section = validationSection({
+      unchecked: [],
+      sections: [
+        {
+          title: 'validation',
+          columns: [],
+          rows: [
+            {
+              check: 'R2',
+              kind: 'test',
+              outcome: 'passed',
+              result: '9 pass; 0 fail',
+              when: 'after the last edit the logs captured',
+              editedAfter: [],
+              cmd: 'bun test',
+              earlier: '`bun test` failed (8 pass, 1 fail)',
+            },
+          ],
+        },
+      ],
+    });
+    const line = section.split('\n').find((l) => l.startsWith('- `'))!;
+    expect(line).toBe(
+      '- `bun test`: passed (9 pass, 0 fail) in the session logs. An earlier run of `bun test` failed (8 pass, 1 fail).',
+    );
+    // Both sentences are ones the claim check observes.
+    const digestRuns = runs.map((r) => ({
+      id: r.id,
+      t: r.t,
+      cmd: r.cmd,
+      kind: 'test' as Run['kind'],
+      outcome: r.outcome as Run['outcome'],
+      basis: 'output' as Run['basis'],
+      summary: r.summary,
+      revision: 'no later edits seen' as Run['revision'],
+    }));
+    expect(
+      checkClaims({
+        title: 'x',
+        body: line,
+        digest: {
+          sessions: [{ band: 'included', runs: digestRuns }] as any,
+          files: [],
+          pr: { base: 'main', head: 'h', mergeBase: 'm', usedWorkingTree: false } as any,
+        },
+      }).map((f) => f.state),
+    ).toEqual(['observed', 'observed']);
+    // A later run failing stays the stated result: a pass never hides it.
+    const later = [
+      run('R1', 1, 'test', 'bun test', 'passed', ['9 pass', '0 fail']),
+      run('R2', 2, 'test', 'bun test tests/a.test.ts', 'failed', ['1 pass', '1 fail']),
+    ];
+    expect(selectValidationRuns(later).map((r) => r.id)).toEqual(['R2']);
   });
 });
 

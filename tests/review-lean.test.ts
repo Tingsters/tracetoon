@@ -902,6 +902,32 @@ describe('review plan', () => {
     expect(rendered.reviewPlan).toBeUndefined();
   });
 
+  test('render notes claim flags still verbatim after the correction round', () => {
+    const { repo, run, claim, findings } = renderedRun();
+    writeLocal(
+      join(run.dir, 'review-findings.json'),
+      findings(
+        'agent-c1',
+        claim('always uses the given name'),
+        claim('previously only said hello'),
+      ),
+    );
+    ok(repo.root, 'review', 'import', '--run', run.id);
+    // Before any correction the body is the one reviewed: nothing to note.
+    expect(
+      ok(repo.root, 'render', '--run', run.id, '--no-comic').reviewFlagsUnchanged,
+    ).toBeUndefined();
+    // The correction round fixed one flagged sentence and left the other as it was.
+    writeFileSync(
+      join(run.dir, 'body.md'),
+      'The greeting always uses the given name.\n\nWithout a name it says hello.\n\nSee src/greet.ts.\n',
+    );
+    const after = cli(repo.root, ['render', '--run', run.id, '--no-comic']);
+    expect(
+      after.json.reviewFlagsUnchanged.map((f: { quote: string }) => f.quote),
+    ).toEqual(['always uses the given name']);
+  });
+
   test('two passes without lenses need two distinct reviewers', () => {
     const { repo, run, findings } = renderedRun();
     writeLocal(join(run.dir, 'review-plan.json'), { v: 1, passes: 2, lenses: [] });

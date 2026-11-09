@@ -21,7 +21,7 @@ Look for:
   flag) the body skips.
 
 Each is `kind: "omission"`, verdict `missing`, with the row ref or diff
-lines that show it, and a `fix` that is the one clause to add. Skip the
+lines that show it, and a `fix` naming the fact to add. Skip the
 generated Validation section. **At most 6 findings**, the ones a reviewer of
 this PR would most want first.
 
@@ -44,5 +44,8 @@ this PR would most want first.
   line, without the number).
 - `evidence` (required): `diff:N`, a brief ref (`L4`, `S1`, `P2`, `CH2`,
   `commit:<sha>#3`) or `path:line`; several separated by `|`.
+- `fix`: one line on what the cited lines show and what to change. The
+  drafter checks it against the patch before using it, so state the fact,
+  not ready-to-paste body prose.
 - `agentId`: the id your host gave you, never "reviewer" or a placeholder; if
   you don't know it, say so in your reply.

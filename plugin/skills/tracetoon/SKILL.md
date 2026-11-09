@@ -141,9 +141,11 @@ reviewer separate.
         Find the checks the repository requires (contributing guide, CI config)
         yourself; there is no separate researcher.
      2. Draft inline following [references/drafting.md](references/drafting.md):
-        optionally a short `change-map.json`, then `title.txt` and `body.md`.
-        Tag factual sentences with brief refs (`[CH1, commit:<sha>#2]`) and put
-        `<!-- tracetoon:validation -->` where the Validation section belongs.
+        optionally a short `change-map.json`, then `title.txt` and `body.md`:
+        what the PR does and why first, no fixed section list, about 250–450
+        words for a typical PR. Tag factual sentences with brief refs
+        (`[CH1, commit:<sha>#2]`) and put `<!-- tracetoon:validation -->`
+        where the Validation section belongs.
      3. Run each required check that has no current receipt once with
         `tracetoon check --run <id> --name <check> -- <command>`.
      4. `tracetoon render --check --json --run <id>`: fix every sentence it lists
@@ -158,7 +160,7 @@ reviewer separate.
         skip 6–8: run `tracetoon review run --run <id>` (once per lens with
         `--lens x`, plus once without `--lens` for each pass beyond the number
         of lenses); it runs the reviewer on the named model and imports its
-        findings. Apply the valid findings, `render --json`, then
+        findings. Apply the valid findings (checked as in 8), `render --json`, then
         `tracetoon review run --run <id> --recheck` once (per lens: `--lens x
         --recheck`).
      6. Start **one fresh reviewer**, not a fork (a fork costs the same and
@@ -179,19 +181,18 @@ reviewer separate.
           If `Review passes:` is larger than the number of lenses, also start
           that many more general reviewers in the same message (the plain
           `review-packet.md` with reviewer-lean.md, imported without `--lens`).
-        - **Reviewer model (required when named).** Read the `Reviewer model:`
-          line at the end of this Workflow section. If it names a model (e.g.
-          `Reviewer model: sonnet.`), the reviewer call MUST pass that exact
-          name: Claude Code `Agent` with `model: "<name>"`; Codex
-          `spawn_agent` with `model: "<name>"`. Never drop or swap it, even
-          when it differs from your own model. Only `same as the main agent`
-          means pass no model.
-        - **Reviewer effort (required when named).** If `Reviewer effort:`
-          names a level (e.g. `xhigh`), every reviewer call MUST pass it:
-          Claude Code `Agent` with `effort: "<level>"` (low, medium, high,
-          xhigh, max); Codex `spawn_agent`'s reasoning-effort argument (pass
-          it if your spawn tool supports a reasoning effort). Only `default`
-          means pass none.
+        - **Reviewer model and effort (required when named), on EVERY
+          reviewer call**: each lens reviewer, each general reviewer started
+          alongside lenses, and each later fresh pass. Read the `Reviewer
+          model:` and `Reviewer effort:` lines at the end of this Workflow
+          section and pass both together in the same call. Claude Code:
+          `Agent` with `model: "<name>"` and `effort: "<level>"` (low, medium,
+          high, xhigh, max); Codex: `spawn_agent` with `model: "<name>"` and
+          its reasoning-effort argument (if your spawn tool has one). Pass the
+          exact name, e.g. `Reviewer model: haiku.` → `model: "haiku"`; never
+          drop or swap it, even when it differs from your own model. Only
+          `same as the main agent` means no model, and only `default` means no
+          effort.
 
         The reviewer writes `<run>/review-findings.json`:
         `{"v":1,"reviewer":{"agentId":"<real id>"},"findings":[{"kind":"claim"|"omission","quote":"…","verdict":"contradicted"|"overstated"|"unsupported"|"missing","evidence":"diff:N | brief ref | path:line","fix":"…"}]}`.
@@ -204,9 +205,19 @@ reviewer separate.
         reviewer. Each import records a pass in `review.json` `passes`;
         render lists, and publish refuses, until the plan's passes (distinct
         reviewer ids, one per lens, the named model and effort) are imported.
-     8. One correction round: check each finding against the patch, apply the
-        ones that hold, `render --json`, then send the **same** reviewer only
-        the changed lines and its previous findings to confirm or re-flag
+     8. One correction round. Reviewers misread code too, so for each finding
+        first read the diff lines or brief row it cites yourself, then:
+        - a claim flagged contradicted, overstated or unsupported is either
+          fixed (narrowed, attributed or removed) or rejected with the diff
+          line or row that supports the original; never silently left as is;
+        - write the fix from the patch, not from the reviewer's `fix` text:
+          never paste its wording unchecked (a pasted fix that misreads the
+          code is a new error);
+        - add an omission only when the cited row or diff lines show it.
+        Then `render --json` (it notes flagged quotes still verbatim in the
+        body) and send the **same** reviewer only
+        the changed lines, its previous findings and your rejections (with
+        their diff lines) to confirm or re-flag
         (Claude Code: SendMessage; Codex: `followup_task`). It rewrites
         `review-findings.json`; run `review import` again.
         With lenses: apply the valid findings of all lens reviewers in one

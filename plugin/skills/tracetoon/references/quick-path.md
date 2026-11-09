@@ -22,10 +22,13 @@ check → review → final render → publish. Write the description yourself, i
    - The consequences: what changes for users or callers, the riskiest part,
      and anything the PR deliberately leaves alone.
    - What the added tests check (`tests` rows; no test counts, no helper
-     names), the open points (`limits` rows of kind `open`), which files to
-     start reviewing with, the riskiest change and the feedback you want, any
-     PR or issue links the commits give, and one closing line for
-     `housekeeping`.
+     names), folded into the change they test or one short line; the open
+     points (`limits` rows of kind `open`); one or two closing lines on which
+     file to start reviewing with and the feedback you want; any PR or issue
+     links the commits give; at most one clause for `housekeeping`.
+   No fixed section list: headings only when the body needs them, no heading
+   over a single line, nothing said twice, about 250–450 words for a typical
+   PR.
    State plainly what the patch shows. Attribute only what it can't show (a
    reason, a result, a remark like "local only") to the request or commit
    message that says it; never invent a motive. Don't repeat what the
