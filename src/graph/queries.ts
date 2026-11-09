@@ -6,6 +6,13 @@
 import { GraphError, type GraphEngine } from './engine.ts';
 import { shownCommand } from './briefRender.ts';
 import { SCHEMA_DOC } from './model.ts';
+import { DO_NOT_SAY_COLUMNS, doNotSayRows } from './doNotSay.ts';
+import {
+  lastRunOfEach,
+  runHistory,
+  selectValidationRuns,
+  HISTORY_KINDS,
+} from './runHistory.ts';
 import { isNeighborhood, type BriefLayout } from './layout.ts';
 
 export interface Section {
@@ -521,8 +528,10 @@ const MAX_BACKGROUND = 4;
  * How the work came about, from the included sessions, when this PR's own
  * turns don't show it: each session's goal (its first substantive prompt) and
  * the plans and decisions of earlier turns, which `requests` leaves out because
- * they didn't produce this PR's edits. Optional context, never this PR's
- * request; refs already in `requests` are skipped. At most four rows: the
+ * they didn't produce this PR's edits. Facts the writer covers in a sentence
+ * on why the work started, attributed to the session (the first request is
+ * the session's, which this PR's own turns may have narrowed); refs already
+ * in `requests` are skipped. At most four rows: the
  * goals first, then the latest earlier plans and decisions, in time order.
  */
 export function backgroundRows(
@@ -548,7 +557,7 @@ export function backgroundRows(
     if (!first || exclude.has(String(first.id))) continue;
     goals.push({
       ref: String(first.id),
-      kind: "session goal (not this PR's own request)",
+      kind: "why this work started: the session's first request",
       text: clipText(String(first.text ?? '').trim(), 600),
       t: first.t,
     });
@@ -583,8 +592,8 @@ export function backgroundRows(
       ref: String(x.id),
       kind:
         x.label === 'Plan'
-          ? `${planStatus(x.approved)}, earlier in the session`
-          : 'decision, earlier in the session',
+          ? `earlier ${planStatus(x.approved)} in the session`
+          : 'earlier decision in the session',
       text: clipText(String(x.text ?? '').trim(), 400),
       t: x.t,
     }));
@@ -769,6 +778,25 @@ function processRows(
           (r) => r.outcome === 'passed' && String(r.t ?? '') > String(lastCommit.t),
         )
       : [];
+    // Runs that ended differently, in order: "failed twice, then passed".
+    const history = HISTORY_KINDS.includes(kind) ? runHistory(rs) : undefined;
+    if (history) {
+      add(
+        kind,
+        [
+          history.text,
+          ...(lastCommit
+            ? [
+                after.length
+                  ? `a passing run came after the last commit (${ids(after).join(', ')})`
+                  : 'no passing run recorded after the last commit',
+              ]
+            : []),
+        ].join('; ') + '.',
+        uniq([...history.cites, ...after.slice(0, 2).map((r) => String(r.id))]),
+      );
+      continue;
+    }
     add(
       kind,
       [
@@ -1054,45 +1082,30 @@ export function briefParts(
     )
     .rows.filter((r) => r.revision !== 'after later work')
     .sort((a, b) => String(a.t ?? '').localeCompare(String(b.t ?? '')));
+  // This PR's runs: in a shared session, runs before this PR's first turn
+  // checked other work (a pass there "is not a run for this branch").
+  const runSession = new Map(
+    g
+      .run('MATCH (r:Run)-[:IN_SESSION]->(s:Session) RETURN r.id AS id, s.id AS session')
+      .rows.map((r) => [String(r.id), String(r.session)]),
+  );
+  const scopedRuns = runs.filter((r) => {
+    const from = turns.start.get(runSession.get(String(r.id)) ?? '');
+    return !from || String(r.t ?? '') >= from;
+  });
   // The last run of each command is what the session ended on; earlier ones are history.
-  // Keyed by the command as shown, so `tsc` and `tsc 2>&1` are one command;
-  // re-inserted so the map's order is the order of each command's last run.
-  const lastOf = new Map<string, Record<string, unknown>>();
-  for (const r of runs) {
-    const key = shownCommand(r.cmd);
-    lastOf.delete(key);
-    lastOf.set(key, r);
-  }
-  // One run per kind: the latest that saw the final edits, else the latest
-  // with a recorded result, else the latest. At equal standing the whole
-  // suite says more than a focused rerun after it. A kind Tracetoon checked
-  // itself on the submitted content (a V receipt) needs no log run.
+  const lastOf = new Map(lastRunOfEach(scopedRuns).map((r) => [shownCommand(r.cmd), r]));
   const current = (r: Record<string, unknown>) =>
     r.revision === 'no later edits seen' && !((r.later as string[]) ?? []).length;
-  const standing = (r: Record<string, unknown>) =>
-    (current(r) ? 2 : 0) + (r.outcome === 'passed' || r.outcome === 'failed' ? 1 : 0);
-  const wholeSuite = (r: Record<string, unknown>) =>
-    r.kind === 'test' &&
-    /^(?:(?:bun|npm|pnpm|yarn)(?: run)? test|pytest|cargo test|go test \.\/\.\.\.)$/.test(
-      shownCommand(r.cmd),
-    );
+  // One run per kind, only one whose result can be checked exactly (see
+  // runHistory.ts). A kind Tracetoon checked itself on the submitted content
+  // (a V receipt) needs no log run.
   const receiptKinds = new Set(receipts.map((v) => String(v.kind)));
-  const latestOf = new Map<string, Record<string, unknown>>();
-  for (const r of runs) {
-    const kind = String(r.kind);
-    if (receiptKinds.has(kind)) continue;
-    const prev = latestOf.get(kind);
-    if (
-      !prev ||
-      standing(r) > standing(prev) ||
-      (standing(r) === standing(prev) && !(wholeSuite(prev) && !wholeSuite(r)))
-    )
-      latestOf.set(kind, r);
-  }
+  const chosen = selectValidationRuns(scopedRuns, { skip: receiptKinds, current });
   const validation: Record<string, unknown>[] = (
     [
       ...receipts.map((v) => ({ ...v, editedAfter: [] as string[] })),
-      ...[...latestOf.values()]
+      ...[...chosen]
         .sort((a, b) => factOrder(String(a.id), String(b.id)))
         .map((r) => ({
           ...r,
@@ -1193,30 +1206,30 @@ export function briefParts(
       kind: 'open',
       limit: `"${clipText(m.text, 140)}" comes only from commit ${String(m.commit)}'s message: attribute it to that message, and don't say what any run did or didn't show.`,
     });
-  // A run whose result wasn't captured is open only if no run of that command
-  // has a recorded result (an earlier pass still tells the reader something).
-  const recorded = new Set(
-    runs
-      .filter((r) => r.outcome === 'passed' || r.outcome === 'failed')
-      .flatMap((r) => shownCommand(r.cmd).split(' ; ')),
-  );
+  // The last run of a command with no captured result is open when it is what
+  // the session ended on (no later edits) or the last run of its kind. An
+  // earlier result of the same command doesn't close it: the code changed since.
+  const lastOfKind = new Map(scopedRuns.map((r) => [String(r.kind), r]));
   for (const v of [...lastOf.values()].filter(
     (r) =>
       !receiptKinds.has(String(r.kind)) &&
-      (current(r) || [...latestOf.values()].includes(r)),
+      (current(r) || lastOfKind.get(String(r.kind)) === r),
   ))
     if (
       v.outcome === 'unknown' &&
-      ['test', 'typecheck', 'lint'].includes(String(v.kind)) &&
-      !shownCommand(v.cmd)
-        .split(' ; ')
-        .some((c) => recorded.has(c))
-    )
+      ['test', 'typecheck', 'lint'].includes(String(v.kind))
+    ) {
+      const earlier = scopedRuns.some(
+        (r) => r !== v && shownCommand(r.cmd) === shownCommand(v.cmd),
+      );
       limits.push({
         change: null,
         kind: 'open',
-        limit: `\`${shownCommand(v.cmd)}\` ran, but no result for it was captured in the logs Tracetoon read.`,
+        limit: earlier
+          ? `The last run of \`${shownCommand(v.cmd)}\` (${String(v.id)}) has no result in the logs Tracetoon read; an earlier run's result doesn't cover the code it ran on.`
+          : `\`${shownCommand(v.cmd)}\` ran, but no result for it was captured in the logs Tracetoon read.`,
       });
+    }
   // (No "earlier failures weren't recorded" point: Tracetoon keeps only result
   // lines, so it can't tell whether a failure's output was recorded, and the
   // claim was judged false where it was (dev16).)
@@ -1268,10 +1281,10 @@ export function briefParts(
       files: refs(generated, 6),
     });
 
-  const process = processRows(g, turns, runs);
+  const process = processRows(g, turns, scopedRuns);
 
   // Open points first: writers often read only the head of the output.
-  const sections = [
+  const sections: Section[] = [
     section('limits', ['ref', 'change', 'kind', 'limit'], limits),
     section(
       'changes',
@@ -1326,12 +1339,69 @@ export function briefParts(
       validation,
     ),
   ];
+  // The head tree: stale mentions of removed names, and callers of changed ones.
+  const hunkChange = new Map(hunkRows.map((h) => [String(h.hunk), String(h.change)]));
+  sections.push(
+    section('headScan', ['ref', 'kind', 'text', 'change'], headScanRows(g, hunkChange)),
+  );
+  // What not to say, from the rows above, right after the open points.
+  sections.splice(
+    1,
+    0,
+    section('doNotSay', DO_NOT_SAY_COLUMNS, doNotSayRows(sections, uniq(branchy).sort())),
+  );
   return {
     sections,
     unchecked: uniq(uncheckedAll).sort(),
     branchy: uniq(branchy).sort(),
     hunkLinks,
   };
+}
+
+/** At most this many head-scan rows of each kind (stale mentions, references). */
+const MAX_HEAD_ROWS = 3;
+
+/**
+ * The brief's `headScan` rows from HeadRef nodes (headScan.ts): docs or config
+ * that still mention a removed name or old value, then the changed symbols
+ * most referenced elsewhere, the top one marked as a place to start.
+ */
+export function headScanRows(
+  g: GraphEngine,
+  hunkChange: Map<string, string>,
+): Record<string, unknown>[] {
+  const refs = g
+    .run(
+      `MATCH (x:HeadRef) RETURN x.id AS id, x.kind AS kind, x.term AS term, x.termKind AS termKind,
+              x.hunk AS hunk, x.refs AS refs, x.count AS count, x.files AS files, x.fresh AS fresh`,
+    )
+    .rows.sort((a, b) => factOrder(String(a.id), String(b.id)));
+  const out: Record<string, unknown>[] = [];
+  const more = (n: number, shown: number) => (n > shown ? ` and ${n - shown} more` : '');
+  for (const r of refs
+    .filter((x) => x.kind === 'still mentions')
+    .slice(0, MAX_HEAD_ROWS)) {
+    const at = (r.refs as string[]) ?? [];
+    out.push({
+      kind: 'still mentions',
+      text: `${r.termKind === 'value' ? 'old value' : 'removed name'} \`${String(r.term)}\` is still in ${at.join(', ')}${more(Number(r.count), at.length)} at the head commit`,
+      change: hunkChange.get(String(r.hunk)) ?? null,
+    });
+  }
+  const counted = refs.filter((x) => x.kind !== 'still mentions');
+  const top = counted.find((x) => x.kind === 'most referenced');
+  for (const r of [...(top ? [top] : []), ...counted.filter((x) => x !== top)].slice(
+    0,
+    MAX_HEAD_ROWS,
+  )) {
+    const files = (r.refs as string[]) ?? [];
+    out.push({
+      kind: r === top ? 'most referenced (a place to start)' : 'references',
+      text: `${r.fresh ? 'new ' : ''}\`${String(r.term)}\` is named in ${Number(r.files)} other file(s): ${files.join(', ')}${more(Number(r.files), files.length)}`,
+      change: null,
+    });
+  }
+  return out.map((r, i) => ({ ref: `HS${i + 1}`, ...r }));
 }
 
 const byNum = (a: string, b: string) =>

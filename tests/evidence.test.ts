@@ -48,6 +48,25 @@ describe('decisions', () => {
 });
 
 describe('verification runs', () => {
+  test('a typecheck error fails the typecheck, and the checks after it in an && chain never ran', () => {
+    const runs = commandRuns(
+      'bun x prettier --write a.ts >/dev/null && bun x tsc --noEmit && bun test tests/a.test.ts 2>&1 | tail -3',
+      true,
+      'Exit code 2\ntests/a.test.ts(18,40): error TS2769: No overload matches this call.',
+    );
+    expect(runs.map((r) => [r.kind, r.outcome])).toEqual([['typecheck', 'failed']]);
+    // After `;` the next check still runs.
+    const after = commandRuns(
+      'bun x tsc --noEmit; bun test 2>&1',
+      false,
+      'src/a.ts(1,1): error TS2304: Cannot find name.\n 3 pass\n 0 fail',
+    );
+    expect(after.map((r) => [r.kind, r.outcome])).toEqual([
+      ['typecheck', 'failed'],
+      ['test', 'passed'],
+    ]);
+  });
+
   test('recognizes checks inside chains, and their kind', () => {
     expect(
       verificationSegment('cd x && bun test tests/a.test.ts 2>&1 | tail -3')?.kind,
@@ -77,13 +96,14 @@ describe('verification runs', () => {
     });
   });
 
-  test('two test commands sharing one output: both listed, outcome unknown', () => {
+  test('two test commands sharing one output: both listed; a failure line fails the pair, with no counts', () => {
     const r = commandRun(
       'git stash -q; bun test tests/a.test.ts -t x 2>&1 | grep fail; git stash pop -q && bun test > out.log 2>&1; grep pass out.log',
       false,
       ' 0 pass\n 1 fail\n 147 pass\n 0 fail',
     );
-    expect(r).toMatchObject({ kind: 'test', outcome: 'unknown', basis: 'none' });
+    // One of them failed: the pair did not pass, though no count is pinned on either.
+    expect(r).toMatchObject({ kind: 'test', outcome: 'failed', basis: 'output' });
     expect(r!.cmd).toContain('bun test tests/a.test.ts');
     expect(r!.cmd).toContain(' ; bun test');
     expect(r!.summary).toEqual([]);
@@ -119,7 +139,7 @@ describe('verification runs', () => {
       ' 76 pass\n 0 fail\n 7 pass\n 5 fail',
     );
     expect(failing.find((r) => r.kind === 'test')).toMatchObject({
-      outcome: 'unknown',
+      outcome: 'failed',
       summary: [],
     });
   });

@@ -11,6 +11,7 @@
  * The checks are advisory; the text is deterministic.
  */
 import type { Section } from './queries.ts';
+import { existingSymbols, housekeepingOverclaim } from './doNotSay.ts';
 
 export const VALIDATION_MARKER = '<!-- tracetoon:validation -->';
 
@@ -63,6 +64,26 @@ const list = (xs: unknown) => {
   return more ? `${a.slice(0, -1).join(', ')} and ${more[1]} more` : a.join(', ');
 };
 
+/**
+ * A session-log validation row render may state: a recorded result with
+ * result lines, from one command. Exported for replays.
+ */
+export function logRunStatable(r: Record<string, unknown>): boolean {
+  if (r.outcome !== 'passed' && r.outcome !== 'failed') return false;
+  if (!plain(r.result)) return false;
+  return !shownCommand(r.cmd).includes(' ; ');
+}
+
+/** Files edited after a run, by name: at most four, else a count with the first two. */
+function editedList(xs: unknown): string {
+  const all = (Array.isArray(xs) ? xs : []).map(String).filter(Boolean);
+  const more = /^\+(\d+) more$/.exec(all.at(-1) ?? '');
+  const names = more ? all.slice(0, -1) : all;
+  const total = names.length + (more ? Number(more[1]) : 0);
+  if (total <= 4) return list(names);
+  return `${total} files, among them ${names.slice(0, 2).join(' and ')}`;
+}
+
 /** Most a reader needs: the test runs first, then the other checks. */
 const KIND_ORDER = ['test', 'typecheck', 'lint', 'build', 'eval'];
 const MAX_LINES = 3;
@@ -107,17 +128,23 @@ export function validationSection(b: BriefParts): string {
     if (receiptKinds.has(kind)) continue;
     const cmd = shownCommand(r.cmd);
     if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
+    // Only a result a reader can find in the session: result lines of its own,
+    // from one command (not several sharing an output). A pass known only from
+    // an exit status, or a merged output, is dropped rather than hedged.
+    if (!logRunStatable(r)) continue;
     // A receipt for the same command already says more.
     if (shown.some((x) => x.current && x.line.startsWith(`- \`${cmd}\`:`))) continue;
     const n = perKind.get(kind) ?? 0;
     if (n >= 1) continue;
     perKind.set(kind, n + 1);
-    // A run from the session logs is history, with no counts a reader can't check.
-    const editedAll = (Array.isArray(r.editedAfter) ? r.editedAfter : []).map(String);
-    const edited = editedAll.length > 2 ? `${editedAll.length} files` : list(editedAll);
+    // A run from the session logs is history: its own result lines, which the
+    // session shows next to the command, and the files edited after it by name.
+    const edited = editedList(r.editedAfter);
     shown.push({
       kind,
-      line: `- \`${cmd}\`: ${String(r.outcome)} in the session logs${edited ? `, before later edits to ${edited}` : ''}.`,
+      // A run with later edits says so even when they aren't PR files, as
+      // the claim check (digest/claims.ts) requires of a stale run.
+      line: `- \`${cmd}\`: ${String(r.outcome)} (${plain(r.result).replace(/;\s*/g, ', ')}) in the session logs${edited ? `, before later edits to ${edited}` : String(r.when ?? '').startsWith('before later edits') ? ', before later edits' : ''}.`,
       when: String(r.when ?? ''),
       current: false,
     });
@@ -297,10 +324,8 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
       return [file, file.split('/').pop()!, ...symbolsOf([w])];
     }),
   );
-  const fresh = new Set(changeRows.flatMap((r) => (r.newSymbols as string[]) ?? []));
-  const existing = new Set(
-    changeRows.flatMap((r) => symbolsOf(r.where)).filter((x) => !fresh.has(x)),
-  );
+  // The same names the brief's doNotSay rows list as existing before this PR.
+  const existing = new Set(existingSymbols(b.sections));
   // Names with conditional paths: from the brief's branch list, and any limit naming them.
   const limitText = [
     ...(b.branchy ?? []),
@@ -395,6 +420,17 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
         severity: 'fix',
         problem:
           'only a commit message says this: write "the commit message says…" or leave it out.',
+      });
+  }
+  // "Version bump only" / "no logic changes" while the diff changes more.
+  for (const unit of proseUnits(body)) {
+    const clean = unit.replace(TAG, '').trim();
+    const missing = housekeepingOverclaim(clean, b.sections);
+    if (missing)
+      flags.push({
+        sentence: clean,
+        severity: 'fix',
+        problem: `the diff also changes ${missing.join(', ')}: don't call it housekeeping, a version bump or "no logic changes" only; name what else changed.`,
       });
   }
   // Brief refs are for render, not readers: one left in the prose (outside a tag) is noise.

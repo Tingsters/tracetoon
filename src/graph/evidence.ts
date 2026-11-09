@@ -14,6 +14,7 @@ import { measured } from '../util/profile.ts';
 import { evidenceLine } from '../correlate/correlate.ts';
 import type { Run as DigestRun } from '../digest/build.ts';
 import { buildEvidenceGraph } from './build.ts';
+import { addHeadScan } from './headScan.ts';
 import { annotateDigest, deriveFromGraphJson, type GraphDerived } from './derive.ts';
 import type { EvidenceGraph } from './model.ts';
 import { withGraph } from './engine.ts';
@@ -120,6 +121,16 @@ export function graphEnricher(
           commitFiles: commitFiles(truth),
           commitLines: commitLines(truth),
         }),
+      );
+      // What the head tree still says about removed names, and who calls the changed ones.
+      measured('graph.headScan', () =>
+        addHeadScan(
+          graph,
+          truth.toplevel,
+          truth.usedWorkingTree
+            ? undefined
+            : (truth.headSha ?? truth.commits.at(-1)?.sha),
+        ),
       );
       const derived = measured('graph.derive', () => deriveFromGraphJson(graph));
       annotateDigest(full, derived);

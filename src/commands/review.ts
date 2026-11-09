@@ -169,7 +169,9 @@ function briefLines(
   }
   const background = rows('background');
   if (background.length) {
-    out.push("background (how the work came about; context, never this PR's request):");
+    out.push(
+      "background (why the work started, from the session; attribute it to the session, not to this PR's request):",
+    );
     for (const r of background)
       out.push(`- ${show(r.ref)} (${oneLine(r.kind, 80)}): "${oneLine(r.text, 300)}"`);
   }

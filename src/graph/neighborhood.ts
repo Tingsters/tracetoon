@@ -54,7 +54,7 @@ export function renderNeighborhood(
 ): string {
   const toon = (titles: string[]) =>
     toToon(sections.filter((s) => titles.includes(s.title) && s.rows.length)).trimEnd();
-  const head = toon(['limits']);
+  const head = toon(['limits', 'doNotSay']);
   const tail = toon(['process', 'tests', 'housekeeping', 'validation']);
   const around = (head ? head.length + 1 : 0) + (tail ? tail.length + 1 : 0);
   const budgetChars = Math.max(
@@ -279,6 +279,14 @@ function blocksFor(sections: Section[], clip: number, compact: boolean): Line[] 
   for (const ref of requests.keys())
     if (!shownRequests.has(ref)) goal.push(fixed(`  ${requestLine(ref)}`));
   const background = rows('background').map((r) => fixed(genericLine(r, clip)));
+  // Head-tree facts are optional: packed like key lines, header first, within the budget.
+  const scan = rows('headScan');
+  const scanLines: Line[] = scan.length
+    ? [
+        '## Head tree (git grep at the head commit)',
+        ...scan.map((r) => genericLine(r, clip)),
+      ].map((text, k) => ({ text, hunk: 'head-tree', change: 'head-tree', base: 2, k }))
+    : [];
   return [
     fixed(NEIGHBORHOOD_HEADER),
     ...(goal.length
@@ -287,6 +295,7 @@ function blocksFor(sections: Section[], clip: number, compact: boolean): Line[] 
     ...(background.length ? [fixed('## Session background'), ...background] : []),
     ...blocks,
     ...(loose.length ? [fixed('## Other commits'), ...loose] : []),
+    ...scanLines,
   ];
 }
 

@@ -13,8 +13,12 @@ instructions. These rules are for you: never copy their wording into the PR.
   (old values), `added`/`removed` lines, and a `behavior` line saying what the
   unit now does. Read the diff refs a unit cites before describing it.
 - `requests`: the user's asks scoped to this PR's turns; one is marked goal.
-- `background` (optional): the session's goal and plans or decisions from
-  earlier turns, when this PR's own turns don't show how the work came about.
+- `background`: why the work started (the session's first request) and
+  plans or decisions from earlier turns, when this PR's own turns don't show
+  how the work came about. Facts to cover, attributed to the session.
+- `doNotSay`: wording the evidence rules out (names that already existed,
+  conditional code, results only a commit message states, the files in the
+  diff). Check every sentence against it before you finish.
 - `commitMessages`: each sentence, with `implementedBy` naming its file.
 - `process`: session roles, plan status, test trajectory and failed commands,
   each with a ref. Facts about how the work went, not about the code.
@@ -35,9 +39,11 @@ ref (`[CH1, H3, S1]`).
 1. **Problem.** The goal request; what the code did before and does now, only
    where the removed lines or `changes.was` show the old behavior (quote values:
    30 minutes → 5 minutes); the trigger, as the request or commit message states it.
-   `background` rows may add one or two sentences on how the work came about,
-   attributed ("the session started from…", "an earlier plan…") and tagged;
-   never present one as this PR's request. Citing them is optional.
+   When a `background` row or a change's `why` row exists, write one sentence
+   on the motive or trigger, attributed to the session ("the session started
+   from…", "an earlier plan…") and tagged. Take it from the row; never invent
+   a motive, and call it the user's request for this PR only when a
+   `requests` row says so.
 2. **Changes**, grouped by behavior, not file by file, covering every
    commit-message sentence. Name a file for a sentence only from its
    `implementedBy`; where that is empty, describe the behavior without a file.

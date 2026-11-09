@@ -28,7 +28,8 @@ export type NodeLabel =
   | 'Hunk'
   | 'Commit'
   | 'CommitClaim'
-  | 'Change';
+  | 'Change'
+  | 'HeadRef';
 
 export type RelType =
   | 'IN_SESSION'
@@ -100,6 +101,8 @@ export const SCHEMA_DOC = {
     Commit: 'id (short SHA), subject, body (message body; null when none), t',
     CommitClaim:
       'id (<sha>#n), commit, text (one sentence of the commit message), assertsResult (reports a result: commit-message assertion, not a run)',
+    HeadRef:
+      'id (HR#), kind (still mentions | references | most referenced), term, refs (file:line for stale mentions in docs/config, files for references; capped), count, files, hunk, fresh, definedIn: from one `git grep -w -F` of the head tree, no line contents',
     Change:
       'id (CH#), key (commit:<sha> | prompt:S# | dir:<path>), files, roles, symbols (defined or enclosing), added, removed, branches (added lines that branch or fall back)',
   },

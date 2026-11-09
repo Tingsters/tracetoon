@@ -48,6 +48,8 @@ export interface PatchHunk {
   fresh: string[];
   /** Changed values: a removed line and its closest added line, as `old → new` tokens. */
   pairs: string[];
+  /** Symbols defined on this hunk's removed lines and on no added line of the patch: removed or renamed. */
+  dropped: string[];
   /**
    * Conditions, quoted from code files: a changed condition as `old → new`, an
    * added branch or fallback as `+ line`, a removed condition as `- line`.
@@ -172,7 +174,10 @@ export function patchHunks(patch: string): PatchHunk[] {
         const ch = changed.get(cur) ?? { minus: [], plus: [] };
         (c === '+' ? ch.plus : ch.minus).push(text);
         changed.set(cur, ch);
-        if (c === '-' && def) removedDefs.add(def);
+        if (c === '-' && def) {
+          removedDefs.add(def);
+          if (!cur.dropped.includes(def)) cur.dropped.push(def);
+        }
       }
       if (closes) current = undefined;
       if (c === '+') {
@@ -222,6 +227,7 @@ export function patchHunks(patch: string): PatchHunk[] {
         branches: 0,
         fresh: [],
         pairs: [],
+        dropped: [],
         conds: [],
         tests: [],
         words: [],
@@ -247,8 +253,10 @@ export function patchHunks(patch: string): PatchHunk[] {
     }
   }
   close();
+  const addedDefs = new Set(hunks.flatMap((h) => h.symbols));
   for (const h of hunks) {
     h.fresh = h.symbols.filter((x) => !removedDefs.has(x));
+    h.dropped = h.dropped.filter((x) => !addedDefs.has(x));
     const ch = changed.get(h) ?? { minus: [], plus: [] };
     h.pairs = valuePairs(ch.minus, ch.plus);
     h.conds = PROSE_FILE.test(h.file) ? [] : conditionFacts(ch.minus, ch.plus, h.pairs);
@@ -635,6 +643,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       branches: h.branches,
       fresh: h.fresh,
       pairs: h.pairs,
+      dropped: h.dropped,
       conds: h.conds,
       tests: h.tests,
       words: h.words,

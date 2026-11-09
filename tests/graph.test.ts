@@ -255,6 +255,7 @@ describe('evidence graph', () => {
     const sec = (t: string) => b.json.sections.find((x: any) => x.title === t).rows;
     expect(b.json.sections.map((x: any) => x.title)).toEqual([
       'limits',
+      'doNotSay',
       'changes',
       'process',
       'requests',
@@ -263,6 +264,7 @@ describe('evidence graph', () => {
       'tests',
       'housekeeping',
       'validation',
+      'headScan',
     ]);
     const changes = sec('changes');
     const of = (file: string) =>
@@ -299,7 +301,7 @@ describe('evidence graph', () => {
       [
         'PR3',
         'test',
-        '2 test run(s); 1 failed (R2); last R2 failed; no passing run recorded after the last commit.',
+        "`bun test`: 2 runs in this PR's turns, in order: passed (R1), then failed (R2); no passing run recorded after the last commit.",
       ],
     ]);
   });
@@ -350,7 +352,7 @@ describe('evidence graph', () => {
     expect(body).not.toContain('## Testing');
     // The section quotes the brief's row: the failing run, before farewell's last edit.
     expect(body).toContain(
-      '- `bun test`: failed in the session logs, before later edits to src/farewell.ts.',
+      '- `bun test`: failed (3 pass, 1 fail) in the session logs, before later edits to src/farewell.ts.',
     );
     // The unchecked file is an open point for the prose, not repeated in the section.
     expect(body).not.toContain('No recorded passing test');
@@ -468,8 +470,8 @@ describe('evidence graph', () => {
       sections: [{ title: 'validation', rows }],
     } as any);
     expect(v.split('\n').filter((l) => l.startsWith('- '))).toEqual([
-      '- `bun test`: passed in the session logs.',
-      '- `bun x tsc --noEmit`: passed in the session logs.',
+      // Its own result lines; a typecheck pass known only from an exit status is left out.
+      '- `bun test`: passed (96 pass, 0 fail) in the session logs.',
       "- Tracetoon can't tell whether these runs saw the final commit.",
     ]);
   });
@@ -566,7 +568,9 @@ describe('evidence graph', () => {
     expect(r.uncovered).toEqual([
       'L1 (open point): Only commit abc1234\'s message reports "50/50"; no captured run shows that result.',
     ]);
-    expect(r.text).toContain('- `bun test`: passed in the session logs.');
+    expect(r.text).toContain(
+      '- `bun test`: passed (9 pass, 0 fail) in the session logs.',
+    );
     expect(r.text).not.toContain('eval.ts');
   });
 
@@ -589,7 +593,7 @@ describe('evidence graph', () => {
     );
   });
 
-  test('a current tracetoon check receipt keeps its counts; log runs do not', () => {
+  test('a current tracetoon check receipt keeps its counts; a log run with no result lines is dropped', () => {
     const v = validationSection({
       unchecked: [],
       sections: [
@@ -621,7 +625,7 @@ describe('evidence graph', () => {
     expect(v).toContain(
       '- `bun test`: passed (96 pass; 0 fail), run by `tracetoon check` on the submitted content.',
     );
-    expect(v).toContain('- `bun x tsc --noEmit`: passed in the session logs.');
+    expect(v).not.toContain('tsc');
     expect(v).not.toContain("can't tell whether");
   });
 
@@ -1245,7 +1249,12 @@ describe('the brief states recorded process and behavior', () => {
       kind,
       outcome,
       revision,
-      summary: [],
+      summary:
+        kind === 'test'
+          ? outcome === 'failed'
+            ? ['2 pass', '1 fail']
+            : ['3 pass', '0 fail']
+          : [],
       when: revision,
       session: 'h:s',
     });
@@ -1413,6 +1422,7 @@ describe('the brief states recorded process and behavior', () => {
   test('no avoid rules and no instructions: only open limits, one for unrequested changes', () => {
     expect(b.sections.map((s) => s.title)).toEqual([
       'limits',
+      'doNotSay',
       'changes',
       'process',
       'requests',
@@ -1421,6 +1431,7 @@ describe('the brief states recorded process and behavior', () => {
       'tests',
       'housekeeping',
       'validation',
+      'headScan',
     ]);
     expect(sec('limits').map((l) => [l.kind, l.change, l.limit])).toEqual([
       ['open', ['CH2'], 'No user request was recorded for CH2.'],
@@ -1438,9 +1449,9 @@ describe('the brief states recorded process and behavior', () => {
 
   test('background: the session goal and earlier plans and decisions, outside requests', () => {
     expect(sec('background').map((r) => [r.ref, r.kind, r.text])).toEqual([
-      ['S1', "session goal (not this PR's own request)", 'Earlier work'],
-      ['D0', 'decision, earlier in the session', 'Old question'],
-      ['P1', 'plan (not approved as written), earlier in the session', 'Limit v1'],
+      ['S1', "why this work started: the session's first request", 'Earlier work'],
+      ['D0', 'earlier decision in the session', 'Old question'],
+      ['P1', 'earlier plan (not approved as written) in the session', 'Limit v1'],
     ]);
     // Optional context: refs render accepts, never required for coverage.
     const r = applyBrief(
@@ -1500,7 +1511,7 @@ describe('the brief states recorded process and behavior', () => {
       [
         'PR4',
         'test',
-        '2 test run(s); 1 failed (R1); last R2 passed; a passing run came after the last commit (R2).',
+        "`bun test`: 2 runs in this PR's turns, in order: failed (R1), then passed (R2); a passing run came after the last commit (R2).",
       ],
       [
         'PR5',

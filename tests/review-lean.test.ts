@@ -150,12 +150,12 @@ describe('lean review packet brief rows', () => {
         rows: [
           {
             ref: 'S1',
-            kind: "session goal (not this PR's own request)",
+            kind: "why this work started: the session's first request",
             text: 'Make greetings configurable',
           },
           {
             ref: 'P1',
-            kind: 'plan (not approved as written), earlier in the session',
+            kind: 'earlier plan (not approved as written) in the session',
             text: 'Limit v1',
           },
         ],
@@ -183,10 +183,10 @@ describe('lean review packet brief rows', () => {
     }).text;
     expect(text).toContain('- L1 [CH2]: No user request was recorded for CH2.');
     expect(text).toContain(
-      `- S1 (session goal (not this PR's own request)): "Make greetings configurable"`,
+      `- S1 (why this work started: the session's first request): "Make greetings configurable"`,
     );
     expect(text).toContain(
-      '- P1 (plan (not approved as written), earlier in the session): "Limit v1"',
+      '- P1 (earlier plan (not approved as written) in the session): "Limit v1"',
     );
     expect(text).toContain(
       '- PR3 (test): 2 test run(s); 1 failed (R2); last R2 failed; no passing run recorded after the last commit.',

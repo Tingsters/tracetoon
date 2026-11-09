@@ -16,7 +16,7 @@ import type { Usage } from '../trace/types.ts';
 import { clip, makeScrubber, type Scrubber } from './sanitize.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { detectInterop, type Interop } from '../git/interop.ts';
-import { splitCommands } from '../util/shell.ts';
+import { shellSegments, splitCommands } from '../util/shell.ts';
 
 export interface DigestSession {
   ref: string;
@@ -225,7 +225,8 @@ export function testOutputFailed(output: string | undefined): boolean {
     /^Tests?:.*\b[1-9]\d* failed/im.test(output) || // jest
     /^(FAIL|not ok)\b/m.test(output) || // jest file lines, TAP
     /^test result: FAILED/m.test(output) || // cargo
-    /^--- FAIL:/m.test(output) // go
+    /^--- FAIL:/m.test(output) || // go
+    /^\(fail\) /m.test(output) // bun's per-test failure lines
   );
 }
 
@@ -312,7 +313,8 @@ export function commandRuns(
   isError: boolean | undefined,
   output: string | undefined,
 ): Omit<Run, 'id' | 't' | 'revision'>[] {
-  const segments = splitCommands(cmd).map((x) => x.replace(ENV_PREFIX, ''));
+  const parsed = shellSegments(cmd);
+  const segments = parsed.map((x) => x.command.replace(ENV_PREFIX, ''));
   // A segment that sends its stdout to a file leaves no result in the log unless
   // a later segment reads that file back (`> out.log; grep pass out.log`); the
   // output captured then belongs to the other segments.
@@ -342,41 +344,59 @@ export function commandRuns(
     if (hit) found.push({ seg, kind: hit[0] });
   }
   const several = found.length > 1;
-  return found.map(({ seg, kind, unlogged }) => {
-    if (unlogged)
-      return { cmd: seg, kind, outcome: 'unknown', basis: 'none', summary: [] };
-    const own = several
-      ? (output ?? '')
-          .split(/\r?\n/)
-          .filter((l) => KIND_LINE[kind]?.test(l) ?? false)
-          .join('\n')
-      : output;
-    const result = runOutcome(cmd, seg, isError, own, kind);
-    if (several && result.basis === 'exit status' && result.outcome === 'failed')
-      Object.assign(result, { outcome: 'unknown', basis: 'none' });
-    // Several test commands' results are mixed in one output, so no count can
-    // be pinned on either: list them with no result lines rather than let a
-    // reader credit one suite with another's numbers.
-    // The outcome is still clear when each of them reported zero failures.
-    if (kind === 'test' && tests.length > 1) {
-      // Every test command must have reported a failure count, all zero.
-      const counts =
-        (own ?? '').match(/\b\d+\s+(fail|failed|failing|failures?)\b/gi) ?? [];
-      const clean =
-        counts.length >= tests.length &&
-        counts.every((c) => /^0\s/.test(c)) &&
-        !testOutputFailed(own);
-      return {
-        cmd: tests.join(' ; '),
-        kind,
-        ...result,
-        outcome: clean ? 'passed' : 'unknown',
-        basis: clean ? 'output' : 'none',
-        summary: [],
-      };
-    }
-    return { cmd: seg, kind, ...result };
-  });
+  const results = found.map(
+    ({ seg, kind, unlogged }): Omit<Run, 'id' | 't' | 'revision'> => {
+      if (unlogged)
+        return { cmd: seg, kind, outcome: 'unknown', basis: 'none', summary: [] };
+      const own = several
+        ? (output ?? '')
+            .split(/\r?\n/)
+            .filter((l) => KIND_LINE[kind]?.test(l) ?? false)
+            .join('\n')
+        : output;
+      const result = runOutcome(cmd, seg, isError, own, kind);
+      if (several && result.basis === 'exit status' && result.outcome === 'failed')
+        Object.assign(result, { outcome: 'unknown', basis: 'none' });
+      // Several test commands' results are mixed in one output, so no count can
+      // be pinned on either: list them with no result lines rather than let a
+      // reader credit one suite with another's numbers.
+      // The outcome is still clear when each of them reported zero failures.
+      if (kind === 'test' && tests.length > 1) {
+        // Every test command must have reported a failure count, all zero.
+        const counts =
+          (own ?? '').match(/\b\d+\s+(fail|failed|failing|failures?)\b/gi) ?? [];
+        // A failure line in the shared output means one of them failed (no
+        // count is pinned on either, but the run did not pass).
+        const failed = testOutputFailed(own) || /^\(fail\) /m.test(output ?? '');
+        const clean =
+          counts.length >= tests.length && counts.every((c) => /^0\s/.test(c)) && !failed;
+        return {
+          cmd: tests.join(' ; '),
+          kind,
+          ...result,
+          outcome: failed ? 'failed' : clean ? 'passed' : 'unknown',
+          basis: failed || clean ? 'output' : 'none',
+          summary: [],
+        };
+      }
+      return { cmd: seg, kind, ...result };
+    },
+  );
+  // A check that failed stops its `&&` chain: the checks after it never ran.
+  const at = found.map(({ seg }) => segments.indexOf(seg));
+  return results.filter(
+    (_, i) =>
+      !results.some(
+        (r, j) =>
+          j < i &&
+          r.outcome === 'failed' &&
+          at[j]! >= 0 &&
+          at[j]! < at[i]! &&
+          parsed
+            .slice(at[j]! + 1, at[i]! + 1)
+            .every((p) => p.before === '&&' || p.before === '|'),
+      ),
+  );
 }
 
 const RESULT_LINE =
@@ -398,6 +418,12 @@ export function runOutcome(
     .map((l) => l.slice(0, 120));
   const isTest = kind === 'test';
   if (isTest && testOutputFailed(output))
+    return { outcome: 'failed', basis: 'output', summary };
+  // A compiler error in a typecheck's own output is a failure, whatever the exit status says.
+  if (
+    kind === 'typecheck' &&
+    /\berror TS\d+|\bFound [1-9]\d* errors?\b/.test(output ?? '')
+  )
     return { outcome: 'failed', basis: 'output', summary };
   // A failing check stops an && chain, so the tool reports an error. After
   // `;` or a pipe, the exit status belongs to a later command.
