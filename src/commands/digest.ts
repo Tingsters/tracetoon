@@ -31,6 +31,7 @@ import {
   saveGraph,
   type GraphOutcome,
 } from '../graph/evidence.ts';
+import { parseLayout, runLayout, saveRunLayout } from '../graph/layout.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -71,6 +72,8 @@ export interface DigestOpts extends ScanOpts {
   include?: string[];
   exclude?: string[];
   budget?: number;
+  /** Brief layout for this run (`prepare --layout`); kept for later commands. */
+  layout?: string;
 }
 
 export function digestHash(d: TraceDigest): string {
@@ -85,8 +88,15 @@ export function digestCmd(
   display = true,
 ) {
   const { truth, matches } = shared ?? scan(cwd, { base: opts.base, noGh: opts.offline });
+  let layout;
+  try {
+    layout = parseLayout(opts.layout);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
   const run = opts.run ? findRun(truth.gitDir, opts.run) : newRun(truth.gitDir);
   assertRunOwner(run, truth.toplevel, truth.head);
+  if (layout) saveRunLayout(run, layout);
   const config = loadConfig(truth.toplevel);
   const selected = readJson<{ include?: string[]; exclude?: string[] }>(
     run,
@@ -180,7 +190,9 @@ export function digestCmd(
   const path = writeJson(run, 'digest.json', digest);
   writeJson(run, 'digest-full.json', full);
   saveGraph(run, graph);
-  const brief = graph.graph ? graphBrief(graph.graph) : undefined;
+  const brief = graph.graph
+    ? graphBrief(graph.graph, { layout: runLayout(run) })
+    : undefined;
   writeFileSync(join(run.dir, 'evidence-notes.md'), evidenceNotes(full, brief), 'utf8');
   const captured = submissionSnapshot(truth);
   writeJson(run, 'submission.json', captured);

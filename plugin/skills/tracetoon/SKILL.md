@@ -131,6 +131,7 @@ reviewer separate.
      [references/drafting.md](references/drafting.md) and
      [references/reviewer-lean.md](references/reviewer-lean.md) here; don't read
      contribution-workflow.md on this path.
+     Pass the 'Brief layout' value to `tracetoon prepare --layout`.
      1. Read the brief and `context.json`; apply step 3's AI-policy bullets.
         Find the checks the repository requires (contributing guide, CI config)
         yourself; there is no separate researcher.
@@ -386,6 +387,8 @@ reviewer separate.
      rules. Creating the PR does not require ending the turn.
 
 Reviewer model: same as the main agent.
+
+Brief layout: toon.
 
 ### Other commands
 

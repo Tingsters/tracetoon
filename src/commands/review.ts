@@ -13,6 +13,7 @@ import { fileRole } from '../digest/build.ts';
 import type { TraceDigest } from '../digest/build.ts';
 import { patchHunks, type PatchHunk } from '../graph/build.ts';
 import { graphBriefParts, loadGraph } from '../graph/evidence.ts';
+import { runLayout } from '../graph/layout.ts';
 import type { EvidenceGraph } from '../graph/model.ts';
 import type { Section } from '../graph/queries.ts';
 import { evidenceExists } from '../contribution/review.ts';
@@ -63,6 +64,8 @@ export interface PacketInput {
   fingerprint: string;
   graph?: EvidenceGraph;
   brief?: Section[];
+  /** Commit-message row ref → the hunks it describes, shown as `→ H#`. */
+  hunkLinks?: Record<string, string[]>;
 }
 
 export interface Packet {
@@ -117,7 +120,10 @@ const oneLine = (v: unknown, max = 400) => {
 };
 
 /** Brief rows a reviewer checks claims against, one line each. */
-function briefLines(brief: Section[] | undefined): string[] {
+function briefLines(
+  brief: Section[] | undefined,
+  hunkLinks: Record<string, string[]> = {},
+): string[] {
   if (!brief) return ['(No evidence graph for this run: check claims against the diff.)'];
   const rows = (t: string) => brief.find((s) => s.title === t)?.rows ?? [];
   const out: string[] = [];
@@ -132,12 +138,14 @@ function briefLines(brief: Section[] | undefined): string[] {
   const commits = rows('commitMessages');
   if (commits.length) {
     out.push(
-      'commitMessages (facts only a message states; implementedBy = where the patch does it):',
+      'commitMessages (facts only a message states; implementedBy = where the patch does it; → H# = the hunks it describes):',
     );
-    for (const r of commits)
+    for (const r of commits) {
+      const to = hunkLinks[String(r.ref)] ?? [];
       out.push(
-        `- ${show(r.ref)}: "${oneLine(r.text, 300)}"${(r.implementedBy as string[])?.length ? ` | implementedBy: ${oneLine(r.implementedBy)}` : ' | implementedBy: (none found)'}`,
+        `- ${show(r.ref)}: "${oneLine(r.text, 300)}"${(r.implementedBy as string[])?.length ? ` | implementedBy: ${oneLine(r.implementedBy)}` : ' | implementedBy: (none found)'}${to.length ? ` → ${to.join(' ')}` : ''}`,
       );
+    }
   }
   const open = rows('limits').filter((r) => r.kind === 'open');
   if (open.length) {
@@ -288,7 +296,7 @@ export function leanPacket(input: PacketInput): Packet {
     '',
     '## Brief rows',
     '',
-    ...briefLines(input.brief),
+    ...briefLines(input.brief, input.hunkLinks),
     '',
     '## Hunks and owning symbols',
     '',
@@ -349,8 +357,12 @@ function renderedInput(run: Run): { input: ReviewInput; patch: string } {
   return { input, patch };
 }
 
-function storedBrief(graph: EvidenceGraph | undefined): Section[] | undefined {
-  return graph ? graphBriefParts(graph)?.sections : undefined;
+/** The brief as the run's writer read it (its layout), with the commit → hunk links. */
+function storedBrief(
+  run: Run,
+  graph: EvidenceGraph | undefined,
+): { sections: Section[]; hunkLinks: Record<string, string[]> } | undefined {
+  return graph ? graphBriefParts(graph, runLayout(run)) : undefined;
 }
 
 export function reviewPacketCmd(
@@ -364,6 +376,7 @@ export function reviewPacketCmd(
   const { run } = openRun(cwd, opts.run);
   const { input, patch } = renderedInput(run);
   const graph = loadGraph(run);
+  const parts = storedBrief(run, graph);
   const packet = leanPacket({
     runId: run.id,
     title: input.title,
@@ -372,7 +385,8 @@ export function reviewPacketCmd(
     patch,
     fingerprint: input.fingerprint,
     graph,
-    brief: storedBrief(graph),
+    brief: parts?.sections,
+    hunkLinks: parts?.hunkLinks,
   });
   const path = join(run.dir, PACKET_FILE);
   writeFileSync(path, packet.text, 'utf8');
@@ -473,7 +487,7 @@ export function importLeanReview(
     body: input.body,
     patch,
     hunks: patchHunks(patch),
-    brief: storedBrief(loadGraph(run)),
+    brief: storedBrief(run, loadGraph(run))?.sections,
     contractRef,
     fileExists: (p) =>
       !isAbsolute(p) && !p.split(/[\\/]/).includes('..') && existsSync(join(root, p)),

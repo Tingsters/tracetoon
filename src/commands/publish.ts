@@ -81,6 +81,7 @@ import { receipts } from '../workflow/checks.ts';
 import { publicationLock, recordTiming } from '../workflow/publication.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
 import { acknowledgeRepository } from '../workflow/hostSession.ts';
+import { runLayout } from '../graph/layout.ts';
 
 export const COMIC_SRC = '{{tracetoon:comic-src}}';
 const COMIC_MARKER = '{{tracetoon:comic}}';
@@ -353,7 +354,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const storedGraph = loadGraph(run);
   const briefCheck = applyBrief(
     bodyMd,
-    storedGraph ? graphBriefParts(storedGraph) : undefined,
+    storedGraph ? graphBriefParts(storedGraph, runLayout(run)) : undefined,
   );
   const draft = briefCheck.text;
   // The title: a person's choice is kept. A title edited on GitHub since
@@ -576,7 +577,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     ctx.aiPolicy.text === 'author-written-recommended';
   const outline = evidenceNotes(
     readJson<TraceDigest>(run, 'digest-full.json') ?? digest,
-    storedGraph ? graphBrief(storedGraph) : undefined,
+    storedGraph ? graphBrief(storedGraph, { layout: runLayout(run) }) : undefined,
   );
   writeFileSync(join(run.dir, 'evidence-notes.md'), outline, 'utf8');
   writeJson(run, 'approval.json', approval);

@@ -175,6 +175,10 @@ program
   .option('--cypher <query>', 'a read-only Cypher query (MATCH ... RETURN ...)')
   .option('--params <json>', 'parameters for --cypher, as a JSON object')
   .option('--all', `print every row (default: at most ${ROW_CAP} per section)`)
+  .option(
+    '--layout <layout>',
+    'brief only: toon or neighborhood (default: the layout prepare chose for the run)',
+  )
   .action((words, o) => queryCmd(cwd, words ?? [], { ...g(), ...o }));
 
 program
@@ -186,6 +190,10 @@ program
   .option('--exclude <ids>', 'session refs or ids to exclude', list)
   .option('--budget <tokens>', 'approximate digest token budget', Number)
   .option('--offline', 'disable GitHub lookups and external contributor research')
+  .option(
+    '--layout <layout>',
+    'evidence brief layout for this run: toon (default) or neighborhood; later commands use it',
+  )
   .action((o) => {
     prepareCmd(cwd, { ...g(), ...o });
   });

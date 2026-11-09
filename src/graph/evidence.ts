@@ -20,6 +20,8 @@ import { withGraph } from './engine.ts';
 import { briefParts, findQuery } from './queries.ts';
 import type { BriefParts } from './briefRender.ts';
 import { toToon } from './toon.ts';
+import { renderNeighborhood } from './neighborhood.ts';
+import { briefBudget, type BriefLayout } from './layout.ts';
 
 export const GRAPH_FILE = 'evidence-graph.json';
 export const GRAPH_REVIEW_FILE = 'graph-review.json';
@@ -158,16 +160,36 @@ export function loadGraphReview(run: Run): GraphDerived['review'] | undefined {
  * Undefined when the graph can't be read; the digest never depends on it.
  */
 /** The brief as data, for `render` to write the Validation section and check ref tags. */
-export function graphBriefParts(graph: EvidenceGraph): BriefParts | undefined {
+export function graphBriefParts(
+  graph: EvidenceGraph,
+  layout: BriefLayout = 'toon',
+): (BriefParts & { hunkLinks: Record<string, string[]> }) | undefined {
   try {
-    return withGraph(graph, (g) => briefParts(g));
+    return withGraph(graph, (g) => briefParts(g, { layout }));
   } catch {
     return undefined;
   }
 }
 
-export function graphBrief(graph: EvidenceGraph, rowCap = 60): string | undefined {
+export function graphBrief(
+  graph: EvidenceGraph,
+  opts: { rowCap?: number; layout?: BriefLayout } = {},
+): string | undefined {
+  const rowCap = opts.rowCap ?? 60;
   try {
+    if (opts.layout === 'neighborhood')
+      return withGraph(graph, (g) => {
+        const { sections } = briefParts(g, { layout: 'neighborhood' });
+        const budget = briefBudget();
+        // As long as the TOON brief of the same run, so the layouts compare at equal size.
+        const targetChars = budget.matchToon
+          ? toToon(
+              sections.filter((s) => s.title !== 'hunks'),
+              { rowCap },
+            ).trimEnd().length
+          : undefined;
+        return renderNeighborhood(sections, { budgetTokens: budget.tokens, targetChars });
+      }).trimEnd();
     const sections = withGraph(graph, (g) => findQuery('brief')!.run(g, []));
     return toToon(sections, { rowCap }).trimEnd();
   } catch {

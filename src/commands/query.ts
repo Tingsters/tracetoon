@@ -1,7 +1,14 @@
 /** `tracetoon query`: ask a run's evidence graph a named question or read-only Cypher. */
 import { GraphError, withGraph } from '../graph/engine.ts';
-import { loadGraph } from '../graph/evidence.ts';
-import { findQuery, QUERIES, rawQuery, type Section } from '../graph/queries.ts';
+import { graphBrief, loadGraph } from '../graph/evidence.ts';
+import { parseLayout, runLayout } from '../graph/layout.ts';
+import {
+  briefParts,
+  findQuery,
+  QUERIES,
+  rawQuery,
+  type Section,
+} from '../graph/queries.ts';
 import { toToon } from '../graph/toon.ts';
 import { assertRunOwner, findRun } from '../run.ts';
 import { count } from '../util/profile.ts';
@@ -13,6 +20,8 @@ export interface QueryOpts extends OutOpts {
   cypher?: string;
   params?: string;
   all?: boolean;
+  /** `query brief` only: toon or neighborhood (default: the layout `prepare` chose). */
+  layout?: string;
 }
 
 /** Rows printed per section unless --all: enough to act on, bounded for agent context. */
@@ -43,6 +52,14 @@ export function queryCmd(cwd: string, words: string[], opts: QueryOpts): void {
     emit(opts, { query: 'schema', sections }, () => toToon(sections));
     return;
   }
+  let asked;
+  try {
+    asked = parseLayout(opts.layout);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
+  if (asked && named?.name !== 'brief')
+    throw new UserError('--layout applies only to `tracetoon query brief`.');
   const repo = repository(cwd);
   const run = findRun(repo.gitDir, opts.run);
   assertRunOwner(run, repo.root, repo.branch);
@@ -59,17 +76,31 @@ export function queryCmd(cwd: string, words: string[], opts: QueryOpts): void {
       throw new UserError('--params must be a JSON object.');
     }
   }
+  // The brief reads as in `prepare`: the run's layout unless --layout says otherwise.
+  const layout = named?.name === 'brief' ? (asked ?? runLayout(run)) : 'toon';
   let sections: Section[];
   try {
     sections = withGraph(graph, (g) =>
-      named ? named.run(g, args) : rawQuery(g, opts.cypher!, params),
+      layout === 'neighborhood'
+        ? briefParts(g, { layout }).sections
+        : named
+          ? named.run(g, args)
+          : rawQuery(g, opts.cypher!, params),
     );
   } catch (e) {
     if (e instanceof GraphError) throw new UserError(e.message);
     throw e;
   }
   count('graph.queries');
-  emit(opts, { run: run.id, query: named?.name ?? 'cypher', sections }, () =>
-    toToon(sections, { rowCap: opts.all ? Infinity : ROW_CAP }),
+  const briefText = layout === 'neighborhood' ? graphBrief(graph, { layout }) : undefined;
+  emit(
+    opts,
+    {
+      run: run.id,
+      query: named?.name ?? 'cypher',
+      ...(named?.name === 'brief' ? { layout } : {}),
+      sections,
+    },
+    () => briefText ?? toToon(sections, { rowCap: opts.all ? Infinity : ROW_CAP }),
   );
 }

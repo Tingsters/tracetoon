@@ -6,6 +6,7 @@
 import { GraphError, type GraphEngine } from './engine.ts';
 import { shownCommand } from './briefRender.ts';
 import { SCHEMA_DOC } from './model.ts';
+import type { BriefLayout } from './layout.ts';
 
 export interface Section {
   title: string;
@@ -260,6 +261,23 @@ export function listsSeveral(text: string): boolean {
   return parts.length >= 3;
 }
 
+/** A commit's files the sentence names outright (`src/a.ts`, `` `a.ts` ``). */
+const namedFiles = (hunks: Record<string, unknown>[], text: string): string[] =>
+  uniq(hunks.map((h) => String(h.file))).filter((f) =>
+    new RegExp(
+      `(^|[\\s(\`'"])${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[\\s),.:;\`'"])`,
+    ).test(text),
+  );
+
+const isVersionFile = (f: string) =>
+  /(^|\/)(VERSION|package\.json|plugin\.json|version\.\w+)$/.test(f);
+const isCodeFile = (f: string) =>
+  !/(^|\/)(tests?|__tests__|spec|docs?)\/|\.(test|spec)\.\w+$|\.(md|mdx|txt)$/.test(f);
+const ABOUT_TESTS_OR_DOCS = /\btests?\b|\bdocs?\b|\bguide\b|\bskill\b|\breadme\b/i;
+
+/** A weak match (two shared words out of many) places nothing. */
+const strongEnough = (hits: number, words: number) => hits >= 3 || hits >= 0.4 * words;
+
 /**
  * The files a sentence describes, among one commit's hunks: those whose changed
  * lines and symbol names share the sentence's rarer words. Returns nothing when
@@ -268,15 +286,86 @@ export function listsSeveral(text: string): boolean {
  */
 export function describedHunks(hunks: Record<string, unknown>[], text: string): string[] {
   // A sentence that names one of the commit's files says where it lives.
-  const files = uniq(hunks.map((h) => String(h.file)));
-  const named = files.filter((f) =>
-    new RegExp(
-      `(^|[\\s(\`'"])${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[\\s),.:;\`'"])`,
-    ).test(text),
-  );
+  const named = namedFiles(hunks, text);
   if (named.length === 1) return named;
+  if (listsSeveral(text)) return [];
+  const { scored, words } = scoredHunks(hunks, text);
+  // Best hunk per file.
+  const byFile = new Map<string, { score: number; hits: number }>();
+  for (const x of scored)
+    if (x.score > (byFile.get(x.file)?.score ?? -1))
+      byFile.set(x.file, { score: x.score, hits: x.hits });
+  const ranked = [...byFile].sort((a, b) => b[1].score - a[1].score);
+  if (!ranked.length) return [];
+  // Two files that fit about equally: say neither rather than guess.
+  if (ranked.length > 1 && ranked[1]![1].score >= ranked[0]![1].score * 0.8) return [];
+  // Three words, or at least two fifths of the sentence's words, must meet the hunk.
+  if (!strongEnough(ranked[0]![1].hits, words)) return [];
+  return [ranked[0]![0]];
+}
+
+/**
+ * The hunks a commit sentence describes, among that commit's own hunks: the
+ * `→ H#` links of the neighborhood brief and the review packet. As
+ * conservative as `describedHunks`: nothing when two hunks in different files
+ * fit about equally or the match is weak. A sentence listing several behaviors
+ * links each listed part on its own (up to three hunks); a commit with a
+ * single code hunk links a sentence about code that shares its words; two
+ * close hunks in one file are both linked.
+ */
+export function linkedHunks(hunks: Record<string, unknown>[], text: string): string[] {
+  if (!hunks.length) return [];
+  const named = namedFiles(hunks, text);
+  if (named.length && named.length <= 2) {
+    const { scored } = scoredHunks(hunks, text, { all: true });
+    return named.map((f) => {
+      const own = scored.filter((x) => x.file === f).sort((a, b) => b.score - a.score);
+      return own[0]?.id ?? String(hunks.find((h) => String(h.file) === f)!.id);
+    });
+  }
+  if (listsSeveral(text)) {
+    const parts = text
+      .replace(/\([^)]*\)/g, '')
+      .split(/[,;]|\band\b/)
+      .filter((p) => p.trim().split(/\s+/).length >= 2);
+    return uniq(parts.flatMap((p) => linkedHunks(hunks, p).slice(0, 1))).slice(0, 3);
+  }
+  const version = /\bversion|\bbump/i.test(text);
+  const code = hunks.filter(
+    (h) => isCodeFile(String(h.file)) && (version || !isVersionFile(String(h.file))),
+  );
+  const { scored, words } = scoredHunks(hunks, text);
+  const ranked = scored
+    .filter((x) => strongEnough(x.hits, words))
+    .sort((a, b) => b.score - a.score);
+  // One code hunk in the commit: a sentence about code that shares words with it.
+  if (
+    code.length === 1 &&
+    !version &&
+    !ABOUT_TESTS_OR_DOCS.test(text) &&
+    ranked.some((x) => x.id === String(code[0]!.id))
+  )
+    return [String(code[0]!.id)];
+  if (!ranked.length) return [];
+  if (ranked.length > 1 && ranked[1]!.score >= ranked[0]!.score * 0.8)
+    return ranked[1]!.file === ranked[0]!.file ? [ranked[0]!.id, ranked[1]!.id] : [];
+  return [ranked[0]!.id];
+}
+
+/**
+ * Each hunk's fit to a sentence (shared by `describedHunks` and `linkedHunks`),
+ * after the version and code-first filters; `all` skips those filters.
+ */
+function scoredHunks(
+  hunks: Record<string, unknown>[],
+  text: string,
+  opts: { all?: boolean } = {},
+): {
+  scored: { id: string; file: string; score: number; hits: number }[];
+  words: number;
+} {
   const words = uniq(proseWords(text).map(stem));
-  if (!words.length || !hunks.length || listsSeveral(text)) return [];
+  if (!words.length || !hunks.length) return { scored: [], words: words.length };
   const has = hunks.map((h) => new Set(((h.words as string[]) ?? []).map(stem)));
   const symbolWords = hunks.map(
     (h) =>
@@ -298,6 +387,7 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
   const avg = has.reduce((n, x) => n + x.size, 0) / has.length || 1;
   let scored = hunks
     .map((h, i) => ({
+      id: String(h.id),
       file: String(h.file),
       score:
         words.reduce(
@@ -311,32 +401,15 @@ export function describedHunks(hunks: Record<string, unknown>[], text: string): 
       hits: words.filter((w) => has[i]!.has(w) || symbolWords[i]!.has(w)).length,
     }))
     .filter((x) => x.hits >= Math.min(2, words.length));
+  if (opts.all) return { scored, words: words.length };
   // Version files match any sentence with a number; they belong only to version sentences.
   if (!/\bversion|\bbump/i.test(text))
-    scored = scored.filter(
-      (x) => !/(^|\/)(VERSION|package\.json|plugin\.json|version\.\w+)$/.test(x.file),
-    );
+    scored = scored.filter((x) => !isVersionFile(x.file));
   // Tests and docs describe behavior too; the code that does it comes first.
-  const isCode = (f: string) =>
-    !/(^|\/)(tests?|__tests__|spec|docs?)\/|\.(test|spec)\.\w+$|\.(md|mdx|txt)$/.test(f);
   // A sentence that mentions neither is about code: a test or doc file alone
   // matching it is no placement.
-  if (!/\btests?\b|\bdocs?\b|\bguide\b|\bskill\b|\breadme\b/i.test(text))
-    scored = scored.filter((x) => isCode(x.file));
-  // Best hunk per file.
-  const byFile = new Map<string, { score: number; hits: number }>();
-  for (const x of scored)
-    if (x.score > (byFile.get(x.file)?.score ?? -1))
-      byFile.set(x.file, { score: x.score, hits: x.hits });
-  const ranked = [...byFile].sort((a, b) => b[1].score - a[1].score);
-  if (!ranked.length) return [];
-  // Two files that fit about equally: say neither rather than guess.
-  if (ranked.length > 1 && ranked[1]![1].score >= ranked[0]![1].score * 0.8) return [];
-  // A weak match (two shared words out of many) places nothing: three words,
-  // or at least two fifths of the sentence's words, must meet the hunk.
-  const best = ranked[0]![1];
-  if (best.hits < 3 && best.hits < 0.4 * words.length) return [];
-  return [ranked[0]![0]];
+  if (!ABOUT_TESTS_OR_DOCS.test(text)) scored = scored.filter((x) => isCodeFile(x.file));
+  return { scored, words: words.length };
 }
 
 const planStatus = (approved: unknown) =>
@@ -743,10 +816,15 @@ export function brief(g: GraphEngine): Section[] {
  * behavior or test files with no recorded passing check after their last
  * captured edit.
  */
-export function briefParts(g: GraphEngine): {
+export function briefParts(
+  g: GraphEngine,
+  opts: { layout?: BriefLayout } = {},
+): {
   sections: Section[];
   unchecked: string[];
   branchy: string[];
+  /** Commit-message row ref → the hunks it describes (`→ H#`), whatever the layout. */
+  hunkLinks: Record<string, string[]>;
 } {
   const changes = g
     .run(
@@ -912,6 +990,12 @@ export function briefParts(g: GraphEngine): {
     commitHunks.set(String(r.commit), [...(commitHunks.get(String(r.commit)) ?? []), r]);
   const implementedBy = (commit: string, text: unknown): string[] =>
     describedHunks(commitHunks.get(commit) ?? [], String(text ?? ''));
+  // The same at hunk level: the neighborhood brief's and the review packet's `→ H#`.
+  const hunkLinks: Record<string, string[]> = {};
+  const link = (ref: string, commit: string, text: unknown) => {
+    const hs = linkedHunks(commitHunks.get(commit) ?? [], String(text ?? '')).sort(byNum);
+    if (hs.length) hunkLinks[ref] = hs;
+  };
 
   // One row for each commit's subject (ref: its short sha) and one for each
   // sentence of its message (ref: <sha>#n).
@@ -927,15 +1011,22 @@ export function briefParts(g: GraphEngine): {
       text: k.subject,
       implementedBy: implementedBy(String(k.commit), k.subject),
     });
+    link(String(k.commit), String(k.commit), k.subject);
     for (const m of ((k.claims as { id: string; text: string; result: boolean }[]) ?? [])
       .filter((m) => m.id && !m.result)
-      .sort((x, y) => Number(x.id.split('#')[1]) - Number(y.id.split('#')[1])))
+      .sort((x, y) => Number(x.id.split('#')[1]) - Number(y.id.split('#')[1]))) {
       commitText.push({
         ref: m.id,
         text: m.text,
         implementedBy: implementedBy(String(k.commit), m.text),
       });
+      link(m.id, String(k.commit), m.text);
+    }
   }
+  const hunkSection =
+    opts.layout === 'neighborhood'
+      ? hunkRowsFor(g, changeRows, hunkRows, hunkLinks, seen, fileRole)
+      : [];
   for (const r of changeRows) {
     const links = asked.filter((a) => a.change === r.change);
     (r as Record<string, unknown>).requests = links
@@ -1208,6 +1299,26 @@ export function briefParts(g: GraphEngine): {
       backgroundRows(g, turns, new Set(requests.map((r) => String(r.ref)))),
     ),
     section('commitMessages', ['ref', 'text', 'implementedBy'], commitText),
+    ...(opts.layout === 'neighborhood'
+      ? [
+          section(
+            'hunks',
+            [
+              'ref',
+              'change',
+              'file',
+              'lines',
+              'scope',
+              'code',
+              'why',
+              'sentences',
+              'weight',
+              'role',
+            ],
+            hunkSection,
+          ),
+        ]
+      : []),
     section('tests', ['ref', 'file', 'titles'], tests),
     section('housekeeping', ['ref', 'what', 'files'], housekeeping),
     section(
@@ -1220,7 +1331,82 @@ export function briefParts(g: GraphEngine): {
     sections,
     unchecked: uniq(uncheckedAll).sort(),
     branchy: uniq(branchy).sort(),
+    hunkLinks,
   };
+}
+
+const byNum = (a: string, b: string) =>
+  Number(/\d+/.exec(a)?.[0] ?? 0) - Number(/\d+/.exec(b)?.[0] ?? 0);
+
+/**
+ * Neighborhood layout only: each hunk as a citable row with its key changed
+ * lines, the requests whose edits survive in it, and the commit sentences that
+ * point to it (hunk level, as conservative as implementedBy).
+ */
+function hunkRowsFor(
+  g: GraphEngine,
+  changeRows: { change: unknown }[],
+  hunkRows: Record<string, unknown>[],
+  hunkLinks: Record<string, string[]>,
+  shownRequests: Set<string>,
+  fileRole: Map<string, string>,
+): Record<string, unknown>[] {
+  const sentences = new Map<string, string[]>();
+  for (const [ref, hs] of Object.entries(hunkLinks))
+    for (const h of hs) sentences.set(h, [...(sentences.get(h) ?? []), ref]);
+  const survival = new Map<
+    string,
+    { lines: number; edits: Set<string>; prompts: Set<string> }
+  >();
+  for (const r of g.run(
+    `MATCH (h:Hunk)<-[s:SURVIVES_IN]-(e:Edit)-[:IN_SESSION]->(:Session {band: 'included'})
+     OPTIONAL MATCH (e)-[:IN_TURN]->(p:Prompt)
+     RETURN h.id AS hunk, e.id AS edit, s.lines AS lines, p.id AS prompt`,
+  ).rows) {
+    const x = survival.get(String(r.hunk)) ?? {
+      lines: 0,
+      edits: new Set<string>(),
+      prompts: new Set<string>(),
+    };
+    if (!x.edits.has(String(r.edit))) {
+      x.edits.add(String(r.edit));
+      x.lines += Number(r.lines ?? 0);
+    }
+    // Only requests the brief lists: a shared session's earlier turns aren't this PR's.
+    if (r.prompt && shownRequests.has(String(r.prompt))) x.prompts.add(String(r.prompt));
+    survival.set(String(r.hunk), x);
+  }
+  const info = new Map(
+    g
+      .run(
+        'MATCH (h:Hunk) RETURN h.id AS id, h.start AS start, h.end AS end, h.code AS code',
+      )
+      .rows.map((r) => [String(r.id), r]),
+  );
+  const out: Record<string, unknown>[] = [];
+  for (const c of changeRows)
+    for (const h of hunkRows
+      .filter((x) => x.change === c.change)
+      .sort((a, b) => byDiff(String(a.diff), String(b.diff)))) {
+      const id = String(h.hunk);
+      const hi = info.get(id);
+      const sv = survival.get(id);
+      const start = Number(hi?.start ?? 0);
+      const end = Number(hi?.end ?? start);
+      out.push({
+        ref: id,
+        change: c.change,
+        file: h.file,
+        lines: end > start ? `L${start}-${end}` : `L${start}`,
+        scope: uniq((h.symbols as string[]) ?? []).slice(0, 3),
+        code: (hi?.code as string[]) ?? [],
+        why: [...(sv?.prompts ?? [])].sort(factOrder),
+        sentences: sentences.get(id) ?? [],
+        weight: sv?.lines ?? 0,
+        role: fileRole.get(String(h.file)) ?? null,
+      });
+    }
+  return out;
 }
 
 export const QUERIES: NamedQuery[] = [
