@@ -156,7 +156,8 @@ reviewer separate.
         (`review-packet-<x>.md`).
         **If `Reviewer runner: tracetoon.`**, don't start a reviewer agent and
         skip 6–8: run `tracetoon review run --run <id>` (once per lens with
-        `--lens x`); it runs the reviewer on the named model and imports its
+        `--lens x`, plus once without `--lens` for each pass beyond the number
+        of lenses); it runs the reviewer on the named model and imports its
         findings. Apply the valid findings, `render --json`, then
         `tracetoon review run --run <id> --recheck` once (per lens: `--lens x
         --recheck`).
