@@ -1,0 +1,48 @@
+import { describe, expect, test } from 'bun:test';
+import {
+  parseSkillSettings,
+  withSkillDefaults,
+} from '../src/contribution/skillSettings.ts';
+
+const SKILL = [
+  'Some prose. `Reviewer model: sonnet.` in an example is ignored.',
+  '',
+  'Reviewer model: terra.',
+  '',
+  'Reviewer effort: xhigh.',
+  '',
+  'Review passes: 3.',
+  '',
+  'Review lenses: a, b, c.',
+  '',
+  'Brief layout: neighborhood-wide.',
+].join('\n');
+
+describe('skill settings', () => {
+  test('reads the variant lines', () => {
+    expect(parseSkillSettings(SKILL)).toEqual({
+      reviewerModel: 'terra',
+      reviewerEffort: 'xhigh',
+      reviewPasses: '3',
+      reviewLenses: 'a, b, c',
+      layout: 'neighborhood-wide',
+    });
+  });
+  test('explicit options win; unset ones come from the skill', () => {
+    const skill = parseSkillSettings(SKILL);
+    const out = withSkillDefaults({ reviewPasses: '1', layout: undefined } as any, skill);
+    expect(out.reviewPasses).toBe('1');
+    expect(out.layout).toBe('neighborhood-wide');
+    expect(out.reviewerModel).toBe('terra');
+  });
+  test('the shipped SKILL.md parses to the defaults', async () => {
+    const text = await Bun.file('plugin/skills/tracetoon/SKILL.md').text();
+    expect(parseSkillSettings(text)).toEqual({
+      reviewerModel: 'same as the main agent',
+      reviewerEffort: 'default',
+      reviewPasses: '1',
+      reviewLenses: 'none',
+      layout: 'toon',
+    });
+  });
+});

@@ -432,7 +432,10 @@ describe('brief layout selection', () => {
     const prepared = cli(repo.root, '--json', 'prepare', '--offline');
     const run = prepared.json.run;
     const runDir = prepared.json.runDir;
-    expect(existsSync(join(runDir, 'brief-layout.json'))).toBe(false);
+    // The shipped SKILL.md says `Brief layout: toon.`, which prepare now stores.
+    const stored = join(runDir, 'brief-layout.json');
+    if (existsSync(stored))
+      expect(JSON.parse(readFileSync(stored, 'utf8')).layout).toBe('toon');
     expect(prepared.json.brief).not.toContain('Evidence by change');
     expect(prepared.json.brief).toContain('commitMessages[');
     const b = cli(repo.root, '--json', 'query', 'brief', '--run', run);

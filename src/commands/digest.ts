@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeResearchPacket } from '../contribution/guidance.ts';
 import { loadConfig } from '../config.ts';
@@ -31,7 +31,12 @@ import {
   saveGraph,
   type GraphOutcome,
 } from '../graph/evidence.ts';
-import { parseLayout, runLayout, saveRunLayout } from '../graph/layout.ts';
+import { LAYOUT_FILE, parseLayout, runLayout, saveRunLayout } from '../graph/layout.ts';
+import {
+  skillSettings,
+  withSkillDefaults,
+  type SkillSettings,
+} from '../contribution/skillSettings.ts';
 import {
   loadReviewPlan,
   planEnforced,
@@ -39,6 +44,7 @@ import {
   planSummary,
   requiredPasses,
   saveReviewPlan,
+  PLAN_FILE,
   type PlanOptions,
   type ReviewPlan,
 } from '../contribution/reviewPlan.ts';
@@ -398,16 +404,39 @@ export function graphNext(run: string, plan?: ReviewPlan): string {
   return `take the reviewed brief path (SKILL step 2b): draft title.txt and body.md yourself from the evidence brief (\`tracetoon query brief --run ${run}\`) and the patch, following references/drafting.md; run the repository's required checks once with tracetoon check; \`tracetoon render --check --json --run ${run}\` until nothing is listed; then \`tracetoon render --json --run ${run}\` and ${review}; publish when the review is current${enforced ? ` (publish refuses until the review plan is met: ${planSummary(plan)})` : ''}. Read every command's whole output (no head or tail). Only on the user's request: the quick path (SKILL step 2a) or the three-role thorough path.`;
 }
 
-export function prepareCmd(cwd: string, opts: DigestOpts & PlanOptions) {
+export function prepareCmd(cwd: string, given: DigestOpts & PlanOptions) {
+  const repo = repository(cwd);
+  const before = workFingerprint(repo.root);
+  const shared = scan(cwd, { base: given.base, noGh: given.offline });
+  // Unset options default to the skill's own variant lines, so a configured
+  // reviewer plan or brief layout holds even when the agent doesn't pass it.
+  // A run that already stored a layout or plan keeps it.
+  const skill = skillSettings();
+  const existing = (() => {
+    if (!given.run) return undefined;
+    try {
+      return findRun(shared.truth.gitDir, given.run);
+    } catch {
+      return undefined;
+    }
+  })();
+  if (existing && existsSync(join(existing.dir, LAYOUT_FILE))) delete skill.layout;
+  if (existing && existsSync(join(existing.dir, PLAN_FILE))) {
+    delete skill.reviewerModel;
+    delete skill.reviewerEffort;
+    delete skill.reviewPasses;
+    delete skill.reviewLenses;
+  }
+  const opts = withSkillDefaults(
+    given as DigestOpts & PlanOptions & SkillSettings,
+    skill,
+  );
   let plan: ReviewPlan | undefined;
   try {
     plan = planFromOptions(opts);
   } catch (e) {
     throw new UserError((e as Error).message);
   }
-  const repo = repository(cwd);
-  const before = workFingerprint(repo.root);
-  const shared = scan(cwd, { base: opts.base, noGh: opts.offline });
   const prepared = digestCmd(cwd, opts, shared, false);
   const context = contextCmd(cwd, { ...opts, run: prepared.run.id }, prepared, false);
   if (plan) saveReviewPlan(prepared.run, plan);
