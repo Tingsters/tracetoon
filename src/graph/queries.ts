@@ -521,6 +521,12 @@ const substantive = (text: unknown) => {
   const t = String(text ?? '').trim();
   return !!t && !ACK.test(t) && t.split(/\s+/).length >= 2;
 };
+/** Whether a session id is one of the included sessions. */
+const includedSession = (g: GraphEngine, id: unknown) =>
+  id != null &&
+  g.run(`MATCH (s:Session {band: 'included'}) WHERE s.id = $id RETURN s.id AS id`, {
+    id: String(id),
+  }).rows.length > 0;
 /** At most this many background rows. */
 const MAX_BACKGROUND = 4;
 
@@ -570,30 +576,40 @@ export function backgroundRows(
     const t = promptTime.get(id) ?? '';
     if (s && t > (lastProductive.get(s) ?? '')) lastProductive.set(s, t);
   }
+  // A plan or decision with no turn came before the first prompt the log
+  // captured. In a session with no captured prompt at all (its opening request
+  // cut off or redacted) it is the only record of how the work started, so it
+  // is shown; before a captured prompt it is the tail of earlier work.
+  const withPrompts = new Set(promptSession.values());
   const earlier = g
     .run(
-      `MATCH (x)-[:IN_TURN]->(p:Prompt) WHERE x:Plan OR x:Decision
+      `MATCH (x) WHERE x:Plan OR x:Decision
+       OPTIONAL MATCH (x)-[:IN_TURN]->(p:Prompt)
+       OPTIONAL MATCH (x)-[:IN_SESSION]->(s:Session)
        RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved, x.t AS t,
-              coalesce(x.answers, x.excerpt, x.text) AS text, p.id AS turn, p.t AS turnT`,
+              coalesce(x.answers, x.excerpt, x.text) AS text, p.id AS turn, p.t AS turnT,
+              coalesce(s.id, x.session) AS session`,
     )
     .rows.filter((x) => {
+      if (exclude.has(String(x.id))) return false;
+      if (x.turn == null)
+        return !withPrompts.has(String(x.session)) && includedSession(g, x.session);
       const turn = String(x.turn);
       const session = promptSession.get(turn);
       const until = session ? lastProductive.get(session) : undefined;
-      return (
-        !!until &&
-        !turns.productive.has(turn) &&
-        String(x.turnT ?? '') < until &&
-        !exclude.has(String(x.id))
-      );
+      return !!until && !turns.productive.has(turn) && String(x.turnT ?? '') < until;
     })
     .sort(byTime)
     .map((x) => ({
       ref: String(x.id),
       kind:
-        x.label === 'Plan'
-          ? `earlier ${planStatus(x.approved)} in the session`
-          : 'earlier decision in the session',
+        x.turn == null
+          ? x.label === 'Plan'
+            ? `${planStatus(x.approved)} in the session (the prompt before it wasn't captured)`
+            : "decision in the session (the prompt before it wasn't captured)"
+          : x.label === 'Plan'
+            ? `earlier ${planStatus(x.approved)} in the session`
+            : 'earlier decision in the session',
       text: clipText(String(x.text ?? '').trim(), 400),
       t: x.t,
     }));
@@ -644,6 +660,7 @@ function processRows(
   g: GraphEngine,
   turns: PrTurns,
   checkRuns: Record<string, unknown>[],
+  background: Set<string> = new Set(),
 ): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   const add = (kind: string, fact: string, cites: string[] = []) =>
@@ -714,10 +731,39 @@ function processRows(
     );
   const plans = facts.filter((x) => x.label === 'Plan');
   const decisions = facts.filter((x) => x.label === 'Decision');
+  // Plans and decisions the included sessions recorded outside this PR's turns
+  // (earlier turns, or before the first captured prompt): `background` shows
+  // them, so "none was recorded" would be wrong.
+  const elsewhere = g
+    .run(
+      `MATCH (x) WHERE x:Plan OR x:Decision
+       OPTIONAL MATCH (x)-[:IN_TURN]->(p:Prompt)
+       RETURN x.id AS id, labels(x)[0] AS label, x.approved AS approved, x.t AS t, p.id AS turn`,
+    )
+    .rows.filter((x) => !inScope(x.turn) && background.has(String(x.id)))
+    .sort(
+      (a, b) =>
+        String(a.t ?? '').localeCompare(String(b.t ?? '')) ||
+        factOrder(String(a.id), String(b.id)),
+    );
+  const outside = elsewhere.map((x) =>
+    x.label !== 'Plan'
+      ? `${String(x.id)} (decision)`
+      : x.approved === true
+        ? `${String(x.id)} (approved plan)`
+        : x.approved === false
+          ? `${String(x.id)} (plan not approved as written)`
+          : `${String(x.id)} (plan)`,
+  );
   if (!plans.length)
     add(
       'plan',
-      decisions.length ? 'No plan was recorded.' : 'No plan or decision was recorded.',
+      outside.length
+        ? `${decisions.length ? 'No plan' : 'No plan or decision'} in this PR's own turns; the session recorded ${refs(outside, 4).join(', ')} outside them: see background.`
+        : decisions.length
+          ? 'No plan was recorded.'
+          : 'No plan or decision was recorded.',
+      elsewhere.slice(0, 4).map((x) => String(x.id)),
     );
   else
     add(
@@ -1281,7 +1327,17 @@ export function briefParts(
       files: refs(generated, 6),
     });
 
-  const process = processRows(g, turns, scopedRuns);
+  const background = backgroundRows(
+    g,
+    turns,
+    new Set(requests.map((r) => String(r.ref))),
+  );
+  const process = processRows(
+    g,
+    turns,
+    scopedRuns,
+    new Set(background.map((r) => String(r.ref))),
+  );
 
   // Open points first: writers often read only the head of the output.
   const sections: Section[] = [
@@ -1305,11 +1361,7 @@ export function briefParts(
     ),
     section('process', ['ref', 'kind', 'fact', 'cites'], process),
     section('requests', ['ref', 'kind', 'text', 'truncated'], requests),
-    section(
-      'background',
-      ['ref', 'kind', 'text'],
-      backgroundRows(g, turns, new Set(requests.map((r) => String(r.ref)))),
-    ),
+    section('background', ['ref', 'kind', 'text'], background),
     section('commitMessages', ['ref', 'text', 'implementedBy'], commitText),
     ...(isNeighborhood(opts.layout)
       ? [

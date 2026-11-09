@@ -301,7 +301,7 @@ describe('evidence graph', () => {
       [
         'PR3',
         'test',
-        "`bun test`: 2 runs in this PR's turns, in order: passed (R1), then failed (R2); no passing run recorded after the last commit.",
+        "`bun test` passed in the first run, then failed (passing to failing). 2 runs in this PR's turns, in order: passed (R1), then failed (R2); no passing run recorded after the last commit.",
       ],
     ]);
   });
@@ -1552,6 +1552,55 @@ describe('the brief states recorded process and behavior', () => {
     expect(String(rows[1]!.text).endsWith('…')).toBe(true);
   });
 
+  test('background: plans and decisions of a session with no captured prompt still show', () => {
+    // The session's opening prompt is missing from the log (cut off or
+    // redacted): its plan and decision have no turn, but they were recorded.
+    const cut: EvidenceGraph = structuredClone(graph);
+    cut.nodes = cut.nodes.filter((n) => n.label !== 'Prompt');
+    cut.rels = cut.rels.filter(
+      (r) => r.to.label !== 'Prompt' && r.from.label !== 'Prompt',
+    );
+    cut.nodes.push(
+      N('Session', 'h:other', { band: 'ambiguous', agent: 'a', score: 0.2, title: null }),
+      N('Plan', 'P9', { t: t(4), approved: true, text: 'Other', session: 'h:other' }),
+    );
+    const parts = withGraph(cut, (g) => briefParts(g)).sections;
+    const rows = parts.find((s) => s.title === 'background')!.rows;
+    expect(rows.map((r) => [r.ref, r.kind])).toEqual([
+      ['D0', "decision in the session (the prompt before it wasn't captured)"],
+      [
+        'P1',
+        "plan (not approved as written) in the session (the prompt before it wasn't captured)",
+      ],
+      ['D1', "decision in the session (the prompt before it wasn't captured)"],
+      ['P2', "plan (approved) in the session (the prompt before it wasn't captured)"],
+    ]);
+    const plan = parts
+      .find((s) => s.title === 'process')!
+      .rows.find((r) => r.kind === 'plan')!;
+    expect(plan.fact).toBe(
+      "No plan or decision in this PR's own turns; the session recorded D0 (decision), P1 (plan not approved as written), D1 (decision), P2 (approved plan) outside them: see background.",
+    );
+    expect(plan.cites).toEqual(['D0', 'P1', 'D1', 'P2']);
+    expect(
+      parts
+        .find((s) => s.title === 'doNotSay')!
+        .rows.find((r) => r.kind === 'recorded requests')?.text,
+    ).toBe(
+      "Plans/decisions were recorded (D0, P1, D1, P2): don't say none was recorded.",
+    );
+    // Before a captured prompt, a turnless plan is the tail of earlier work.
+    const tail: EvidenceGraph = structuredClone(graph);
+    tail.nodes.push(
+      N('Plan', 'P8', { t: t(0), approved: true, text: 'Old', session: 'h:s' }),
+    );
+    tail.rels.push(R('IN_SESSION', ['Plan', 'P8'], ['Session', 'h:s']));
+    const tailParts = withGraph(tail, (g) => briefParts(g)).sections;
+    expect(
+      tailParts.find((s) => s.title === 'background')!.rows.map((r) => r.ref),
+    ).not.toContain('P8');
+  });
+
   test('process rows: session role, plan history, test trajectory, failed commands', () => {
     expect(sec('process').map((r) => [r.ref, r.kind, r.fact])).toEqual([
       [
@@ -1572,7 +1621,7 @@ describe('the brief states recorded process and behavior', () => {
       [
         'PR4',
         'test',
-        "`bun test`: 2 runs in this PR's turns, in order: failed (R1), then passed (R2); a passing run came after the last commit (R2).",
+        "`bun test` failed in the first run, then passed (failing to passing). 2 runs in this PR's turns, in order: failed (R1), then passed (R2); a passing run came after the last commit (R2).",
       ],
       [
         'PR5',

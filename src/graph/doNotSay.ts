@@ -9,7 +9,8 @@
  *   condition: "always", "only", "every", "any", "no longer" need every path;
  * - results only a commit message asserts: attribute them;
  * - the files the diff changes, so "only a version bump" or a wrong file is
- *   visibly wrong.
+ *   visibly wrong;
+ * - recorded requests, plans and decisions: never "none was recorded".
  *
  * Pure over the brief's sections, capped, deterministic.
  */
@@ -102,6 +103,33 @@ export function doNotSayRows(sections: Section[], branchy: string[] = []): Row[]
       )
       .map((r) => String(r.change));
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+  // Recorded requests, plans or decisions: writers told "no request" by a limit
+  // row about one change still must not say the session recorded none.
+  const recorded = [
+    ...new Set(
+      [
+        ...rowsOf(sections, 'requests').map((r) => String(r.ref)),
+        ...rowsOf(sections, 'background').map((r) => String(r.ref)),
+        ...rowsOf(sections, 'process')
+          .filter((r) => r.kind === 'plan' || r.kind === 'decision')
+          .flatMap((r) => list(r.cites)),
+      ].filter((x) => /^[SPD]\d+$/.test(x)),
+    ),
+  ];
+  if (recorded.length) {
+    const kinds = [
+      recorded.some((x) => x.startsWith('S')) ? 'Requests' : '',
+      recorded.some((x) => x.startsWith('P')) ? 'plans' : '',
+      recorded.some((x) => x.startsWith('D')) ? 'decisions' : '',
+    ].filter(Boolean);
+    const what = kinds.join('/');
+    out.push({
+      kind: 'recorded requests',
+      text: `${what[0]!.toUpperCase()}${what.slice(1)} were recorded (${recorded.slice(0, 6).join(', ')}): don't say none was recorded.`,
+      cites: recorded.slice(0, 6),
+    });
+  }
 
   // Kept short: "new" for existing code is rare in judged errors.
   const existing = existingSymbols(sections).filter((x) => x.length >= 4);
