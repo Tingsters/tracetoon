@@ -32,6 +32,16 @@ import {
   type GraphOutcome,
 } from '../graph/evidence.ts';
 import { parseLayout, runLayout, saveRunLayout } from '../graph/layout.ts';
+import {
+  loadReviewPlan,
+  planEnforced,
+  planFromOptions,
+  planSummary,
+  requiredPasses,
+  saveReviewPlan,
+  type PlanOptions,
+  type ReviewPlan,
+} from '../contribution/reviewPlan.ts';
 
 export interface ScanOpts extends OutOpts {
   base?: string;
@@ -372,16 +382,36 @@ export function contextCmd(
  * write the description themselves often go from `prepare` straight to the
  * body, past the skill's drafter instructions.
  */
-export function graphNext(run: string): string {
-  return `take the reviewed brief path (SKILL step 2b): draft title.txt and body.md yourself from the evidence brief (\`tracetoon query brief --run ${run}\`) and the patch, following references/drafting.md; run the repository's required checks once with tracetoon check; \`tracetoon render --check --json --run ${run}\` until nothing is listed; then \`tracetoon render --json --run ${run}\` and \`tracetoon review-packet --lean --run ${run}\`; one fresh independent reviewer (not a fork) gets review-packet.md plus references/reviewer-lean.md and writes review-findings.json; \`tracetoon review import --run ${run} --agent-id <its id>\`; one correction round confirmed by the same reviewer; publish when the review is current. Read every command's whole output (no head or tail). Only on the user's request: the quick path (SKILL step 2a) or the three-role thorough path.`;
+export function graphNext(run: string, plan?: ReviewPlan): string {
+  const enforced = planEnforced(plan);
+  const settings = enforced
+    ? `${plan.reviewerModel ? ` on model ${plan.reviewerModel}` : ''}${plan.reviewerEffort ? ` at effort ${plan.reviewerEffort}` : ''}`
+    : '';
+  const flags = enforced
+    ? `${plan.reviewerModel ? ` --reviewer-model ${plan.reviewerModel}` : ''}${plan.reviewerEffort ? ` --reviewer-effort ${plan.reviewerEffort}` : ''}`
+    : '';
+  const review = !enforced
+    ? `\`tracetoon review-packet --lean --run ${run}\`; one fresh independent reviewer (not a fork) gets review-packet.md plus references/reviewer-lean.md and writes review-findings.json; \`tracetoon review import --run ${run} --agent-id <its id>\`; one correction round confirmed by the same reviewer`
+    : plan.lenses.length
+      ? `for each lens ${plan.lenses.join(', ')}: \`tracetoon review-packet --lean --lens <lens> --run ${run}\`; start one fresh reviewer per lens IN PARALLEL${settings} (packet plus references/reviewer-lens-<lens>.md); import each with \`tracetoon review import --run ${run} --lens <lens> --agent-id <its id>${flags}\`; one correction round, then \`render --json\` and \`review import --run ${run} --rebind\`${requiredPasses(plan) > plan.lenses.length ? `; ${requiredPasses(plan) - plan.lenses.length} more fresh reviewer pass(es) after that` : ''}`
+      : `\`tracetoon review-packet --lean --run ${run}\`; ${requiredPasses(plan)} fresh reviewer pass(es), each a NEW reviewer${settings} (packet plus references/reviewer-lean.md), one after another with a correction round between; import each with \`tracetoon review import --run ${run} --agent-id <its id>${flags}\``;
+  return `take the reviewed brief path (SKILL step 2b): draft title.txt and body.md yourself from the evidence brief (\`tracetoon query brief --run ${run}\`) and the patch, following references/drafting.md; run the repository's required checks once with tracetoon check; \`tracetoon render --check --json --run ${run}\` until nothing is listed; then \`tracetoon render --json --run ${run}\` and ${review}; publish when the review is current${enforced ? ` (publish refuses until the review plan is met: ${planSummary(plan)})` : ''}. Read every command's whole output (no head or tail). Only on the user's request: the quick path (SKILL step 2a) or the three-role thorough path.`;
 }
 
-export function prepareCmd(cwd: string, opts: DigestOpts) {
+export function prepareCmd(cwd: string, opts: DigestOpts & PlanOptions) {
+  let plan: ReviewPlan | undefined;
+  try {
+    plan = planFromOptions(opts);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
   const repo = repository(cwd);
   const before = workFingerprint(repo.root);
   const shared = scan(cwd, { base: opts.base, noGh: opts.offline });
   const prepared = digestCmd(cwd, opts, shared, false);
   const context = contextCmd(cwd, { ...opts, run: prepared.run.id }, prepared, false);
+  if (plan) saveReviewPlan(prepared.run, plan);
+  else plan = loadReviewPlan(prepared.run);
   if (workFingerprint(repo.root) !== before)
     throw new UserError(
       'Repository changed during preparation. Retained outputs are stale; prepare again after finalizing the changes.',
@@ -432,7 +462,8 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
     opts,
     {
       run: prepared.run.id,
-      ...(prepared.graph ? { next: graphNext(prepared.run.id) } : {}),
+      ...(prepared.graph ? { next: graphNext(prepared.run.id, plan) } : {}),
+      ...(planEnforced(plan) ? { reviewPlan: plan } : {}),
       // One JSON line, so piping through `head` still shows the whole map.
       ...(prepared.brief ? { brief: prepared.brief } : {}),
       runDir: prepared.run.dir,
@@ -444,7 +475,7 @@ export function prepareCmd(cwd: string, opts: DigestOpts) {
     () =>
       [
         `Run ${prepared.run.id}: digest, context and role-packets.json prepared from one snapshot.`,
-        prepared.graph ? `Next: ${graphNext(prepared.run.id)}` : '',
+        prepared.graph ? `Next: ${graphNext(prepared.run.id, plan)}` : '',
         prepared.brief ? `Evidence brief:\n${prepared.brief}` : '',
       ]
         .filter(Boolean)

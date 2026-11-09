@@ -21,10 +21,23 @@ import { parseBodyReview } from '../contribution/bodyReview.ts';
 import {
   FINDINGS_FILE,
   leanToReview,
+  locateQuote,
   parseFindings,
   placeholderAgentId,
   type ImportContext,
+  type LeanFinding,
+  type LeanFindings,
 } from '../contribution/leanReview.ts';
+import {
+  loadReviewPlan,
+  parseEffort,
+  parseLens,
+  planEnforced,
+  planMissing,
+  planSummary,
+  type ReviewLens,
+  type ReviewPass,
+} from '../contribution/reviewPlan.ts';
 import type { CodeSources } from './source.ts';
 import { loadGuidance } from '../contribution/guidance.ts';
 import type {
@@ -44,6 +57,9 @@ import { repository } from '../workflow/state.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
 export const PACKET_FILE = 'review-packet.md';
+/** The packet file for a lens reviewer (review-packet-a.md), or the default packet. */
+export const packetFile = (lens?: string) =>
+  lens ? `review-packet-${lens}.md` : PACKET_FILE;
 /** Whole-diff budget: a reduced patch at or under this many characters is shown entire. */
 export const WHOLE_DIFF_CHARS = 16_000;
 
@@ -66,7 +82,43 @@ export interface PacketInput {
   brief?: Section[];
   /** Commit-message row ref → the hunks it describes, shown as `→ H#`. */
   hunkLinks?: Record<string, string[]>;
+  /** A lens reviewer's packet: its checklist first, brief rows it doesn't use left out. */
+  lens?: ReviewLens;
 }
+
+/** What each lens checks, printed at the top of its packet. */
+export const LENS_CHECKLISTS: Record<
+  ReviewLens,
+  { title: string; rows?: string[]; check: string[] }
+> = {
+  a: {
+    title: 'Lens A: place',
+    rows: ['changes', 'commitMessages'],
+    check: [
+      '- Each file, function, type or command the body names: is it where "Hunks and owning symbols" shows that behavior? A behavior credited to the wrong file or function is `contradicted`.',
+      '- "new"/"added"/"introduces" only for symbols in `new:`; "existing"/"already"/"extends" only for symbols not in `new:`.',
+      '- A fact only a commit message states (implementedBy: none found) written as code fact.',
+    ],
+  },
+  b: {
+    title: 'Lens B: scope words, old behavior, housekeeping',
+    rows: ['changes', 'commitMessages', 'tests'],
+    check: [
+      '- only, just, always, every, all, never, no longer: find the branch, default, fallback or caller that takes another path.',
+      '- "previously", "used to", "before", "was", "no longer": the old behavior must match removed (-) lines or a `was:` row; invented old behavior is `unsupported`.',
+      '- Housekeeping claims (version bump, generated or lock files, renames, docs, formatting, "no other changes") vs the diff and the omitted files.',
+    ],
+  },
+  c: {
+    title: 'Lens C: omissions',
+    check: [
+      '- Motive or trigger: a background, request or why row explains the change but the body never says why.',
+      '- Open limits and uncertainties the body leaves out, or turns into certainty.',
+      '- Failure-then-pass history in process rows (what broke, what fixed it) the body skips.',
+      '- Paths no test or receipt covers, described as verified.',
+    ],
+  },
+};
 
 export interface Packet {
   text: string;
@@ -123,9 +175,11 @@ const oneLine = (v: unknown, max = 400) => {
 function briefLines(
   brief: Section[] | undefined,
   hunkLinks: Record<string, string[]> = {},
+  only?: string[],
 ): string[] {
   if (!brief) return ['(No evidence graph for this run: check claims against the diff.)'];
-  const rows = (t: string) => brief.find((s) => s.title === t)?.rows ?? [];
+  const rows = (t: string) =>
+    only && !only.includes(t) ? [] : (brief.find((s) => s.title === t)?.rows ?? []);
   const out: string[] = [];
   const changes = rows('changes');
   if (changes.length) {
@@ -282,12 +336,27 @@ export function leanPacket(input: PacketInput): Packet {
   );
   const shownIds = new Set(shown.map((h) => h.id));
 
+  const lens = input.lens ? LENS_CHECKLISTS[input.lens] : undefined;
   const out: string[] = [
-    `# Lean review packet: run ${input.runId}`,
+    `# Lean review packet: run ${input.runId}${lens ? ` (${lens.title})` : ''}`,
     '',
     `review-input fingerprint: ${input.fingerprint}`,
     'Cite: body:N (body line), diff:N (changes.patch line, left of each diff line), brief refs (CH#, commit:<sha>#n, L#, T#, S#, P#, D#, PR#), or path:line.',
     '',
+    ...(lens
+      ? [
+          `## ${lens.title}: checklist`,
+          '',
+          'Check only these; at most 6 findings.',
+          ...lens.check,
+          ...(lens.rows
+            ? [
+                `(Brief rows shown: ${lens.rows.join(', ')}; the others are left out for this lens.)`,
+              ]
+            : []),
+          '',
+        ]
+      : []),
     '## Title',
     '',
     input.title,
@@ -298,7 +367,7 @@ export function leanPacket(input: PacketInput): Packet {
     '',
     '## Brief rows',
     '',
-    ...briefLines(input.brief, input.hunkLinks),
+    ...briefLines(input.brief, input.hunkLinks, lens?.rows),
     '',
     '## Hunks and owning symbols',
     '',
@@ -369,12 +438,18 @@ function storedBrief(
 
 export function reviewPacketCmd(
   cwd: string,
-  opts: OutOpts & { run?: string; lean?: boolean },
+  opts: OutOpts & { run?: string; lean?: boolean; lens?: string },
 ): void {
   if (!opts.lean)
     throw new UserError(
       'Only the lean packet exists: run tracetoon review-packet --lean.',
     );
+  let lens: ReviewLens | undefined;
+  try {
+    lens = parseLens(opts.lens);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
   const { run } = openRun(cwd, opts.run);
   const { input, patch } = renderedInput(run);
   const graph = loadGraph(run);
@@ -389,10 +464,24 @@ export function reviewPacketCmd(
     graph,
     brief: parts?.sections,
     hunkLinks: parts?.hunkLinks,
+    ...(lens ? { lens } : {}),
   });
-  const path = join(run.dir, PACKET_FILE);
+  const path = join(run.dir, packetFile(lens));
   writeFileSync(path, packet.text, 'utf8');
-  emit(opts, { path, chars: packet.text.length, mode: packet.mode }, () => path);
+  emit(
+    opts,
+    {
+      path,
+      chars: packet.text.length,
+      mode: packet.mode,
+      ...(lens ? { lens, findingsFile: join(run.dir, lensFindingsFile(lens)) } : {}),
+    },
+    () =>
+      lens
+        ? `${path}
+The lens ${lens} reviewer writes ${join(run.dir, lensFindingsFile(lens))}; import it with tracetoon review import --run ${run.id} --lens ${lens} --agent-id <its id>.`
+        : path,
+  );
 }
 
 const NO_GUIDANCE: GuidanceResult = { status: 'missing', issues: [], sha256: '' };
@@ -426,46 +515,149 @@ function incompleteReasons(run: Run, root: string, input: ReviewInput): string[]
   return reasons;
 }
 
-export function importLeanReview(
-  run: Run,
-  root: string,
-  opts: { findings?: string; agentId?: string; reviewerModel?: string },
-): {
-  path: string;
-  warnings: string[];
-  incomplete: string[];
-  /** reviewer.model as recorded in review.json; null when none was given. */
-  reviewerModel: string | null;
-} {
-  const { input, patch } = renderedInput(run);
-  const file = opts.findings
-    ? isAbsolute(opts.findings)
-      ? opts.findings
-      : resolve(opts.findings)
-    : join(run.dir, FINDINGS_FILE);
+/** Every imported pass with its findings, so each import can rebuild review.json from all of them. */
+export const PASSES_FILE = 'review-passes.json';
+interface StoredPass extends ReviewPass {
+  raw: LeanFindings;
+}
+const loadPasses = (run: Run): StoredPass[] =>
+  readJson<{ passes?: StoredPass[] }>(run, PASSES_FILE)?.passes ?? [];
+const passSummary = ({ raw: _raw, ...pass }: StoredPass): ReviewPass => pass;
+
+export interface ImportOptions {
+  findings?: string;
+  agentId?: string;
+  reviewerModel?: string;
+  reviewerEffort?: string;
+  /** Which pass this is (default: this reviewer's earlier pass with the same lens, else the next number). */
+  pass?: string | number;
+  lens?: string;
+  /** Rebuild review.json for the current render from the passes already imported. */
+  rebind?: boolean;
+}
+
+function readFindingsFile(file: string): ReturnType<typeof parseFindings> {
   if (!existsSync(file))
     throw new UserError(
-      `No findings file at ${file}. The reviewer writes ${FINDINGS_FILE}.`,
+      `No findings file at ${file}. The reviewer writes ${file.split(/[\\/]/).pop()}.`,
     );
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(file, 'utf8'));
   } catch (e) {
     throw new UserError(
-      `review-findings.json is not valid JSON: ${(e as Error).message}`,
+      `${file.split(/[\\/]/).pop()} is not valid JSON: ${(e as Error).message}`,
     );
   }
-  let parsed: ReturnType<typeof parseFindings>;
   try {
-    parsed = parseFindings(raw);
+    return parseFindings(raw);
   } catch (e) {
     throw new UserError((e as Error).message);
   }
-  const agentId = (opts.agentId ?? parsed.findings.reviewer.agentId).trim();
-  if (placeholderAgentId(agentId))
-    throw new UserError(
-      `"${agentId}" is not a real reviewer agent id. Pass the id your host reported for the reviewer (--agent-id <id>) or have the reviewer write it in review-findings.json.`,
-    );
+}
+
+/** The findings file a lens reviewer writes, so parallel reviewers don't overwrite each other. */
+export const lensFindingsFile = (lens?: string) =>
+  lens ? `review-findings-${lens}.json` : FINDINGS_FILE;
+
+export function importLeanReview(
+  run: Run,
+  root: string,
+  opts: ImportOptions,
+): {
+  path: string;
+  warnings: string[];
+  incomplete: string[];
+  /** reviewer.model as recorded in review.json; null when none was given. */
+  reviewerModel: string | null;
+  /** The pass this import recorded (undefined on --rebind). */
+  pass?: ReviewPass;
+  passes: ReviewPass[];
+  /** What the run's review plan still needs (empty when met or not enforced). */
+  planMissing: string[];
+} {
+  const { input, patch } = renderedInput(run);
+  const plan = loadReviewPlan(run);
+  const warnings: string[] = [];
+  let lens: ReviewLens | undefined;
+  let effort: string | undefined;
+  try {
+    lens = parseLens(opts.lens);
+    effort = parseEffort(opts.reviewerEffort);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
+  const stored = loadPasses(run);
+  let current: StoredPass | undefined;
+  if (opts.rebind) {
+    if (!stored.length)
+      throw new UserError(
+        'No reviewer pass has been imported for this run yet: import one before --rebind.',
+      );
+  } else {
+    if (plan?.lenses.length && !lens)
+      throw new UserError(
+        `This run's review plan has lenses ${plan.lenses.join(', ')}: import each reviewer with --lens <${plan.lenses.join('|')}>.`,
+      );
+    if (lens && plan?.lenses.length && !plan.lenses.includes(lens))
+      throw new UserError(
+        `Lens ${lens} is not in this run's review plan (lenses ${plan.lenses.join(', ')}).`,
+      );
+    const file = opts.findings
+      ? isAbsolute(opts.findings)
+        ? opts.findings
+        : resolve(opts.findings)
+      : join(run.dir, lensFindingsFile(lens));
+    const parsed = readFindingsFile(file);
+    warnings.push(...parsed.warnings);
+    const agentId = (opts.agentId ?? parsed.findings.reviewer.agentId).trim();
+    if (placeholderAgentId(agentId))
+      throw new UserError(
+        `"${agentId}" is not a real reviewer agent id. Pass the id your host reported for the reviewer (--agent-id <id>) or have the reviewer write it in ${lensFindingsFile(lens)}.`,
+      );
+    const model =
+      (opts.reviewerModel ?? parsed.findings.reviewer.model)?.trim() || undefined;
+    for (const [label, want, got, flag] of [
+      ['model', plan?.reviewerModel, model, '--reviewer-model'],
+      ['effort', plan?.reviewerEffort, effort, '--reviewer-effort'],
+    ] as const) {
+      if (!want) continue;
+      if (got && got !== want)
+        throw new UserError(
+          `This run's review plan names reviewer ${label} ${want}, but this reviewer ran with ${got}. Start a fresh reviewer with ${label} ${want} and import it with ${flag} ${want}.`,
+        );
+      if (!got)
+        warnings.push(
+          `No reviewer ${label} recorded; the plan needs ${want}: if the reviewer ran with it, import again with ${flag} ${want}, else start a fresh reviewer with it. Publishing refuses until then.`,
+        );
+    }
+    let pass: number;
+    if (opts.pass !== undefined) {
+      pass = Number(opts.pass);
+      if (!Number.isInteger(pass) || pass < 1)
+        throw new UserError(
+          `--pass must be a positive whole number, not "${opts.pass}".`,
+        );
+    } else
+      pass =
+        stored.find((p) => p.agentId === agentId && p.lens === lens)?.pass ??
+        Math.max(0, ...stored.map((p) => p.pass)) + 1;
+    const twin = stored.find((p) => p.agentId === agentId && p.pass !== pass);
+    if (twin)
+      warnings.push(
+        `Reviewer ${agentId} also made pass ${twin.pass}; the review plan counts distinct reviewer agents only.`,
+      );
+    current = {
+      pass,
+      agentId,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      ...(lens ? { lens } : {}),
+      findings: parsed.findings.findings.length,
+      importedAt: new Date().toISOString(),
+      raw: parsed.findings,
+    };
+  }
   const digest =
     readJson<TraceDigest>(run, 'digest-full.json') ??
     readJson<TraceDigest>(run, 'digest.json');
@@ -495,14 +687,42 @@ export function importLeanReview(
       !isAbsolute(p) && !p.split(/[\\/]/).includes('..') && existsSync(join(root, p)),
     checkpoints,
   };
+  const passes = [
+    ...stored.filter((p) => p.pass !== current?.pass),
+    ...(current ? [current] : []),
+  ].sort((a, b) => a.pass - b.pass);
+  // The current pass's findings must all match this render. Other passes'
+  // claims whose quote is gone from the body were fixed; the rest are merged.
+  const latest =
+    current ??
+    [...passes].sort((a, b) => a.importedAt.localeCompare(b.importedAt)).at(-1)!;
+  const merged: LeanFinding[] = current ? [...current.raw.findings] : [];
+  for (const p of passes) {
+    if (p === current) continue;
+    const kept = p.raw.findings.filter(
+      (f) => f.kind !== 'claim' || !!locateQuote(f.quote ?? '', input.title, input.body),
+    );
+    if (kept.length < p.raw.findings.length)
+      warnings.push(
+        `Pass ${p.pass}: ${p.raw.findings.length - kept.length} claim finding(s) whose quote is no longer in the body count as fixed.`,
+      );
+    merged.push(...kept);
+  }
+  const coldRead =
+    latest.raw.coldRead ?? passes.map((p) => p.raw.coldRead).find(Boolean) ?? undefined;
   let built: ReturnType<typeof leanToReview>;
   try {
     built = leanToReview(
-      parsed.findings,
-      agentId,
+      {
+        v: 1,
+        reviewer: { agentId: latest.agentId },
+        ...(coldRead ? { coldRead } : {}),
+        findings: merged,
+      },
+      latest.agentId,
       input.fingerprint,
       ctx,
-      opts.reviewerModel ?? parsed.findings.reviewer.model,
+      latest.model,
     );
     // The same check render applies, so render never finds the import invalid.
     parseBodyReview(built.review.bodyReview, contractRef, {
@@ -513,37 +733,44 @@ export function importLeanReview(
   } catch (e) {
     throw new UserError((e as Error).message);
   }
+  const summaries = passes.map(passSummary);
   const path = writeJson(run, 'review.json', {
     ...built.review,
-    importedFrom: FINDINGS_FILE,
+    importedFrom: lensFindingsFile(latest.lens),
+    passes: summaries,
   });
+  writeJson(run, PASSES_FILE, { v: 1, passes });
   return {
     path,
-    warnings: [...parsed.warnings, ...built.warnings],
+    warnings: [...warnings, ...built.warnings],
     incomplete: incompleteReasons(run, root, input),
     reviewerModel: built.review.reviewer.model ?? null,
+    ...(current ? { pass: passSummary(current) } : {}),
+    passes: summaries,
+    planMissing: planMissing(plan, summaries),
   };
 }
 
 export function reviewImportCmd(
   cwd: string,
-  opts: OutOpts & {
-    run?: string;
-    findings?: string;
-    agentId?: string;
-    reviewerModel?: string;
-  },
+  opts: OutOpts & ImportOptions & { run?: string },
 ): void {
   const { run, root } = openRun(cwd, opts.run);
   const result = importLeanReview(run, root, opts);
   const next = `tracetoon render --json --run ${run.id}`;
+  const plan = loadReviewPlan(run);
   emit(opts, { ...result, next }, () =>
     [
-      `Wrote ${result.path}.`,
+      `Wrote ${result.path}${result.pass ? ` (pass ${result.pass.pass}${result.pass.lens ? `, lens ${result.pass.lens}` : ''}; ${result.passes.length} pass(es) recorded)` : ` (rebuilt from ${result.passes.length} pass(es))`}.`,
       `Reviewer model: ${result.reviewerModel ?? 'not recorded (pass --reviewer-model <name> when SKILL.md names one)'}.`,
       ...result.warnings.map((w) => `  warning: ${w}`),
       result.incomplete.length
         ? `Render will report the review incomplete (publishing still allowed): ${result.incomplete.join('; ')}.`
+        : '',
+      planEnforced(plan)
+        ? result.planMissing.length
+          ? `Review plan (${planSummary(plan)}) still needs:\n${result.planMissing.map((m) => `  - ${m}`).join('\n')}`
+          : `Review plan (${planSummary(plan)}): met.`
         : '',
       `Next: ${next}`,
     ]
