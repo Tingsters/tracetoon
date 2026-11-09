@@ -10,8 +10,17 @@
  */
 import { readJson, writeJson, type Run } from '../run.ts';
 
-export type BriefLayout = 'toon' | 'neighborhood';
-export const BRIEF_LAYOUTS: readonly BriefLayout[] = ['toon', 'neighborhood'];
+export type BriefLayout = 'toon' | 'neighborhood' | 'neighborhood-wide';
+export const BRIEF_LAYOUTS: readonly BriefLayout[] = [
+  'toon',
+  'neighborhood',
+  'neighborhood-wide',
+];
+
+/** Both neighborhood layouts; `neighborhood-wide` packs to the full budget instead of the TOON size. */
+export function isNeighborhood(layout: BriefLayout | undefined): boolean {
+  return layout === 'neighborhood' || layout === 'neighborhood-wide';
+}
 export const LAYOUT_FILE = 'brief-layout.json';
 
 /** A `--layout` value, checked; undefined when none was given. */
@@ -27,7 +36,7 @@ export function parseLayout(value: unknown): BriefLayout | undefined {
 /** The layout `prepare` chose for this run (toon when none was chosen). */
 export function runLayout(run: Run): BriefLayout {
   const stored = readJson<{ layout?: string }>(run, LAYOUT_FILE)?.layout;
-  return stored === 'neighborhood' ? 'neighborhood' : 'toon';
+  return stored === 'neighborhood' || stored === 'neighborhood-wide' ? stored : 'toon';
 }
 
 export function saveRunLayout(run: Run, layout: BriefLayout): void {
@@ -41,9 +50,11 @@ export function saveRunLayout(run: Run, layout: BriefLayout): void {
  * run (`matchToon`). TRACETOON_BRIEF_BUDGET sets a fixed budget instead.
  */
 export const BRIEF_BUDGET_TOKENS = 1500;
-export function briefBudget(): { tokens: number; matchToon: boolean } {
+export function briefBudget(layout?: BriefLayout): {
+  tokens: number;
+  matchToon: boolean;
+} {
   const fixed = Number(process.env.TRACETOON_BRIEF_BUDGET);
-  return fixed > 0
-    ? { tokens: fixed, matchToon: false }
-    : { tokens: BRIEF_BUDGET_TOKENS, matchToon: true };
+  if (fixed > 0) return { tokens: fixed, matchToon: false };
+  return { tokens: BRIEF_BUDGET_TOKENS, matchToon: layout !== 'neighborhood-wide' };
 }

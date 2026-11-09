@@ -97,8 +97,9 @@ reviewer separate.
    - When you suggest a command for the user to run themselves, use
      `command.run` from `tracetoon status --json` (the launcher's full path if
      `tracetoon` isn't on their PATH).
-2. **Prepare.** `tracetoon prepare --json` (add `--run <id>` to reuse the run
-   from step 0). It prints the run folder and the digest path. Run it as its
+2. **Prepare.** `tracetoon prepare --json --layout <layout>`, with the layout
+   from the `Brief layout:` line near the end of this file (add `--run <id>` to
+   reuse the run from step 0). It prints the run folder and the digest path. Run it as its
    own command, after any `git commit`, never chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
    Keep the selected run ID and pass `--run <id>` to subsequent commands that
@@ -131,7 +132,6 @@ reviewer separate.
      [references/drafting.md](references/drafting.md) and
      [references/reviewer-lean.md](references/reviewer-lean.md) here; don't read
      contribution-workflow.md on this path.
-     Pass the 'Brief layout' value to `tracetoon prepare --layout`.
      1. Read the brief and `context.json`; apply step 3's AI-policy bullets.
         Find the checks the repository requires (contributing guide, CI config)
         yourself; there is no separate researcher.

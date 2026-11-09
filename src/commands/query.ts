@@ -1,7 +1,7 @@
 /** `tracetoon query`: ask a run's evidence graph a named question or read-only Cypher. */
 import { GraphError, withGraph } from '../graph/engine.ts';
 import { graphBrief, loadGraph } from '../graph/evidence.ts';
-import { parseLayout, runLayout } from '../graph/layout.ts';
+import { isNeighborhood, parseLayout, runLayout } from '../graph/layout.ts';
 import {
   briefParts,
   findQuery,
@@ -20,7 +20,7 @@ export interface QueryOpts extends OutOpts {
   cypher?: string;
   params?: string;
   all?: boolean;
-  /** `query brief` only: toon or neighborhood (default: the layout `prepare` chose). */
+  /** `query brief` only: toon, neighborhood or neighborhood-wide (default: the layout `prepare` chose). */
   layout?: string;
 }
 
@@ -81,7 +81,7 @@ export function queryCmd(cwd: string, words: string[], opts: QueryOpts): void {
   let sections: Section[];
   try {
     sections = withGraph(graph, (g) =>
-      layout === 'neighborhood'
+      isNeighborhood(layout)
         ? briefParts(g, { layout }).sections
         : named
           ? named.run(g, args)
@@ -92,7 +92,7 @@ export function queryCmd(cwd: string, words: string[], opts: QueryOpts): void {
     throw e;
   }
   count('graph.queries');
-  const briefText = layout === 'neighborhood' ? graphBrief(graph, { layout }) : undefined;
+  const briefText = isNeighborhood(layout) ? graphBrief(graph, { layout }) : undefined;
   emit(
     opts,
     {

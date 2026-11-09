@@ -474,3 +474,24 @@ describe('brief layout selection', () => {
     );
   });
 });
+
+describe('neighborhood-wide layout', () => {
+  test('packs to the fixed budget instead of the TOON size', async () => {
+    const { briefBudget, isNeighborhood, parseLayout } =
+      await import('../src/graph/layout.ts');
+    expect(parseLayout('neighborhood-wide')).toBe('neighborhood-wide');
+    expect(isNeighborhood('neighborhood-wide')).toBe(true);
+    expect(isNeighborhood('toon')).toBe(false);
+    const saved = process.env.TRACETOON_BRIEF_BUDGET;
+    delete process.env.TRACETOON_BRIEF_BUDGET;
+    try {
+      expect(briefBudget('neighborhood').matchToon).toBe(true);
+      expect(briefBudget('neighborhood-wide')).toEqual({
+        tokens: 1500,
+        matchToon: false,
+      });
+    } finally {
+      if (saved !== undefined) process.env.TRACETOON_BRIEF_BUDGET = saved;
+    }
+  });
+});

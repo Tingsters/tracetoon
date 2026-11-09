@@ -21,7 +21,7 @@ import { briefParts, findQuery } from './queries.ts';
 import type { BriefParts } from './briefRender.ts';
 import { toToon } from './toon.ts';
 import { renderNeighborhood } from './neighborhood.ts';
-import { briefBudget, type BriefLayout } from './layout.ts';
+import { briefBudget, isNeighborhood, type BriefLayout } from './layout.ts';
 
 export const GRAPH_FILE = 'evidence-graph.json';
 export const GRAPH_REVIEW_FILE = 'graph-review.json';
@@ -177,10 +177,10 @@ export function graphBrief(
 ): string | undefined {
   const rowCap = opts.rowCap ?? 60;
   try {
-    if (opts.layout === 'neighborhood')
+    if (isNeighborhood(opts.layout))
       return withGraph(graph, (g) => {
         const { sections } = briefParts(g, { layout: 'neighborhood' });
-        const budget = briefBudget();
+        const budget = briefBudget(opts.layout);
         // As long as the TOON brief of the same run, so the layouts compare at equal size.
         const targetChars = budget.matchToon
           ? toToon(

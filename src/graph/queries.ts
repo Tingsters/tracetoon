@@ -6,7 +6,7 @@
 import { GraphError, type GraphEngine } from './engine.ts';
 import { shownCommand } from './briefRender.ts';
 import { SCHEMA_DOC } from './model.ts';
-import type { BriefLayout } from './layout.ts';
+import { isNeighborhood, type BriefLayout } from './layout.ts';
 
 export interface Section {
   title: string;
@@ -1023,10 +1023,9 @@ export function briefParts(
       link(m.id, String(k.commit), m.text);
     }
   }
-  const hunkSection =
-    opts.layout === 'neighborhood'
-      ? hunkRowsFor(g, changeRows, hunkRows, hunkLinks, seen, fileRole)
-      : [];
+  const hunkSection = isNeighborhood(opts.layout)
+    ? hunkRowsFor(g, changeRows, hunkRows, hunkLinks, seen, fileRole)
+    : [];
   for (const r of changeRows) {
     const links = asked.filter((a) => a.change === r.change);
     (r as Record<string, unknown>).requests = links
@@ -1299,7 +1298,7 @@ export function briefParts(
       backgroundRows(g, turns, new Set(requests.map((r) => String(r.ref)))),
     ),
     section('commitMessages', ['ref', 'text', 'implementedBy'], commitText),
-    ...(opts.layout === 'neighborhood'
+    ...(isNeighborhood(opts.layout)
       ? [
           section(
             'hunks',

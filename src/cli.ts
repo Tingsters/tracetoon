@@ -177,7 +177,7 @@ program
   .option('--all', `print every row (default: at most ${ROW_CAP} per section)`)
   .option(
     '--layout <layout>',
-    'brief only: toon or neighborhood (default: the layout prepare chose for the run)',
+    'brief only: toon, neighborhood or neighborhood-wide (default: the layout prepare chose for the run)',
   )
   .action((words, o) => queryCmd(cwd, words ?? [], { ...g(), ...o }));
 
@@ -192,7 +192,7 @@ program
   .option('--offline', 'disable GitHub lookups and external contributor research')
   .option(
     '--layout <layout>',
-    'evidence brief layout for this run: toon (default) or neighborhood; later commands use it',
+    'evidence brief layout for this run: toon (default), neighborhood or neighborhood-wide; later commands use it',
   )
   .action((o) => {
     prepareCmd(cwd, { ...g(), ...o });
