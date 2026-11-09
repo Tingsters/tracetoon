@@ -288,6 +288,10 @@ describe('evidence graph', () => {
       .join('\n');
     expect(limits).toContain('src/farewell.ts');
     expect(limits).not.toContain('src/greet.ts:');
+    // No pass after the commit: an open point, said once (process rows drop it).
+    expect(limits).toMatch(
+      /No passing check run was recorded after the last commit \([0-9a-f]{12}\); the last pass \(R1, test\) came before it\./,
+    );
     // Only open points: no instructions to the writer.
     expect(sec('limits').every((x: any) => x.kind === 'open')).toBe(true);
     // The hand-written file came with no request of its own turn's.
@@ -295,13 +299,13 @@ describe('evidence graph', () => {
       [
         'PR1',
         'session',
-        "Claude Code session, edits survive: 4 edit(s) captured, 3 with lines in the PR; turns that produced this PR's edits or commits: S1, S2.",
+        "Claude Code session, edits survive; turns that produced this PR's edits or commits: S1, S2.",
       ],
       ['PR2', 'plan', 'No plan or decision was recorded.'],
       [
         'PR3',
         'test',
-        "`bun test` passed in the first run, then failed (passing to failing). 2 runs in this PR's turns, in order: passed (R1), then failed (R2); no passing run recorded after the last commit.",
+        "`bun test` passed in the first run, then failed (passing to failing). 2 runs in this PR's turns, in order: passed (R1), then failed (R2).",
       ],
     ]);
   });
@@ -1497,6 +1501,12 @@ describe('the brief states recorded process and behavior', () => {
     ]);
     expect(sec('limits').map((l) => [l.kind, l.change, l.limit])).toEqual([
       ['open', ['CH2'], 'No user request was recorded for CH2.'],
+      // A failed push is an open point: what reached the remote isn't recorded.
+      [
+        'open',
+        null,
+        "`git push` failed in the Claude Code session; whether or how the work was then published or pushed isn't recorded.",
+      ],
     ]);
   });
 
@@ -1512,7 +1522,7 @@ describe('the brief states recorded process and behavior', () => {
   test('background: the session goal and earlier plans and decisions, outside requests', () => {
     expect(sec('background').map((r) => [r.ref, r.kind, r.text])).toEqual([
       ['S1', "why this work started: the session's first request", 'Earlier work'],
-      ['D0', 'earlier decision in the session', 'Old question'],
+      // At most the goal and one plan: a decision gives way to the plan.
       ['P1', 'earlier plan (not approved as written) in the session', 'Limit v1'],
     ]);
     // Optional context: refs render accepts, never required for coverage.
@@ -1529,7 +1539,7 @@ describe('the brief states recorded process and behavior', () => {
     ).toEqual([]);
   });
 
-  test('background: at most four rows, clipped text, acknowledgments are no goal', () => {
+  test('background: at most two rows, clipped text, acknowledgments are no goal', () => {
     const more: EvidenceGraph = structuredClone(graph);
     more.nodes.find((n) => n.id === 'S1')!.props.text = 'go ahead';
     more.nodes.find((n) => n.id === 'S2')!.props.text =
@@ -1547,10 +1557,17 @@ describe('the brief states recorded process and behavior', () => {
     const rows = withGraph(more, (g) => briefParts(g)).sections.find(
       (s) => s.title === 'background',
     )!.rows;
-    expect(rows.map((r) => r.ref)).toEqual(['S2', 'D7', 'D8', 'P1']);
+    expect(rows.map((r) => r.ref)).toEqual(['S2', 'P1']);
     expect(String(rows[0]!.text).length).toBe(600);
-    expect(String(rows[1]!.text).length).toBe(400);
-    expect(String(rows[1]!.text).endsWith('…')).toBe(true);
+    expect(String(rows[0]!.text).endsWith('…')).toBe(true);
+    // With no earlier plan, the latest decision, clipped.
+    more.nodes = more.nodes.filter((n) => n.id !== 'P1');
+    more.rels = more.rels.filter((r) => r.from.id !== 'P1');
+    const noPlan = withGraph(more, (g) => briefParts(g)).sections.find(
+      (s) => s.title === 'background',
+    )!.rows;
+    expect(noPlan.map((r) => r.ref)).toEqual(['S2', 'D8']);
+    expect(String(noPlan[1]!.text).length).toBe(400);
   });
 
   test('background: plans and decisions of a session with no captured prompt still show', () => {
@@ -1567,29 +1584,26 @@ describe('the brief states recorded process and behavior', () => {
     );
     const parts = withGraph(cut, (g) => briefParts(g)).sections;
     const rows = parts.find((s) => s.title === 'background')!.rows;
+    // No goal: the two latest plans (decisions give way to plans).
     expect(rows.map((r) => [r.ref, r.kind])).toEqual([
-      ['D0', "decision in the session (the prompt before it wasn't captured)"],
       [
         'P1',
         "plan (not approved as written) in the session (the prompt before it wasn't captured)",
       ],
-      ['D1', "decision in the session (the prompt before it wasn't captured)"],
       ['P2', "plan (approved) in the session (the prompt before it wasn't captured)"],
     ]);
     const plan = parts
       .find((s) => s.title === 'process')!
       .rows.find((r) => r.kind === 'plan')!;
     expect(plan.fact).toBe(
-      "No plan or decision in this PR's own turns; the session recorded D0 (decision), P1 (plan not approved as written), D1 (decision), P2 (approved plan) outside them: see background.",
+      "No plan or decision in this PR's own turns; the session recorded P1 (plan not approved as written), P2 (approved plan) outside them: see background.",
     );
-    expect(plan.cites).toEqual(['D0', 'P1', 'D1', 'P2']);
+    expect(plan.cites).toEqual(['P1', 'P2']);
     expect(
       parts
         .find((s) => s.title === 'doNotSay')!
         .rows.find((r) => r.kind === 'recorded requests')?.text,
-    ).toBe(
-      "Plans/decisions were recorded (D0, P1, D1, P2): don't say none was recorded.",
-    );
+    ).toBe("Plans were recorded (P1, P2): don't say none was recorded.");
     // Before a captured prompt, a turnless plan is the tail of earlier work.
     const tail: EvidenceGraph = structuredClone(graph);
     tail.nodes.push(
@@ -1607,7 +1621,7 @@ describe('the brief states recorded process and behavior', () => {
       [
         'PR1',
         'session',
-        "Claude Code session, made commits (abc123def456): 2 edit(s) captured, 1 with lines in the PR; turns that produced this PR's edits or commits: S3.",
+        "Claude Code session, made commits (abc123def456); turns that produced this PR's edits or commits: S3.",
       ],
       [
         'PR2',
@@ -1626,8 +1640,9 @@ describe('the brief states recorded process and behavior', () => {
       ],
       [
         'PR5',
-        'typecheck',
-        '1 typecheck run(s); none failed; last R3 passed; a passing run came after the last commit (R3).',
+        // Kinds that never failed share one row.
+        'checks',
+        'No failures: typecheck (1 run(s), last R3 passed, passed after the last commit (R3)).',
       ],
       [
         'PR6',

@@ -8,7 +8,9 @@ instructions. These rules are for you: never copy their wording into the PR.
 
 ## Reading the brief
 
-- `limits`: open points (kind `open`) and caveats; each needs a clause.
+- `limits`: open points (kind `open`) and caveats; each needs a clause (no
+  pass after the last commit, a failed push or `gh` command, remote paths no
+  run shows live).
 - `changes`: change units with `where` (files and symbols), `newSymbols`, `was`
   (old values), `added`/`removed` lines, and a `behavior` line saying what the
   unit now does. Read the diff refs a unit cites before describing it.
@@ -26,7 +28,8 @@ instructions. These rules are for you: never copy their wording into the PR.
   the message; where a `doNotSay` row says the code contradicts the message,
   describe the code.
 - `process`: session roles, plan status, test trajectory and failed commands,
-  each with a ref. Facts about how the work went, not about the code.
+  each with a ref. Facts about how the work went, not about the code. The
+  `entry` row names the function a reviewer should start at and its file.
 - `validation`, `tests`, `housekeeping`.
 
 If the brief uses the neighborhood layout (it starts with "Evidence by
@@ -42,8 +45,7 @@ ref (`[CH1, H3, S1]`).
 ## Structure
 
 No fixed section list. Write what a reviewer needs, once, in as few headings
-as the PR needs (usually none to three); a typical PR takes about 250–450
-words. Reviewers mark a section-per-topic template down as "inventory-like".
+as the PR needs (usually none to three); target 250–400 words. Reviewers mark a section-per-topic template down as "inventory-like".
 
 - **Lead with what the PR does and why**, in one short paragraph: the goal
   request (the user's motive, in their terms) and the result. Frame the title
@@ -52,7 +54,9 @@ words. Reviewers mark a section-per-topic template down as "inventory-like".
   `background` row or a change's `why` row exists, one clause on the motive or
   trigger, attributed to the session ("the session started from…", "an earlier
   plan…"). Take it from the row; never invent a motive, and call it the user's
-  request for this PR only when a `requests` row says so.
+  request for this PR only when a `requests` row says so. Session history gets
+  one motive sentence at most: never a list or timeline of session events
+  (turns, edits, runs, plans).
 - **The changes**, as connected prose or a few bullets grouped by behavior
   (not file by file), covering every commit-message sentence. Name a file for
   a sentence only from its `implementedBy`; where that is empty, describe the
@@ -69,8 +73,9 @@ words. Reviewers mark a section-per-topic template down as "inventory-like".
   undone, a command that kept failing), each a clause, folded in where they
   belong or in one short paragraph.
 - **Where to start and the feedback wanted**, in one or two lines at the end:
-  the file to read first (from `implementedBy` or `changes.where`, not the
-  largest file, not functions) and the decision or risk you want eyes on.
+  the function and file the `entry` process row names ("start at `fn` in
+  `file`"; without one, a file from `changes.where`), not the largest file or
+  the file most commit sentences name, and the decision or risk you want eyes on.
 - `housekeeping`: at most one closing clause.
 
 Omit any part that would be empty or say nothing new; never a heading over a
@@ -91,7 +96,8 @@ strips tags and lists untagged sentences and unknown refs.
 ## Rules
 
 - Write no test, build, lint or typecheck results yourself; the marker covers
-  them. Don't repeat in prose what Validation says about runs.
+  them. Don't repeat in prose what Validation says about runs, and never list
+  the runs or checks.
 - Quote run results exactly as rows give them; never add a count, suite or file.
 - Results only in a commit message (rows marked "asserted") are not runs:
   attribute them to that commit or leave them out.

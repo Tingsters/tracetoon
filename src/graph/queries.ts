@@ -17,6 +17,13 @@ import {
 import { fileRole as pathRole } from '../digest/build.ts';
 import { isNeighborhood, type BriefLayout } from './layout.ts';
 import { addSearchEvidence, fillSearchLinks } from './searchBrief.ts';
+import {
+  capLimits,
+  entryRow,
+  failedPublishRows,
+  noPassAfterCommitRow,
+  remotePathRows,
+} from './briefExtras.ts';
 
 export interface Section {
   title: string;
@@ -530,8 +537,8 @@ const includedSession = (g: GraphEngine, id: unknown) =>
   g.run(`MATCH (s:Session {band: 'included'}) WHERE s.id = $id RETURN s.id AS id`, {
     id: String(id),
   }).rows.length > 0;
-/** At most this many background rows. */
-const MAX_BACKGROUND = 4;
+/** At most this many background rows: the goal and one plan (else decision). */
+const MAX_BACKGROUND = 2;
 
 /**
  * How the work came about, from the included sessions, when this PR's own
@@ -540,8 +547,8 @@ const MAX_BACKGROUND = 4;
  * they didn't produce this PR's edits. Facts the writer covers in a sentence
  * on why the work started, attributed to the session (the first request is
  * the session's, which this PR's own turns may have narrowed); refs already
- * in `requests` are skipped. At most four rows: the
- * goals first, then the latest earlier plans and decisions, in time order.
+ * in `requests` are skipped. At most two rows, one motive sentence's worth:
+ * the goal, then the latest earlier plan (else decision).
  */
 export function backgroundRows(
   g: GraphEngine,
@@ -616,9 +623,16 @@ export function backgroundRows(
       text: clipText(String(x.text ?? '').trim(), 400),
       t: x.t,
     }));
-  const goalRows = goals.slice(0, MAX_BACKGROUND);
+  // One motive sentence's worth: the goal, then the latest earlier plan (its
+  // approval or rejection says how the work was steered), else the latest decision.
+  const goalRows = goals.slice(0, MAX_BACKGROUND - 1);
   const room = MAX_BACKGROUND - goalRows.length;
-  const factRows = room > 0 ? earlier.slice(-room) : [];
+  const plans = earlier.filter((x) => x.kind.includes('plan'));
+  const others = earlier.filter((x) => !x.kind.includes('plan'));
+  const factRows =
+    room > 0
+      ? [...plans.slice(-room), ...others.slice(-room)].slice(0, room).sort(byTime)
+      : [];
   return [...goalRows, ...factRows].map(({ ref, kind, text }) => ({ ref, kind, text }));
 }
 
@@ -664,6 +678,8 @@ function processRows(
   turns: PrTurns,
   checkRuns: Record<string, unknown>[],
   background: Set<string> = new Set(),
+  /** A `limits` row already says no pass came after the last commit. */
+  noPassLimit = false,
 ): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   const add = (kind: string, fact: string, cites: string[] = []) =>
@@ -710,7 +726,8 @@ function processRows(
       .map((p) => p.id);
     add(
       'session',
-      `${String(s.agent)} session, ${role}${commits.length ? ` (${commits.join(', ')})` : ''}: ${edits} edit(s) captured, ${surviving} with lines in the PR${s.band !== 'included' ? '; matched ambiguously, so not used as evidence' : ''}${asked.length ? `; turns that produced this PR's edits or commits: ${refs(asked, 6).join(', ')}` : ''}.`,
+      // The role and the turns, not an inventory of edit counts.
+      `${String(s.agent)} session, ${role}${commits.length ? ` (${commits.join(', ')})` : ''}${s.band !== 'included' ? '; matched ambiguously, so not used as evidence' : ''}${asked.length ? `; turns that produced this PR's edits or commits: ${refs(asked, 6).join(', ')}` : ''}.`,
       [id, ...commits],
     );
   }
@@ -811,6 +828,7 @@ function processRows(
   const lastCommit = g
     .run('MATCH (k:Commit) WHERE k.t IS NOT NULL RETURN k.id AS id, k.t AS t')
     .rows.sort((a, b) => String(b.t).localeCompare(String(a.t)))[0];
+  const quiet: { text: string; cites: string[] }[] = [];
   for (const kind of CHECK_KINDS) {
     const rs = scoped.filter((r) => r.kind === kind);
     if (!rs.length) continue;
@@ -834,7 +852,7 @@ function processRows(
         kind,
         [
           history.text,
-          ...(lastCommit
+          ...(lastCommit && !noPassLimit
             ? [
                 after.length
                   ? `a passing run came after the last commit (${ids(after).join(', ')})`
@@ -846,6 +864,20 @@ function processRows(
       );
       continue;
     }
+    // A kind that never failed: one clause in a shared row.
+    if (!failed.length) {
+      quiet.push({
+        text: `${kind} (${rs.length} run(s), last ${String(last.id)} ${last.outcome === 'passed' ? 'passed' : last.outcome === 'failed' ? 'failed' : 'no result captured'}${
+          lastCommit && !noPassLimit
+            ? after.length
+              ? `, passed after the last commit (${ids(after).join(', ')})`
+              : ', no pass after the last commit'
+            : ''
+        })`,
+        cites: uniq([last, ...after.slice(0, 1)].map((r) => String(r.id))),
+      });
+      continue;
+    }
     add(
       kind,
       [
@@ -855,7 +887,7 @@ function processRows(
           : 'none failed',
         ...(unknown.length ? [`${unknown.length} with no captured result`] : []),
         `last ${String(last.id)} ${String(last.outcome === 'unknown' ? 'result not captured' : last.outcome)}`,
-        ...(lastCommit
+        ...(lastCommit && !noPassLimit
           ? [
               after.length
                 ? `a passing run came after the last commit (${ids(after).join(', ')})`
@@ -867,6 +899,12 @@ function processRows(
     );
   }
 
+  if (quiet.length)
+    add(
+      'checks',
+      `No failures: ${quiet.map((q) => q.text).join('; ')}.`,
+      quiet.flatMap((q) => q.cites),
+    );
   for (const s of sessions)
     if (s.band === 'included' && Number(s.failed) > 0)
       add(
@@ -1308,6 +1346,18 @@ export function briefParts(
   // (No "earlier failures weren't recorded" point: Tracetoon keeps only result
   // lines, so it can't tell whether a failure's output was recorded, and the
   // claim was judged false where it was (dev16).)
+  // Open points the other rows only imply: no pass after the last commit, a
+  // failed publishing command, remote-call branches no run shows live.
+  const noPass = noPassAfterCommitRow(g, scopedRuns);
+  limits.splice(
+    0,
+    limits.length,
+    ...capLimits(
+      limits,
+      [...(noPass ? [noPass] : []), ...failedPublishRows(g)],
+      remotePathRows(hunkRows, fileRole, scopedRuns),
+    ),
+  );
   limits.forEach((l, i) => (l.ref = `L${i + 1}`));
 
   // What the added tests check, by their titles.
@@ -1366,7 +1416,11 @@ export function briefParts(
     turns,
     scopedRuns,
     new Set(background.map((r) => String(r.ref))),
+    !!noPass,
   );
+  // Where to start reading: the changed function that owns the behavior.
+  const entry = entryRow(g);
+  if (entry) process.push({ ref: `PR${process.length + 1}`, ...entry });
 
   // Open points first: writers often read only the head of the output.
   const sections: Section[] = [
@@ -1422,9 +1476,12 @@ export function briefParts(
   ];
   // The head tree: stale mentions of removed names, and callers of changed ones.
   const hunkChange = new Map(hunkRows.map((h) => [String(h.hunk), String(h.change)]));
-  sections.push(
-    section('headScan', ['ref', 'kind', 'text', 'change'], headScanRows(g, hunkChange)),
-  );
+  const scan = headScanRows(g, hunkChange);
+  // The entry row is the place to start; the head scan's top row is a count.
+  if (entry)
+    for (const r of scan)
+      if (String(r.kind).startsWith('most referenced')) r.kind = 'most referenced';
+  sections.push(section('headScan', ['ref', 'kind', 'text', 'change'], scan));
   // What not to say, from the rows above, right after the open points.
   sections.splice(
     1,

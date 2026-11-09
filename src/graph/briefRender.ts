@@ -260,8 +260,20 @@ function knownRef(known: Set<string>, ref: string): boolean {
   return false;
 }
 
-const REF = String.raw`(?:[A-Z]{1,3}\d+|(?:commit:)?[0-9a-f]{7,40}(?:#\d+)?)`;
-const TAG = new RegExp(String.raw`\s?\[(${REF}(?:\s*[,;]\s*${REF})*)\](?!\()`, 'g');
+/**
+ * A ref a writer may put in a tag: a brief ref (`CH1`, `S2`, `L3`), a commit
+ * (`commit:<sha>#n`), a patch range (`diff:660-684`) or a session (`h:<hash>`).
+ * Patch ranges and sessions are stripped like the others but never unknown.
+ */
+const REF = String.raw`(?:[A-Z]{1,3}\d+|(?:commit:)?[0-9a-f]{7,40}(?:#\d+)?|diff:\d+(?:-\d+)?|h:[0-9a-f]{6,40})`;
+const TAG = new RegExp(
+  String.raw`[ \t]?\[(${REF}(?:\s*[,;]\s*${REF}|\s+${REF})*)\s*\](?!\()`,
+  'g',
+);
+/** Splits a tag's refs at commas, semicolons or spaces. */
+const tagRefs = (inner: string) => inner.split(/\s*[,;]\s*|\s+/).filter(Boolean);
+/** Patch ranges and session ids: citable without a brief row. */
+const LOOSE_REF = /^(?:diff:\d+(?:-\d+)?|h:[0-9a-f]{6,40})$/;
 
 /** Run, test or check results stated in prose. */
 const VALIDATION_CLAIM =
@@ -287,13 +299,17 @@ function proseUnits(text: string): string[] {
 
 /**
  * Removes ref tags, writes the Validation section at the marker, and reports
- * what the evidence brief doesn't back. Without a brief only the marker is
- * dropped.
+ * what the evidence brief doesn't back. Without a brief the marker and the
+ * tags are dropped.
  */
 export function applyBrief(body: string, b: BriefParts | undefined): BriefApplied {
   if (!b)
     return {
-      text: body.replace(`${VALIDATION_MARKER}\n`, '').replace(VALIDATION_MARKER, ''),
+      // Ref tags never reach readers, even when no brief could be loaded.
+      text: body
+        .replace(`${VALIDATION_MARKER}\n`, '')
+        .replace(VALIDATION_MARKER, '')
+        .replace(TAG, ''),
       validation: false,
       tags: 0,
       unknownRefs: [],
@@ -356,10 +372,10 @@ export function applyBrief(body: string, b: BriefParts | undefined): BriefApplie
       if (clean.split(/\s+/).length >= 5 && !clean.endsWith(':')) untagged.push(clean);
       continue;
     }
-    const refs = found.flatMap((m) => m[1]!.split(/\s*[,;]\s*/));
+    const refs = found.flatMap((m) => tagRefs(m[1]!));
     for (const ref of refs) {
       tags++;
-      if (!knownRef(known, ref)) unknown.add(ref);
+      if (!LOOSE_REF.test(ref) && !knownRef(known, ref)) unknown.add(ref);
       cites.add(ref.replace(/^commit:/, ''));
     }
     // Where a cited commit sentence's code is known (implementedBy), names

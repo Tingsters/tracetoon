@@ -87,7 +87,7 @@ export interface EvidenceGraph {
 export const SCHEMA_DOC = {
   nodes: {
     Session:
-      'id (hashed ref), agent, band (included|ambiguous), score, title, failedCommands (failed non-check commands), failedCommand (the most frequent of them)',
+      'id (hashed ref), agent, band (included|ambiguous), score, title, failedCommands (failed non-check commands), failedCommand (the most frequent of them), failedCmds (each failed non-check command as `<cmd> (failed N of M)`, most frequent first)',
     Prompt:
       'id (S#), t, text (up to 1500 chars; expand for full), pushback, ledToEdits, session',
     Decision:
