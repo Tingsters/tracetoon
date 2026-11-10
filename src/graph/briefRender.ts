@@ -116,12 +116,27 @@ export function validationSection(b: BriefParts): string {
   );
   const receipts = rows.filter((r) => /^V\d/.test(String(r.check ?? '')));
   const logRuns = rows.filter((r) => !/^V\d/.test(String(r.check ?? '')));
-  for (const r of receipts.slice(0, 5)) {
+  // Every receipt is listed, each command once: a later receipt for the same
+  // command (a rerun under another check name) replaces the earlier one.
+  const latest = new Map<string, (typeof receipts)[number]>();
+  for (const r of receipts) {
     const cmd = shownCommand(r.cmd);
     if (!cmd || /‹withheld›|<withheld>/.test(cmd)) continue;
+    latest.delete(cmd);
+    latest.set(cmd, r);
+  }
+  for (const [cmd, r] of latest) {
     shown.push({
       kind: String(r.kind),
-      line: `- \`${cmd}\`: ${String(r.outcome)}${r.result ? ` (${plain(r.result)})` : ''}, run by \`tracetoon check\` on the submitted content.`,
+      line: `- \`${cmd}\`: ${String(r.outcome)}${
+        r.result
+          ? ` (${plain(r.result)
+              .split(/\s*;\s*/)
+              .map((x) => x.trim())
+              .filter(Boolean)
+              .join(', ')})`
+          : ''
+      }, run by \`tracetoon check\` on the submitted content.`,
       when: 'fresh',
       current: true,
     });

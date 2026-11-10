@@ -585,3 +585,63 @@ describe('head-tree scan', () => {
     ]);
   });
 });
+
+describe('receipts in the Validation section', () => {
+  const receipt = (
+    check: string,
+    kind: string,
+    cmd: string,
+    result: string | null = null,
+  ) => ({
+    check,
+    kind,
+    outcome: 'passed',
+    result,
+    when: 'fresh: run on the submitted content',
+    editedAfter: [],
+    cmd,
+  });
+  test('every receipt is listed once, and the claim check observes the lines', () => {
+    const rows = [
+      receipt('V1', 'typecheck', 'bun run typecheck'),
+      receipt('V2', 'build', 'bun run bundle'),
+      receipt('V3', 'build', 'bun run build:check'),
+      receipt('V4', 'build', 'bun run build:reproduce'),
+      receipt('V5', 'test', 'bun test', '2 pass; 0 fail'),
+      receipt('V6', 'test', 'bun test', '697 pass; 0 fail'),
+      receipt('V7', 'lint', 'bun x prettier --check src'),
+    ];
+    const lines = validationSection({
+      unchecked: [],
+      sections: [{ title: 'validation', columns: [], rows }],
+    })
+      .split('\n')
+      .filter((l) => l.startsWith('- `'));
+    expect(lines).toHaveLength(6);
+    expect(lines.filter((l) => l.startsWith('- `bun test`'))).toEqual([
+      '- `bun test`: passed (697 pass, 0 fail), run by `tracetoon check` on the submitted content.',
+    ]);
+    const verification = rows.map((r, i) => ({
+      id: r.check,
+      t: `2026-11-10T07:0${i}:00Z`,
+      cmd: r.cmd,
+      kind: r.kind,
+      outcome: 'passed',
+      basis: 'exit status',
+      summary: r.result ? r.result.split('; ') : [],
+      revision: 'no later edits seen',
+      verificationBasis: 'exact-content-receipt',
+    }));
+    const states = checkClaims({
+      title: 'x',
+      body: lines.join('\n'),
+      digest: {
+        sessions: [],
+        verification,
+        files: [],
+        pr: { base: 'main', head: 'h', mergeBase: 'm', usedWorkingTree: false } as any,
+      } as any,
+    }).map((f) => f.state);
+    expect(states).toEqual(lines.map(() => 'observed'));
+  });
+});

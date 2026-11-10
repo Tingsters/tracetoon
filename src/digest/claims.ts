@@ -174,7 +174,9 @@ function checkVerification(
   // A named command narrows the runs: `bun test tests/x.test.ts`, `prettier --check`.
   const named = [...s.matchAll(/`([^`]+)`/g)]
     .map((m) => m[1]!.trim())
-    .filter(commandCode);
+    .filter(commandCode)
+    // `tracetoon check` is how a receipt was recorded, not the check itself.
+    .filter((n) => !/^tracetoon\s+check\b/.test(n));
   const kinds = runKindsFor(s);
   let relevant = runs.filter((r) => kinds.includes(r.kind));
   if (named.length)

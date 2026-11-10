@@ -705,7 +705,7 @@ describe('evidence graph', () => {
       ],
     } as any);
     expect(v).toContain(
-      '- `bun test`: passed (96 pass; 0 fail), run by `tracetoon check` on the submitted content.',
+      '- `bun test`: passed (96 pass, 0 fail), run by `tracetoon check` on the submitted content.',
     );
     expect(v).not.toContain('tsc');
     expect(v).not.toContain("can't tell whether");
