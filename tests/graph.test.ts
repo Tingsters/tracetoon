@@ -936,7 +936,7 @@ describe('evidence graph', () => {
     const { repo, cli } = scenario();
     const env = {
       ...process.env,
-      TRACETOON_CYPHERLITE_WASM: join(tempDir(), 'missing.wasm'),
+      TRACETOON_RELATE_WASM: join(tempDir(), 'missing.wasm'),
     };
     const r = spawnSync(
       PROGRAM[0]!,

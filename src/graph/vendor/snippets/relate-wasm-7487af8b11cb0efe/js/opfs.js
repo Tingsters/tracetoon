@@ -1,4 +1,4 @@
-// OPFS setup for CypherliteDb.open (ADR-0145).
+// OPFS setup for RelateDb.open (ADR-0145).
 //
 // wasm-bindgen imports this file as a snippet. Directory creation is async;
 // after prepareOpfs returns, the Rust VFS only calls the sync functions below.
@@ -14,7 +14,7 @@ function inDedicatedWorker() {
 
 function locked(name) {
   const err = new Error(`storage locked: opfs://${name}`);
-  err.name = 'CypherliteLocked';
+  err.name = 'RelateLocked';
   return err;
 }
 
@@ -32,7 +32,7 @@ function take(id) {
 }
 
 /**
- * Create `cypherlite/<name>/` and take exclusive sync access handles for the
+ * Create `relate/<name>/` and take exclusive sync access handles for the
  * catalog plus {@link OPFS_SLOT_COUNT} slots. Returns numeric ids into this
  * module's handle table.
  *
@@ -47,7 +47,7 @@ export async function prepareOpfs(name) {
     throw new Error('OPFS is not available in this browser');
   }
   const root = await navigator.storage.getDirectory();
-  const base = await root.getDirectoryHandle('cypherlite', { create: true });
+  const base = await root.getDirectoryHandle('relate', { create: true });
   const dir = await base.getDirectoryHandle(name, { create: true });
   const opened = [];
   const openHandle = async (fileName) => {

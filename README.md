@@ -213,9 +213,12 @@ stalled check. Interrupted checks do not establish a passing result.
    didn't see, and to trim the digest by relevance instead of recency. Your
    agent asks it questions with `tracetoon query` (`outline`, `why <path>`,
    `unverified`, …) instead of reading every fact and the whole patch. The
-   graph runs in-process on [cypherlite](https://github.com/neo4j-labs/cypherlite)
+   graph runs in-process on [Relate](https://github.com/relatedb/relate)
    compiled to WebAssembly: no native modules, no database file, and the
-   digest is still written if it can't start.
+   digest is still written if it can't start. (Relate is the open-source
+   successor of cypherlite, which earlier releases embedded;
+   `TRACETOON_CYPHERLITE_WASM` still works as a deprecated alias of
+   `TRACETOON_RELATE_WASM`.)
 3. **`tracetoon context`** reads the PR template, AI policies and agent
    instructions, any existing PR (and edits made to it on GitHub), your
    settings, and the art styles of the repo's recent comics. It also prepares

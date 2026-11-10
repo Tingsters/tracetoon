@@ -1,7 +1,7 @@
 /**
  * The skill's `assets/` folder, wherever Tracetoon is running from: the source
  * tree, the single-file bundle in `dist/`, or a compiled binary in `bin/`.
- * WebAssembly modules (resvg, cypherlite) and fonts ship there, so no runtime
+ * WebAssembly modules (resvg, Relate) and fonts ship there, so no runtime
  * needs native modules.
  */
 import { existsSync } from 'node:fs';

@@ -2,26 +2,26 @@
 /* eslint-disable */
 
 /**
- * Opaque handle to a Cypherlite database with one connection.
+ * Opaque handle to a Relate database with one connection.
  *
- * `new` is in-memory. [`CypherliteDb::open`] is an OPFS database (ADR-0145).
+ * `new` is in-memory. [`RelateDb::open`] is an OPFS database (ADR-0145).
  */
-export class CypherliteDb {
+export class RelateDb {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Run a script of one or more statements (`cypherlite::run_script_wire`,
+     * Run a script of one or more statements (`relate::run_script_wire`,
      * ADR-0131): one envelope per statement run, stopping after the first
      * error; none for a blank or comment-only script.
      */
     executeScript(script: string, params_json?: string | null): string[];
     /**
-     * Run one statement (`cypherlite::execute_wire`): its wire envelope.
+     * Run one statement (`relate::execute_wire`): its wire envelope.
      */
     execute(query: string, params_json?: string | null): string;
     /**
      * `readOnly` loads once and refuses writes (ADR-0136). Omit it, or pass
-     * false, to keep the writable open. `new CypherliteDb()` stays writable.
+     * false, to keep the writable open. `new RelateDb()` stays writable.
      */
     constructor(read_only?: boolean | null);
     /**
@@ -31,7 +31,7 @@ export class CypherliteDb {
      * On the page thread this rejects before touching OPFS. `readOnly`
      * loads once and refuses writes (ADR-0136); omit it to stay writable.
      */
-    static open(uri: string, read_only?: boolean | null): Promise<CypherliteDb>;
+    static open(uri: string, read_only?: boolean | null): Promise<RelateDb>;
     reset(): void;
 }
 
@@ -40,8 +40,8 @@ export function __start(): void;
 /**
  * Render a script's envelopes (JSON strings, as `executeScript` returns
  * them) as a recording (ADR-0131, ADR-0132): JSON `{kind, text, table,
- * graph, stats}` from `cypherlite_formatter::recording`, the renderer the
- * native cookbook harness uses. Throws on an envelope that is not wire JSON.
+ * graph, stats}` from `relate_formatter::recording`. Throws on an envelope
+ * that is not wire JSON.
  */
 export function renderResult(envelopes: string[]): string;
 
@@ -50,15 +50,15 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __start: () => void;
-    readonly __wbg_cypherlitedb_free: (a: number, b: number) => void;
-    readonly cypherlitedb_execute: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly cypherlitedb_executeScript: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly cypherlitedb_new: (a: number) => [number, number, number];
-    readonly cypherlitedb_open: (a: number, b: number, c: number) => any;
-    readonly cypherlitedb_reset: (a: number) => [number, number];
+    readonly __wbg_relatedb_free: (a: number, b: number) => void;
+    readonly relatedb_execute: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly relatedb_executeScript: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly relatedb_new: (a: number) => [number, number, number];
+    readonly relatedb_open: (a: number, b: number, c: number) => any;
+    readonly relatedb_reset: (a: number) => [number, number];
     readonly renderResult: (a: number, b: number) => [number, number, number, number];
-    readonly wasm_bindgen__convert__closures_____invoke__h10488796dd1fc9ef: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen__convert__closures_____invoke__h4b6336ffb5fd9bb7: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen__convert__closures_____invoke__h37bb470ddbba42b5: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen__convert__closures_____invoke__h6fa99028941e10d6: (a: number, b: number, c: any, d: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

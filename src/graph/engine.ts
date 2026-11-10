@@ -1,5 +1,5 @@
 /**
- * Cypherlite, compiled to WebAssembly, as Tracetoon's in-process graph engine.
+ * Relate, compiled to WebAssembly, as Tracetoon's in-process graph engine.
  * Like resvg it needs no native module: the .wasm ships in the skill's assets
  * and works in Bun, Node and the compiled binary. Each run's graph is small
  * (hundreds to a few thousand nodes) and is loaded into memory from
@@ -7,12 +7,21 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CypherliteDb, initSync } from './vendor/cypherlite.js';
+import { RelateDb, initSync } from './vendor/relate.js';
 import { assetsDir } from '../util/assets.ts';
 import { measured } from '../util/profile.ts';
 import type { EvidenceGraph, NodeLabel, Value } from './model.ts';
 
-export const WASM_FILE = 'cypherlite.wasm';
+export const WASM_FILE = 'relate.wasm';
+
+/** An explicit engine module path; the pre-Relate variable name still works (deprecated). */
+function wasmOverride(): string | undefined {
+  return (
+    process.env.TRACETOON_RELATE_WASM ||
+    process.env.TRACETOON_CYPHERLITE_WASM ||
+    undefined
+  );
+}
 
 export class GraphError extends Error {}
 
@@ -32,8 +41,9 @@ let initialized: true | Error | undefined;
 function init(): void {
   if (initialized === true) return;
   if (initialized) throw initialized;
-  const dir = process.env.TRACETOON_CYPHERLITE_WASM ? undefined : assetsDir(WASM_FILE);
-  const path = process.env.TRACETOON_CYPHERLITE_WASM ?? (dir && join(dir, WASM_FILE));
+  const override = wasmOverride();
+  const dir = override ? undefined : assetsDir(WASM_FILE);
+  const path = override ?? (dir && join(dir, WASM_FILE));
   if (!path || !existsSync(path)) {
     initialized = new GraphError(
       `The graph engine (${WASM_FILE}) was not found; set TRACETOON_ASSETS to the skill's assets folder.`,
@@ -66,12 +76,12 @@ const LABEL = /^[A-Z][A-Za-z]*$/;
 
 /** One in-memory database holding one evidence graph. */
 export class GraphEngine {
-  private db: CypherliteDb;
+  private db: RelateDb;
   private dead?: GraphError;
 
   private constructor() {
     init();
-    this.db = new CypherliteDb();
+    this.db = new RelateDb();
   }
 
   static open(): GraphEngine {

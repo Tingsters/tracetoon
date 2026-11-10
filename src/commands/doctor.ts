@@ -208,7 +208,7 @@ export function doctor(
       `${report.tool} on ${runtime}`,
       `git ${gitV ?? 'not found'} | gh ${ghV ?? 'not found'} (signed in: ${yes(ghAuth)}, --attach: ${yes(report.ghAttach)})`,
       `repo: ${report.repo ?? 'not inside a git repository'}`,
-      `evidence graph: ${report.evidenceGraph.ok ? 'ready (cypherlite, WebAssembly)' : `unavailable: ${report.evidenceGraph.reason}`}`,
+      `evidence graph: ${report.evidenceGraph.ok ? 'ready (Relate, WebAssembly)' : `unavailable: ${report.evidenceGraph.reason}`}`,
       'agents:',
       ...report.agents.map(
         (a) =>

@@ -1,31 +1,31 @@
-/* @ts-self-types="./cypherlite.d.ts" */
-import { prepareOpfs, slotClose, slotFlush, slotRead, slotSize, slotTruncate, slotWrite } from './snippets/cypherlite-wasm-417cb0e10937804e/js/opfs.js';
+/* @ts-self-types="./relate.d.ts" */
+import { prepareOpfs, slotClose, slotFlush, slotRead, slotSize, slotTruncate, slotWrite } from './snippets/relate-wasm-7487af8b11cb0efe/js/opfs.js';
 
 
 /**
- * Opaque handle to a Cypherlite database with one connection.
+ * Opaque handle to a Relate database with one connection.
  *
- * `new` is in-memory. [`CypherliteDb::open`] is an OPFS database (ADR-0145).
+ * `new` is in-memory. [`RelateDb::open`] is an OPFS database (ADR-0145).
  */
-export class CypherliteDb {
+export class RelateDb {
     static __wrap(ptr) {
-        const obj = Object.create(CypherliteDb.prototype);
+        const obj = Object.create(RelateDb.prototype);
         obj.__wbg_ptr = ptr;
-        CypherliteDbFinalization.register(obj, obj.__wbg_ptr, obj);
+        RelateDbFinalization.register(obj, obj.__wbg_ptr, obj);
         return obj;
     }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        CypherliteDbFinalization.unregister(this);
+        RelateDbFinalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_cypherlitedb_free(ptr, 0);
+        wasm.__wbg_relatedb_free(ptr, 0);
     }
     /**
-     * Run a script of one or more statements (`cypherlite::run_script_wire`,
+     * Run a script of one or more statements (`relate::run_script_wire`,
      * ADR-0131): one envelope per statement run, stopping after the first
      * error; none for a blank or comment-only script.
      * @param {string} script
@@ -37,13 +37,13 @@ export class CypherliteDb {
         const len0 = WASM_VECTOR_LEN;
         var ptr1 = isLikeNone(params_json) ? 0 : passStringToWasm0(params_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.cypherlitedb_executeScript(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        const ret = wasm.relatedb_executeScript(this.__wbg_ptr, ptr0, len0, ptr1, len1);
         var v3 = getArrayJsValueFromWasm0(ret[0], ret[1]);
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v3;
     }
     /**
-     * Run one statement (`cypherlite::execute_wire`): its wire envelope.
+     * Run one statement (`relate::execute_wire`): its wire envelope.
      * @param {string} query
      * @param {string | null} [params_json]
      * @returns {string}
@@ -56,7 +56,7 @@ export class CypherliteDb {
             const len0 = WASM_VECTOR_LEN;
             var ptr1 = isLikeNone(params_json) ? 0 : passStringToWasm0(params_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             var len1 = WASM_VECTOR_LEN;
-            const ret = wasm.cypherlitedb_execute(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+            const ret = wasm.relatedb_execute(this.__wbg_ptr, ptr0, len0, ptr1, len1);
             deferred3_0 = ret[0];
             deferred3_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -66,16 +66,16 @@ export class CypherliteDb {
     }
     /**
      * `readOnly` loads once and refuses writes (ADR-0136). Omit it, or pass
-     * false, to keep the writable open. `new CypherliteDb()` stays writable.
+     * false, to keep the writable open. `new RelateDb()` stays writable.
      * @param {boolean | null} [read_only]
      */
     constructor(read_only) {
-        const ret = wasm.cypherlitedb_new(isLikeNone(read_only) ? 0xFFFFFF : read_only ? 1 : 0);
+        const ret = wasm.relatedb_new(isLikeNone(read_only) ? 0xFFFFFF : read_only ? 1 : 0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         this.__wbg_ptr = ret[0];
-        CypherliteDbFinalization.register(this, this.__wbg_ptr, this);
+        RelateDbFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
     /**
@@ -86,22 +86,22 @@ export class CypherliteDb {
      * loads once and refuses writes (ADR-0136); omit it to stay writable.
      * @param {string} uri
      * @param {boolean | null} [read_only]
-     * @returns {Promise<CypherliteDb>}
+     * @returns {Promise<RelateDb>}
      */
     static open(uri, read_only) {
         const ptr0 = passStringToWasm0(uri, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.cypherlitedb_open(ptr0, len0, isLikeNone(read_only) ? 0xFFFFFF : read_only ? 1 : 0);
+        const ret = wasm.relatedb_open(ptr0, len0, isLikeNone(read_only) ? 0xFFFFFF : read_only ? 1 : 0);
         return ret;
     }
     reset() {
-        const ret = wasm.cypherlitedb_reset(this.__wbg_ptr);
+        const ret = wasm.relatedb_reset(this.__wbg_ptr);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
 }
-if (Symbol.dispose) CypherliteDb.prototype[Symbol.dispose] = CypherliteDb.prototype.free;
+if (Symbol.dispose) RelateDb.prototype[Symbol.dispose] = RelateDb.prototype.free;
 
 export function __start() {
     wasm.__start();
@@ -110,8 +110,8 @@ export function __start() {
 /**
  * Render a script's envelopes (JSON strings, as `executeScript` returns
  * them) as a recording (ADR-0131, ADR-0132): JSON `{kind, text, table,
- * graph, stats}` from `cypherlite_formatter::recording`, the renderer the
- * native cookbook harness uses. Throws on an envelope that is not wire JSON.
+ * graph, stats}` from `relate_formatter::recording`. Throws on an envelope
+ * that is not wire JSON.
  * @param {string[]} envelopes
  * @returns {string}
  */
@@ -191,10 +191,6 @@ function __wbg_get_imports() {
             const ret = arg0.crypto;
             return ret;
         },
-        __wbg_cypherlitedb_new: function(arg0) {
-            const ret = CypherliteDb.__wrap(arg0);
-            return ret;
-        },
         __wbg_error_757e9472f8410341: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
@@ -263,7 +259,7 @@ function __wbg_get_imports() {
                     const a = state0.a;
                     state0.a = 0;
                     try {
-                        return wasm_bindgen__convert__closures_____invoke__h10488796dd1fc9ef(a, state0.b, arg0, arg1);
+                        return wasm_bindgen__convert__closures_____invoke__h6fa99028941e10d6(a, state0.b, arg0, arg1);
                     } finally {
                         state0.a = a;
                     }
@@ -294,7 +290,7 @@ function __wbg_get_imports() {
             const ret = arg0.performance;
             return ret;
         },
-        __wbg_prepareOpfs_a063f07c5b9bed98: function() { return handleError(function (arg0, arg1) {
+        __wbg_prepareOpfs_b2839489f816528f: function() { return handleError(function (arg0, arg1) {
             const ret = prepareOpfs(getStringFromWasm0(arg0, arg1));
             return ret;
         }, arguments); },
@@ -315,6 +311,10 @@ function __wbg_get_imports() {
         __wbg_randomFillSync_6c25eac9869eb53c: function() { return handleError(function (arg0, arg1) {
             arg0.randomFillSync(arg1);
         }, arguments); },
+        __wbg_relatedb_new: function(arg0) {
+            const ret = RelateDb.__wrap(arg0);
+            return ret;
+        },
         __wbg_require_b4edbdcf3e2a1ef0: function() { return handleError(function () {
             const ret = module.require;
             return ret;
@@ -323,24 +323,24 @@ function __wbg_get_imports() {
             const ret = Promise.resolve(arg0);
             return ret;
         },
-        __wbg_slotClose_1dadab42f5067e01: function() { return handleError(function (arg0) {
+        __wbg_slotClose_6d0a5a75ad0a812d: function() { return handleError(function (arg0) {
             slotClose(arg0 >>> 0);
         }, arguments); },
-        __wbg_slotFlush_28f12d1ee539a131: function() { return handleError(function (arg0) {
+        __wbg_slotFlush_2fced24a8a2a8ce5: function() { return handleError(function (arg0) {
             slotFlush(arg0 >>> 0);
         }, arguments); },
-        __wbg_slotRead_e7fca3451e4da7ef: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
+        __wbg_slotRead_63c74d479884bae3: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
             const ret = slotRead(arg0 >>> 0, arg1, arg2 >>> 0, arg3 >>> 0, arg4);
             return ret;
         }, arguments); },
-        __wbg_slotSize_4e005959a3fd25b9: function() { return handleError(function (arg0) {
+        __wbg_slotSize_9ce7e6763d5e8eee: function() { return handleError(function (arg0) {
             const ret = slotSize(arg0 >>> 0);
             return ret;
         }, arguments); },
-        __wbg_slotTruncate_6df0d0ccbbbaa172: function() { return handleError(function (arg0, arg1) {
+        __wbg_slotTruncate_7cb6d31ac3a64078: function() { return handleError(function (arg0, arg1) {
             slotTruncate(arg0 >>> 0, arg1);
         }, arguments); },
-        __wbg_slotWrite_19fcca5cc7d4411d: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
+        __wbg_slotWrite_c107453564235362: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
             const ret = slotWrite(arg0 >>> 0, arg1, arg2 >>> 0, arg3 >>> 0, arg4);
             return ret;
         }, arguments); },
@@ -384,8 +384,8 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1951, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h4b6336ffb5fd9bb7);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 2037, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h37bb470ddbba42b5);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0) {
@@ -415,24 +415,24 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./cypherlite_bg.js": import0,
+        "./relate_bg.js": import0,
     };
 }
 
-function wasm_bindgen__convert__closures_____invoke__h4b6336ffb5fd9bb7(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen__convert__closures_____invoke__h4b6336ffb5fd9bb7(arg0, arg1, arg2);
+function wasm_bindgen__convert__closures_____invoke__h37bb470ddbba42b5(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen__convert__closures_____invoke__h37bb470ddbba42b5(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen__convert__closures_____invoke__h10488796dd1fc9ef(arg0, arg1, arg2, arg3) {
-    wasm.wasm_bindgen__convert__closures_____invoke__h10488796dd1fc9ef(arg0, arg1, arg2, arg3);
+function wasm_bindgen__convert__closures_____invoke__h6fa99028941e10d6(arg0, arg1, arg2, arg3) {
+    wasm.wasm_bindgen__convert__closures_____invoke__h6fa99028941e10d6(arg0, arg1, arg2, arg3);
 }
 
-const CypherliteDbFinalization = (typeof FinalizationRegistry === 'undefined')
+const RelateDbFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_cypherlitedb_free(ptr, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_relatedb_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -686,7 +686,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('cypherlite_bg.wasm', import.meta.url);
+        module_or_path = new URL('relate_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
