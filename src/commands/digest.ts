@@ -34,6 +34,7 @@ import {
 import { LAYOUT_FILE, parseLayout, runLayout, saveRunLayout } from '../graph/layout.ts';
 import {
   SEARCH_FILE,
+  DEFAULT_GRAPH_SEARCH,
   parseGraphSearch,
   saveRunGraphSearch,
   storedGraphSearch,
@@ -452,6 +453,9 @@ export function prepareCmd(cwd: string, given: DigestOpts & PlanOptions) {
     given as DigestOpts & PlanOptions & SkillSettings,
     skill,
   );
+  // Without a flag, a SKILL line or a stored mode, prepare searches.
+  if (!opts.graphSearch && !(existing && existsSync(join(existing.dir, SEARCH_FILE))))
+    opts.graphSearch = DEFAULT_GRAPH_SEARCH;
   let plan: ReviewPlan | undefined;
   try {
     plan = planFromOptions(opts);

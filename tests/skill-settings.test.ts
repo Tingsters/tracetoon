@@ -21,7 +21,7 @@ const SKILL = [
   '',
   'Brief layout: neighborhood-wide.',
   '',
-  'Graph search: bm25+vector.',
+  'Graph search: fulltext.',
 ].join('\n');
 
 describe('skill settings', () => {
@@ -34,7 +34,7 @@ describe('skill settings', () => {
       reviewerRunner: 'tracetoon',
       reviewRecheck: 'none',
       layout: 'neighborhood-wide',
-      graphSearch: 'bm25+vector',
+      graphSearch: 'fulltext',
     });
   });
   test('explicit options win; unset ones come from the skill', () => {
@@ -64,7 +64,7 @@ describe('skill settings', () => {
       reviewerRunner: 'agent',
       reviewRecheck: 'once',
       layout: 'toon',
-      graphSearch: 'bm25',
+      graphSearch: 'fulltext',
     });
   });
   test('step 2b: no fixed template, model and effort on every reviewer, findings checked', async () => {

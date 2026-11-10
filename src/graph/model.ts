@@ -130,7 +130,7 @@ export const SCHEMA_DOC = {
     EXPLAINED_BY:
       '(Change)-[:EXPLAINED_BY]->(Commit): commits whose lines are in the change',
     TIED_TO:
-      "(CommitClaim|Commit|Prompt|Plan)-[:TIED_TO {score, rankers}]->(Hunk): search link (prepare's Graph search): BM25 over the hunk's path, symbols and changed lines agreeing with an exact name/path mention (or vectors), or a dominant BM25 hit; a commit's text only links its own hunks; score 0..1, rankers e.g. bm25 mention",
+      "(CommitClaim|Commit|Prompt|Plan)-[:TIED_TO {score, rankers}]->(Hunk): search link (prepare's Graph search): Relate FULLTEXT (BM25) over the hunk's path, symbols and changed lines agreeing with an exact name/path mention, or a dominant BM25 hit; a commit's text only links its own hunks; score 0..1, rankers e.g. bm25 mention",
   },
   notes: [
     'Timestamps (t) are ISO strings; compare them as strings.',

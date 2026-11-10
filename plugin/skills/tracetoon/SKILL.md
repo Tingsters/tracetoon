@@ -105,7 +105,7 @@ reviewer separate.
    names a level, `--reviewer-runner tracetoon` when `Reviewer runner:` says
    tracetoon (publish refuses until that review plan is met),
    `--review-recheck <once|contested|none>` from `Review recheck:`, and
-   `--graph-search <bm25|bm25+vector|none>` from `Graph search:`. Add `--run
+   `--graph-search <fulltext|none>` from `Graph search:`. Add `--run
    <id>` to reuse the run from step 0. It prints the run folder and the digest path. Run it as its
    own command, after any `git commit`, never chained in the same command: your own tool call is only logged once it
    finishes, so a digest inside it can't see that command.
@@ -458,7 +458,7 @@ Review recheck: once.
 
 Brief layout: toon.
 
-Graph search: bm25.
+Graph search: fulltext.
 
 ### Other commands
 

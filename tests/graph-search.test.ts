@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -16,10 +16,12 @@ import { GRAPH_SCHEMA, type EvidenceGraph, type GraphNode } from '../src/graph/m
 import { briefParts, type Section } from '../src/graph/queries.ts';
 import {
   addSearchLinks,
-  initGraphSearch,
+  DEFAULT_GRAPH_SEARCH,
   paragraphs,
   parseGraphSearch,
+  stemmedTokens,
 } from '../src/graph/search.ts';
+import { porterStem } from '../src/graph/porter.ts';
 import { toToon } from '../src/graph/toon.ts';
 import { parseSkillSettings } from '../src/contribution/skillSettings.ts';
 
@@ -196,16 +198,28 @@ const prompts = [
 
 describe('graph search settings', () => {
   test('Graph search values parse; anything else is refused', () => {
-    expect(parseGraphSearch('bm25')).toBe('bm25');
-    expect(parseGraphSearch('BM25 + vector')).toBe('bm25+vector');
+    expect(parseGraphSearch('fulltext')).toBe('fulltext');
+    expect(parseGraphSearch('BM25')).toBe('fulltext'); // the SQLite-era name
     expect(parseGraphSearch('none')).toBe('none');
     expect(parseGraphSearch(undefined)).toBeUndefined();
     expect(() => parseGraphSearch('fuzzy')).toThrow(/Unknown graph search/);
+    expect(() => parseGraphSearch('bm25+vector')).toThrow(/Unknown graph search/);
+    expect(DEFAULT_GRAPH_SEARCH).toBe('fulltext');
   });
   test('the SKILL line is a variant line', () => {
-    expect(parseSkillSettings('Graph search: bm25+vector.\n').graphSearch).toBe(
-      'bm25+vector',
-    );
+    expect(parseSkillSettings('Graph search: fulltext.\n').graphSearch).toBe('fulltext');
+  });
+  test('indexed text and query words are Porter-stemmed alike', () => {
+    expect(
+      ['running', 'pinned', 'pins', 'releases', 'connection'].map(porterStem),
+    ).toEqual(['run', 'pin', 'pin', 'releas', 'connect']);
+    expect(porterStem('v2')).toBe('v2');
+    expect(stemmedTokens('pickLatest sorts_by Tags')).toEqual([
+      'picklatest',
+      'sort',
+      'by',
+      'tag',
+    ]);
   });
   test('long prose is searched paragraph by paragraph', () => {
     expect(
@@ -312,8 +326,6 @@ describe('commit vs code conflicts', () => {
 });
 
 describe('search links', () => {
-  beforeAll(() => initGraphSearch('bm25'));
-
   test('mode none adds nothing: the graph is as without search', () => {
     const g = graph();
     expect(
@@ -324,7 +336,7 @@ describe('search links', () => {
 
   test('every other mode stores key lines on the hunks', () => {
     const g = graph();
-    addSearchLinks({ graph: g, patch: PATCH, mode: 'bm25', prompts });
+    addSearchLinks({ graph: g, patch: PATCH, mode: 'fulltext', prompts });
     const h1 = g.nodes.find((n) => n.label === 'Hunk' && n.id === 'H1')!;
     expect(String((h1.props.keyLines as string[])[0])).toContain(
       'rc.10 lands before rc.2',
@@ -334,7 +346,7 @@ describe('search links', () => {
 
   test('BM25 and mentions tie text to hunks, a commit only to its own', () => {
     const g = graph();
-    const stats = addSearchLinks({ graph: g, patch: PATCH, mode: 'bm25', prompts })!;
+    const stats = addSearchLinks({ graph: g, patch: PATCH, mode: 'fulltext', prompts })!;
     expect(stats.links).toBeGreaterThan(0);
     const links = tied(g);
     expect(links).toContain(`${A}#1->H1`); // shares releases, API, sorts, tag, name
@@ -353,7 +365,7 @@ describe('search links', () => {
   test('the brief fills empty implementedBy (~), shows code lines and the conflict', () => {
     const g = graph();
     const before = withGraph(graph(), (e) => briefParts(e, { layout: 'toon' }));
-    addSearchLinks({ graph: g, patch: PATCH, mode: 'bm25', prompts });
+    addSearchLinks({ graph: g, patch: PATCH, mode: 'fulltext', prompts });
     const after = withGraph(g, (e) => briefParts(e, { layout: 'toon' }));
     const rows = (s: Section[]) => s.find((x) => x.title === 'commitMessages')!.rows;
     const row = (s: Section[], ref: string) => rows(s).find((r) => r.ref === ref)!;
@@ -382,35 +394,11 @@ describe('search links', () => {
 
   test('the neighborhood layout gets links but no code column', () => {
     const g = graph();
-    addSearchLinks({ graph: g, patch: PATCH, mode: 'bm25', prompts });
+    addSearchLinks({ graph: g, patch: PATCH, mode: 'fulltext', prompts });
     const parts = withGraph(g, (e) => briefParts(e, { layout: 'neighborhood' }));
     const cm = parts.sections.find((s) => s.title === 'commitMessages')!;
     expect(cm.columns).not.toContain('code');
     expect(parts.hunkLinks[`${A}#2`]).toEqual(['H2']);
-  });
-});
-
-describe('vector ranker', () => {
-  test('bm25+vector adds the embedding as a third ranker', async () => {
-    await initGraphSearch('bm25+vector');
-    const g = graph();
-    const stats = addSearchLinks({
-      graph: g,
-      patch: PATCH,
-      mode: 'bm25+vector',
-      prompts,
-    })!;
-    expect(stats.vectors).toBe(true);
-    expect(tied(g)).toContain(`${A}#2->H2`);
-    expect(
-      g.rels.some(
-        (r) => r.type === 'TIED_TO' && (r.props!.rankers as string[]).includes('vec'),
-      ),
-    ).toBe(true);
-    // Still scoped: B's sentence never reaches A's hunks.
-    expect(tied(g).filter((l) => l.startsWith(`${B}#1->`) && l !== `${B}#1->H4`)).toEqual(
-      [],
-    );
   });
 });
 
@@ -482,7 +470,7 @@ describe('prepare --graph-search', () => {
     expect(
       JSON.parse(readFileSync(join(on.json.runDir, 'graph-search.json'), 'utf8')),
     ).toEqual({
-      search: 'bm25',
+      search: 'fulltext', // bm25 is an alias
     });
     expect(tiedIn(on.json.runDir).some((l) => /#1->H\d/.test(l))).toBe(true);
     const brief = cli(repo.root, 'query', 'brief', '--run', on.json.run).stdout;

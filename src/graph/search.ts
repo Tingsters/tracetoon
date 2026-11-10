@@ -8,47 +8,48 @@
  * Built once at prepare time, while the patch is at hand, and stored in the
  * graph like any other relationship, so `query brief` needs no search engine.
  *
- * Rankers, as in the relational arm (src/relational/retrieve.ts):
- * - `bm25`: SQLite FTS5 over each hunk's file path, symbol names and changed
- *   lines (porter stemming, identifiers split into words);
+ * Rankers:
+ * - `bm25`: Relate's FULLTEXT index (BM25, k1 1.2, b 0.75) over each hunk's
+ *   file path, symbol names and changed lines. Relate indexes tokens as given,
+ *   so the indexed text and the query words are Porter-stemmed here
+ *   (porter.ts), identifiers split into words, as SQLite FTS5's porter
+ *   tokenizer did before. The score's absolute scale differs from FTS5 (its
+ *   idf is ln(1 + …), never zero), but the rules below only read ratios to the
+ *   query's best hit, so no extra normalization is applied;
  * - `mention`: hunks that define or change a name the text uses, or are in a
- *   file it names;
- * - `vec` (Graph search: bm25+vector): cosine of potion-code-16M-v2 embeddings.
+ *   file it names.
  *
  * A commit's sentences only see that commit's hunks (INTRODUCED, else the hunks
  * of the files it TOUCHES), so a sentence never borrows another commit's code.
- * A hit becomes a link only when two rankers agree, the text names the hunk's
- * symbol or path, the embedding alone is close (as relational), or BM25 alone
- * is dominant: the top hit, clearly ahead of the next one, sharing at least
- * three of the text's rarer words. Ranking noise never becomes evidence.
+ * A hit becomes a link only when both rankers agree, the text names the hunk's
+ * symbol or path, or BM25 alone is dominant: the top hit, clearly ahead of the
+ * next one, sharing at least three of the text's rarer words. Ranking noise
+ * never becomes evidence.
  */
-import { initSqlWasm, openDb } from '../relational/sqlite.ts';
-import { cosine, embeddingModel, initEmbeddings } from '../relational/embed.ts';
-import {
-  ftsOr,
-  identWords,
-  mentionedNames,
-  mentionedPaths,
-  terms,
-} from '../relational/text.ts';
 import { readJson, writeJson, type Run } from '../run.ts';
 import { patchHunks, type PatchHunk } from './build.ts';
 import { evidenceLines, literalTokens, stem } from './codeEvidence.ts';
+import { GraphEngine } from './engine.ts';
+import { porterStem } from './porter.ts';
+import { identWords, mentionedNames, mentionedPaths, terms } from './text.ts';
 import type { EvidenceGraph, NodeLabel } from './model.ts';
 
-export type GraphSearch = 'bm25' | 'bm25+vector' | 'none';
-export const GRAPH_SEARCHES: readonly GraphSearch[] = ['bm25', 'bm25+vector', 'none'];
+export type GraphSearch = 'fulltext' | 'none';
+export const GRAPH_SEARCHES: readonly GraphSearch[] = ['fulltext', 'none'];
 export const SEARCH_FILE = 'graph-search.json';
-/** What a run gets when neither a flag, the SKILL line nor the run folder says. */
-export const DEFAULT_GRAPH_SEARCH: GraphSearch = 'bm25';
+/** What a prepare gets when neither a flag, the SKILL line nor the run folder says. */
+export const DEFAULT_GRAPH_SEARCH: GraphSearch = 'fulltext';
+/** Older names: `bm25` was the SQLite FTS5 search that `fulltext` replaced. */
+const ALIASES: Record<string, GraphSearch> = { bm25: 'fulltext' };
 
 /** A `--graph-search` value or SKILL `Graph search:` line, checked; undefined when none. */
 export function parseGraphSearch(value: unknown): GraphSearch | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const v = String(value).trim().toLowerCase().replace(/\s+/g, '');
   if ((GRAPH_SEARCHES as readonly string[]).includes(v)) return v as GraphSearch;
+  if (ALIASES[v]) return ALIASES[v];
   throw new Error(
-    `Unknown graph search "${String(value)}": use ${GRAPH_SEARCHES.join(', ')}.`,
+    `Unknown graph search "${String(value)}": use ${GRAPH_SEARCHES.join(', ')} (bm25 is an alias of fulltext).`,
   );
 }
 
@@ -65,21 +66,6 @@ export function saveRunGraphSearch(run: Run, search: GraphSearch): void {
   writeJson(run, SEARCH_FILE, { search });
 }
 
-/**
- * Load what the mode needs (SQLite, and the embedding model for vectors) before
- * a synchronous graph build. Never throws: without SQLite the graph is built
- * without search links.
- */
-export async function initGraphSearch(mode: GraphSearch | undefined): Promise<void> {
-  if (!mode || mode === 'none') return;
-  try {
-    await initSqlWasm();
-  } catch {
-    return;
-  }
-  if (mode === 'bm25+vector') initEmbeddings();
-}
-
 /** Hits per ranker for a query over `n` candidate hunks (relational's rule). */
 const topK = (n: number) => Math.min(8, Math.max(2, Math.ceil(n / 5)));
 /** A BM25 hit agrees only at half the query's best score or more. */
@@ -90,8 +76,10 @@ const BM25_ALONE_LEAD = 0.67;
 const BM25_ALONE_WORDS = 3;
 /** …and links at most this many hunks of its file. */
 const SAME_FILE = 2;
-/** A vector-only hit needs at least this cosine (relational's VEC_ALONE). */
-const VEC_ALONE = 0.55;
+/** Hits read per query, before scoping (ranked over every hunk, like idf). */
+const FTS_LIMIT = 256;
+/** Query words per search, rarest first. */
+const MAX_QUERY_WORDS = 24;
 /** Links kept per source (a request or a plan keeps its best). */
 const MAX_LINKS = 4;
 /** Paragraphs searched per request or plan. */
@@ -132,7 +120,11 @@ export function hunkBody(h: PatchHunk, maxChars = 2400): string {
 export interface SearchStats {
   queries: number;
   links: number;
-  vectors: boolean;
+}
+
+/** Lowercase alphanumeric tokens (FTS5 unicode61's split), Porter-stemmed. */
+export function stemmedTokens(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).map(porterStem);
 }
 
 export interface SearchInput {
@@ -146,7 +138,7 @@ export interface SearchInput {
 
 /**
  * Add each hunk's key lines and the TIED_TO search links (key lines only when
- * SQLite is not loaded). Mode `none` adds nothing: the graph, and so the
+ * the graph engine cannot start). Mode `none` adds nothing: the graph, and so the
  * brief, is as without search. Mutates the graph; returns what it did, or
  * undefined when no search ran.
  */
@@ -166,25 +158,22 @@ export function addSearchLinks(input: SearchInput): SearchStats | undefined {
     if (literals.length) node.props.literals = literals;
   }
   if (!hunks.length) return undefined;
-  let db;
+  let db: GraphEngine;
   try {
-    db = openDb();
+    db = GraphEngine.open();
   } catch {
-    return undefined; // SQLite not loaded: no search links, the rest is unchanged
+    return undefined; // no graph engine: no search links, the rest is unchanged
   }
   try {
     return searchInto(db, input, hunks);
+  } catch {
+    return undefined; // a failed search adds no links; the graph is otherwise whole
   } finally {
     db.close();
   }
 }
 
-function searchInto(
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  db: any,
-  input: SearchInput,
-  all: PatchHunk[],
-): SearchStats {
+function searchInto(db: GraphEngine, input: SearchInput, all: PatchHunk[]): SearchStats {
   const { graph } = input;
   const role = new Map(
     graph.nodes
@@ -195,18 +184,19 @@ function searchInto(
   const hunks = all.filter((h) => role.get(h.file) !== 'generated');
   const bodies = new Map(hunks.map((h) => [h.id, hunkBody(h)]));
   const fileOf = new Map(hunks.map((h) => [h.id, h.file]));
-  db.exec(
-    `CREATE VIRTUAL TABLE hunk_fts USING fts5(hunk_id UNINDEXED, body, tokenize = 'porter unicode61');`,
-  );
-  const ins = db.prepare('INSERT INTO hunk_fts (hunk_id, body) VALUES (?, ?)');
-  try {
-    for (const h of hunks) {
-      const body = bodies.get(h.id)!;
-      ins.bind([h.id, `${body}\n${identWords(body).join(' ')}`]).stepReset();
-    }
-  } finally {
-    ins.finalize();
-  }
+  // A scratch database: one Hunk node per searchable hunk, its text stemmed.
+  db.run('CREATE FULLTEXT INDEX hunk_text FOR (h:Hunk) ON EACH [h.text]');
+  const docs = hunks.map((h) => {
+    const body = bodies.get(h.id)!;
+    return {
+      id: h.id,
+      text: stemmedTokens(`${body}\n${identWords(body).join(' ')}`).join(' '),
+    };
+  });
+  for (let i = 0; i < docs.length; i += 500)
+    db.run('UNWIND $rows AS r CREATE (h:Hunk) SET h += r', {
+      rows: docs.slice(i, i + 500),
+    });
   const words = new Map(hunks.map((h) => [h.id, new Set(identWords(bodies.get(h.id)!))]));
   const stems = new Map([...words].map(([id, ws]) => [id, new Set([...ws].map(stem))]));
   const df = new Map<string, number>();
@@ -281,11 +271,6 @@ function searchInto(
       if (factIds.has(f.id))
         for (const p of paragraphs(f.text)) queries.push({ label, id: f.id, text: p });
 
-  const model = input.mode === 'bm25+vector' ? embeddingModel() : undefined;
-  const vectors = model
-    ? new Map(hunks.map((h) => [h.id, model.embed(bodies.get(h.id)!)]))
-    : undefined;
-
   // Names a hunk defines or changes, and its file, for exact mentions.
   const names = new Map<string, Set<string>>();
   for (const h of hunks)
@@ -300,38 +285,44 @@ function searchInto(
       names.set(n, s);
     }
 
-  const fts = db.prepare(
-    `SELECT hunk_id, bm25(hunk_fts) AS s FROM hunk_fts WHERE hunk_fts MATCH ? ORDER BY s, hunk_id LIMIT ?`,
+  // Query words, rarest first (document frequency by crude stem, so "pins"
+  // meets a hunk's "pinned"), and every query's BM25 ranking in one statement.
+  const wordsOf = queries.map((q) =>
+    [...new Set(terms(q.text))]
+      .filter((w) => df.has(stem(w)))
+      .sort((a, b) => df.get(stem(a))! - df.get(stem(b))! || a.localeCompare(b)),
+  );
+  const rankings = fulltextRankings(
+    db,
+    queries.map((q, i) => ({
+      i,
+      text: wordsOf[i]!.filter((w) => /^[a-z0-9]+$/.test(w))
+        .slice(0, MAX_QUERY_WORDS)
+        .map(porterStem)
+        .join(' '),
+      scope: q.scope ? [...q.scope] : null,
+    })),
   );
   // Best link per (source, hunk).
   const best = new Map<
     string,
     { label: NodeLabel; id: string; hunk: string; score: number; rankers: string[] }
   >();
-  try {
-    for (const q of queries) {
+  {
+    for (const [qi, q] of queries.entries()) {
       const allowed = (id: string) => !q.scope || q.scope.has(id);
       const n = q.scope ? q.scope.size : hunks.length;
       const k = topK(n);
-      type Hit = { strong: boolean; strength: number; rank: number; raw?: number };
-      const hit = new Map<string, Partial<Record<'bm25' | 'vec' | 'mention', Hit>>>();
-      const put = (id: string, r: 'bm25' | 'vec' | 'mention', h: Hit) => {
+      type Hit = { strong: boolean; strength: number; rank: number };
+      const hit = new Map<string, Partial<Record<'bm25' | 'mention', Hit>>>();
+      const put = (id: string, r: 'bm25' | 'mention', h: Hit) => {
         const x = hit.get(id) ?? {};
         x[r] = h;
         hit.set(id, x);
       };
-      // BM25, rarest words first; filtered to the scope after ranking over all hunks.
-      const qWords = [...new Set(terms(q.text))]
-        .filter((w) => df.has(stem(w)))
-        .sort((a, b) => df.get(stem(a))! - df.get(stem(b))! || a.localeCompare(b));
-      const m = ftsOr(qWords);
-      let ranked: [string, number][] = [];
-      if (m) {
-        fts.bind([m, 256]);
-        while (fts.step()) ranked.push([fts.get(0) as string, -Number(fts.get(1))]);
-        fts.reset();
-        ranked = ranked.filter(([id]) => allowed(id));
-      }
+      // BM25, ranked over all hunks and then kept to the query's scope.
+      const qWords = wordsOf[qi]!;
+      const ranked = rankings.get(qi) ?? [];
       const bm = ranked.slice(0, k);
       const top = bm[0]?.[1] ?? 0;
       bm.forEach(([id, s], rank) =>
@@ -357,30 +348,6 @@ function searchInto(
       mlist.forEach(([id, s], rank) =>
         put(id, 'mention', { strong: true, strength: s / mtop, rank }),
       );
-      // Vectors: exact kNN, the bar one standard deviation above the query's mean.
-      if (model && vectors) {
-        const qv = model.embed(q.text);
-        const scored = hunks
-          .filter((h) => allowed(h.id))
-          .map((h) => [h.id, cosine(qv, vectors.get(h.id)!)] as [string, number]);
-        if (scored.length > 1) {
-          const mean = scored.reduce((a, [, c]) => a + c, 0) / scored.length;
-          const sd = Math.sqrt(
-            scored.reduce((a, [, c]) => a + (c - mean) ** 2, 0) / scored.length,
-          );
-          scored.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-          const vt = scored[0]![1];
-          scored.slice(0, k).forEach(([id, c], rank) =>
-            put(id, 'vec', {
-              strong: c >= mean + sd,
-              strength:
-                vt > mean ? Math.max(0, Math.min(1, (c - mean) / (vt - mean))) : 0,
-              rank,
-              raw: c,
-            }),
-          );
-        }
-      }
       // BM25 alone: its top hit, clearly ahead of the best hit in any other
       // file and sharing enough of the text's words; the same file's other
       // strong hits come with it.
@@ -405,9 +372,8 @@ function searchInto(
       }
       // Acceptance.
       for (const [id, x] of hit) {
-        const strong = (['bm25', 'vec', 'mention'] as const).filter((r) => x[r]?.strong);
+        const strong = (['bm25', 'mention'] as const).filter((r) => x[r]?.strong);
         let ok = strong.length >= 2 || !!x.mention;
-        if (!ok && x.vec?.strong) ok = (x.vec.raw ?? 0) >= VEC_ALONE;
         if (!ok) ok = alone.has(id);
         if (!ok) continue;
         const rankers = strong.length ? [...strong] : (['bm25'] as string[]);
@@ -422,8 +388,6 @@ function searchInto(
           best.set(key, { label: q.label, id: q.id, hunk: id, score, rankers });
       }
     }
-  } finally {
-    fts.finalize();
   }
 
   // At most MAX_LINKS per source, strongest first.
@@ -449,7 +413,41 @@ function searchInto(
       links++;
     }
   graph.stats.rels = graph.rels.length;
-  return { queries: queries.length, links, vectors: !!model };
+  return { queries: queries.length, links };
+}
+
+/**
+ * Each query's BM25 hits within its scope, best first (ties by hunk id), from
+ * Relate's FULLTEXT index: the top FTS_LIMIT over every hunk, then scoped.
+ */
+function fulltextRankings(
+  db: GraphEngine,
+  qs: { i: number; text: string; scope: string[] | null }[],
+): Map<number, [string, number][]> {
+  const out = new Map<number, [string, number][]>();
+  const asked = qs.filter((q) => q.text);
+  for (let i = 0; i < asked.length; i += 200) {
+    const { rows } = db.run(
+      `UNWIND $qs AS q
+       CALL (q) {
+         MATCH (h:Hunk)
+         SEARCH h IN (FULLTEXT INDEX hunk_text FOR q.text LIMIT ${FTS_LIMIT}) SCORE AS s
+         RETURN h.id AS id, s
+       }
+       WITH q, id, s WHERE q.scope IS NULL OR id IN q.scope
+       RETURN q.i AS i, id, s`,
+      { qs: asked.slice(i, i + 200) },
+    );
+    for (const r of rows) {
+      const i = Number(r.i);
+      const list = out.get(i) ?? [];
+      list.push([String(r.id), Number(r.s)]);
+      out.set(i, list);
+    }
+  }
+  for (const list of out.values())
+    list.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return out;
 }
 
 const hunkNum = (id: string) => Number(id.replace(/\D/g, '')) || 0;
