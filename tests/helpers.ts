@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git } from '../src/util/exec.ts';
 
+// The shipped SKILL's `cheap` / `auto` resolve per host agent; tests (and the
+// CLIs they start) see the same host wherever the suite runs.
+process.env.TRACETOON_HOST_AGENT ??= 'claude';
+
 const made: string[] = [];
 // Remove each test file's temp folders when it finishes, so repeated runs
 // don't fill the temp filesystem. TRACETOON_KEEP_TMP=1 keeps them for debugging.

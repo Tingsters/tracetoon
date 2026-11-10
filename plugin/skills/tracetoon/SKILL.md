@@ -8,7 +8,7 @@ description: Create a GitHub PR with a description and optional comic written fr
 Tracetoon reads the session logs your agents already keep on disk, finds the
 sessions that produced the current branch, and gives you a redacted digest and
 an evidence brief. With a brief, you draft the description yourself from it
-(references/drafting.md) and one fresh independent reviewer checks it from a
+(references/drafting.md) and fresh independent reviewers check it from a
 lean review packet (step 2b). Without a brief, or
 when the user asks for the most thorough PR, you coordinate a researcher, a
 drafter and an independent reviewer. An unattended run is not a request for the
@@ -101,9 +101,9 @@ reviewer separate.
    with the layout and pass count from the `Brief layout:` and `Review passes:`
    lines near the end of this file; add `--review-lenses <a,b,c>` when
    `Review lenses:` lists lenses, `--reviewer-model <name>` when `Reviewer
-   model:` names a model, `--reviewer-effort <level>` when `Reviewer effort:`
-   names a level, `--reviewer-runner tracetoon` when `Reviewer runner:` says
-   tracetoon (publish refuses until that review plan is met),
+   model:` names a model (`cheap` included), `--reviewer-effort <level>` when
+   `Reviewer effort:` names a level, `--reviewer-runner <agent|tracetoon|auto>`
+   from `Reviewer runner:` (publish refuses until that review plan is met),
    `--review-recheck <once|contested|none>` from `Review recheck:`, and
    `--graph-search <fulltext|none>` from `Graph search:`. Add `--run
    <id>` to reuse the run from step 0. It prints the run folder and the digest path. Run it as its
@@ -134,8 +134,13 @@ reviewer separate.
      else: the cheapest or quickest PR (2a), or the most thorough one (steps
      3–7 with a researcher, a drafter and a reviewer, each using the brief).
      2a. **Quick brief path:** follow [references/quick-path.md](references/quick-path.md).
-     2b. **Reviewed brief path (the default with a brief).** You draft; one fresh
-     independent reviewer checks. You need only
+     2b. **Reviewed brief path (the default with a brief).** You draft; fresh
+     independent reviewers check. `Reviewer model: cheap` means your host's
+     small fast model (Claude Code: `haiku`; Codex: `luna`, i.e. gpt-6-luna)
+     and `Reviewer runner: auto` means reviewer agents you start on Claude
+     Code and `tracetoon review run` on Codex. Prepare resolves both and its
+     next step names the model and the command; follow it (an unknown host
+     gets the main agent's model and reviewer agents). You need only
      [references/drafting.md](references/drafting.md) and
      [references/reviewer-lean.md](references/reviewer-lean.md) here; don't read
      contribution-workflow.md on this path.
@@ -158,7 +163,8 @@ reviewer separate.
         hunk→symbol map, selected diff). With lenses: one
         `review-packet --lean --lens <x> --run <id>` per lens
         (`review-packet-<x>.md`).
-        **If `Reviewer runner: tracetoon.`**, don't start a reviewer agent and
+        **If the runner is tracetoon** (`Reviewer runner: tracetoon.`, or
+        `auto` on Codex: prepare's next step says `tracetoon review run`), don't start a reviewer agent and
         skip 6–8: run `tracetoon review run --all --run <id>` once. It runs
         every planned pass (one per lens plus the general passes beyond the
         lens count) in parallel on the named model, imports each, and prints
@@ -197,8 +203,9 @@ reviewer separate.
           `Agent` with `model: "<name>"` and `effort: "<level>"` (low, medium,
           high, xhigh, max); Codex: `spawn_agent` with `model: "<name>"` and
           its reasoning-effort argument (if your spawn tool has one). Pass the
-          exact name, e.g. `Reviewer model: haiku.` → `model: "haiku"`; never
-          drop or swap it, even when it differs from your own model. Only
+          exact name, e.g. `Reviewer model: haiku.` → `model: "haiku"`, and for
+          `cheap` the name prepare resolved (its next step says `on model
+          <name>`); never drop or swap it, even when it differs from your own model. Only
           `same as the main agent` means no model, and only `default` means no
           effort.
 
@@ -444,17 +451,17 @@ reviewer separate.
      monitoring CI, editing the PR or merging when requested, under native host
      rules. Creating the PR does not require ending the turn.
 
-Reviewer model: same as the main agent.
+Reviewer model: cheap.
 
-Reviewer effort: default.
+Reviewer effort: xhigh.
 
-Review passes: 1.
+Review passes: 2.
 
-Review lenses: none.
+Review lenses: d.
 
-Reviewer runner: agent.
+Reviewer runner: auto.
 
-Review recheck: once.
+Review recheck: none.
 
 Brief layout: toon.
 

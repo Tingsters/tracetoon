@@ -517,9 +517,9 @@ export function prepareCmd(cwd: string, given: DigestOpts & PlanOptions) {
     {
       run: prepared.run.id,
       ...(prepared.graph ? { next: graphNext(prepared.run.id, plan) } : {}),
-      ...(planEnforced(plan) ? { reviewPlan: plan } : {}),
       // One JSON line, so piping through `head` still shows the whole map.
       ...(prepared.brief ? { brief: prepared.brief } : {}),
+      ...(planEnforced(plan) ? { reviewPlan: plan } : {}),
       runDir: prepared.run.dir,
       rolePackets: join(prepared.run.dir, 'role-packets.json'),
       digestPath: join(prepared.run.dir, 'digest.json'),

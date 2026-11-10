@@ -336,6 +336,7 @@ describe('evidence graph', () => {
       lenses: ['a', 'b', 'c'],
       reviewerModel: 'terra',
       reviewerEffort: 'xhigh',
+      recheck: 'none', // the shipped SKILL's Review recheck line
     });
     expect(prepared.json.reviewPlan).toEqual(plan);
     expect(prepared.json.next).toContain('IN PARALLEL');
@@ -361,6 +362,12 @@ describe('evidence graph', () => {
       'none',
       '--reviewer-effort',
       'default',
+      '--reviewer-model',
+      'same as the main agent',
+      '--reviewer-runner',
+      'agent',
+      '--review-recheck',
+      'once',
     );
     expect(
       JSON.parse(readFileSync(join(plain.json.runDir, 'review-plan.json'), 'utf8')),
@@ -373,7 +380,16 @@ describe('evidence graph', () => {
 
   test('lean render writes the Validation section and checks ref tags', () => {
     const { repo, cli } = scenario();
-    const prepared = cli(repo.root, '--json', 'prepare', '--offline');
+    // The single-reviewer plan (the shipped SKILL asks for more; see below).
+    const prepared = cli(
+      repo.root,
+      '--json',
+      'prepare',
+      '--offline',
+      ...['--review-passes', '1', '--review-lenses', 'none'],
+      ...['--reviewer-model', 'same', '--reviewer-effort', 'default'],
+      ...['--reviewer-runner', 'agent', '--review-recheck', 'once'],
+    );
     const run = prepared.json.run;
     // With a brief, the default is the reviewed path: inline draft from
     // drafting.md, one fresh reviewer on the lean packet; quick path is opt-in.

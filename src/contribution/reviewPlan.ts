@@ -10,6 +10,7 @@
  * the single-reviewer flow behaves as before.
  */
 import { readJson, writeJson, type Run } from '../run.ts';
+import { hostAgent, type HostAgent } from '../util/host.ts';
 
 export const PLAN_FILE = 'review-plan.json';
 export const REVIEW_LENSES = ['a', 'b', 'c', 'd'] as const;
@@ -22,6 +23,23 @@ export const REVIEWER_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as con
  */
 export const REVIEWER_RUNNERS = ['agent', 'tracetoon'] as const;
 export type ReviewerRunner = (typeof REVIEWER_RUNNERS)[number];
+/**
+ * `Reviewer runner: auto`: the host's own reviewer agents on Claude Code,
+ * `tracetoon review run` (codex exec, model verified) on Codex, and `agent`
+ * when the host is unknown.
+ */
+export const AUTO_RUNNER: Record<HostAgent, ReviewerRunner> = {
+  claude: 'agent',
+  codex: 'tracetoon',
+};
+/**
+ * `Reviewer model: cheap`: the host's small fast model (Claude Code's haiku,
+ * Codex's luna = gpt-6-luna). Unknown host: same as the main agent.
+ */
+export const CHEAP_MODELS: Record<HostAgent, string> = {
+  claude: 'haiku',
+  codex: 'luna',
+};
 /**
  * Whether reviewers recheck the drafter's correction round (SKILL `Review
  * recheck:`): `once` (every reviewer confirms the changed lines once),
@@ -114,17 +132,28 @@ export function parseEffort(value: unknown): string | undefined {
   return s;
 }
 
-export function parseModel(value: unknown): string | undefined {
+/** A reviewer model name; `cheap` resolves for the host (undefined when unknown). */
+export function parseModel(
+  value: unknown,
+  host: HostAgent | null = hostAgent() ?? null,
+): string | undefined {
   const s = clean(value);
-  return UNSET.test(s) ? undefined : s;
+  if (UNSET.test(s)) return undefined;
+  if (s.toLowerCase() === 'cheap') return host ? CHEAP_MODELS[host] : undefined;
+  return s;
 }
 
-export function parseRunner(value: unknown): ReviewerRunner | undefined {
+/** A reviewer runner; `auto` resolves for the host (agent when unknown). */
+export function parseRunner(
+  value: unknown,
+  host: HostAgent | null = hostAgent() ?? null,
+): ReviewerRunner | undefined {
   const s = clean(value).toLowerCase();
   if (!s || /^(default|none|-)$/.test(s)) return undefined;
+  if (s === 'auto') return host ? AUTO_RUNNER[host] : 'agent';
   if (!(REVIEWER_RUNNERS as readonly string[]).includes(s))
     throw new Error(
-      `Unknown reviewer runner "${clean(value)}": use ${REVIEWER_RUNNERS.join(' or ')}.`,
+      `Unknown reviewer runner "${clean(value)}": use ${REVIEWER_RUNNERS.join(', ')} or auto.`,
     );
   return s as ReviewerRunner;
 }
@@ -161,8 +190,15 @@ export interface PlanOptions {
   reviewRecheck?: unknown;
 }
 
-/** The plan `prepare` was asked for; undefined when no review option was given. */
-export function planFromOptions(opts: PlanOptions): ReviewPlan | undefined {
+/**
+ * The plan `prepare` was asked for; undefined when no review option was given.
+ * `cheap` and `auto` are resolved here, for the host running prepare, so the
+ * stored plan (and prepare's next step) names a concrete model and runner.
+ */
+export function planFromOptions(
+  opts: PlanOptions,
+  host: HostAgent | null = hostAgent() ?? null,
+): ReviewPlan | undefined {
   if (
     opts.reviewPasses === undefined &&
     opts.reviewLenses === undefined &&
@@ -172,9 +208,9 @@ export function planFromOptions(opts: PlanOptions): ReviewPlan | undefined {
     opts.reviewRecheck === undefined
   )
     return undefined;
-  const model = parseModel(opts.reviewerModel);
+  const model = parseModel(opts.reviewerModel, host);
   const effort = parseEffort(opts.reviewerEffort);
-  const runner = parseRunner(opts.reviewerRunner);
+  const runner = parseRunner(opts.reviewerRunner, host);
   const recheck = parseRecheck(opts.reviewRecheck);
   return {
     v: 1,
