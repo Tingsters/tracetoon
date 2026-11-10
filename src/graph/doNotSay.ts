@@ -169,7 +169,7 @@ export function doNotSayRows(sections: Section[], branchy: string[] = []): Row[]
   if (changes.some((r) => Number(r.removed ?? 0) > 0))
     out.push({
       kind: 'old behavior',
-      text: 'What the code did before: only from removed lines (`was`, `- old`) or a commit message.',
+      text: 'What the code did before: only from removed lines (`was`, `removed:`, `dropped:`) or a commit message.',
       cites: [],
     });
 

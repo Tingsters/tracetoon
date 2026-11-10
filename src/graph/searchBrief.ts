@@ -107,7 +107,10 @@ export function addSearchEvidence(
 ): void {
   try {
     // One budget for both: CODE_SHARE of the brief as it was.
-    let budget = Math.round(toToon(sections).length * CODE_SHARE);
+    // The owners rows don't widen it: they are code pointers already.
+    let budget = Math.round(
+      toToon(sections.filter((s) => s.title !== 'owners')).length * CODE_SHARE,
+    );
     const conflicts = conflictRows(g, sections, hunkLinks);
     const dns = sections.find((s) => s.title === 'doNotSay');
     if (dns && conflicts.length) {

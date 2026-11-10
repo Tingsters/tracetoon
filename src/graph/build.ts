@@ -57,6 +57,12 @@ export interface PatchHunk {
   conds: string[];
   /** Test titles added in this hunk (`test('…')`, `def test_…`, `func Test…`). */
   tests: string[];
+  /**
+   * Per function whose body a changed line is in (the nearest definition above
+   * it): `name: word word …`, the lowercased words of those changed lines, so
+   * a sentence can be matched to the function inside a hunk that holds several.
+   */
+  fnWords: string[];
   /** Lowercased words of the changed lines (identifiers split, strings), for matching prose to code. */
   words: string[];
   /**
@@ -139,6 +145,10 @@ export function patchHunks(patch: string): PatchHunk[] {
   let currentIndent = -1;
   const removedDefs = new Set<string>();
   const changed = new Map<PatchHunk, { minus: string[]; plus: string[] }>();
+  // Per hunk: function → its changed lines.
+  const byFn = new Map<PatchHunk, Map<string, string[]>>();
+  // Changed comment lines outside any body, waiting for the definition below them.
+  let pendingDoc: string[] = [];
   const touch = (h: PatchHunk) => {
     if (current && !h.touched.includes(current)) h.touched.push(current);
   };
@@ -171,12 +181,25 @@ export function patchHunks(patch: string): PatchHunk[] {
       if (def) {
         current = def;
         currentIndent = indent;
-      }
+        // A changed doc comment right above a definition describes it.
+        if (pendingDoc.length) {
+          const fns = byFn.get(cur) ?? new Map<string, string[]>();
+          fns.set(def, [...(fns.get(def) ?? []), ...pendingDoc]);
+          byFn.set(cur, fns);
+        }
+        pendingDoc = [];
+      } else if (text.trim() && !/^\s*(\/\/|#|\*|\/\*|@)/.test(text)) pendingDoc = [];
       if (c === '+' || c === '-') {
         touch(cur);
         const ch = changed.get(cur) ?? { minus: [], plus: [] };
         (c === '+' ? ch.plus : ch.minus).push(text);
         changed.set(cur, ch);
+        if (!current && !def && /^\s*(\/\/|#|\*|\/\*)/.test(text)) pendingDoc.push(text);
+        else if (current) {
+          const fns = byFn.get(cur) ?? new Map<string, string[]>();
+          fns.set(current, [...(fns.get(current) ?? []), text]);
+          byFn.set(cur, fns);
+        }
         if (c === '-' && def) {
           removedDefs.add(def);
           if (!cur.dropped.includes(def)) cur.dropped.push(def);
@@ -213,6 +236,7 @@ export function patchHunks(patch: string): PatchHunk[] {
       newLine = Number(h[2]);
       newLeft = h[3] === undefined ? 1 : Number(h[3]);
       first = last = n;
+      pendingDoc = [];
       current = h[4]?.trim() ? definedSymbol(h[4]) : undefined;
       currentIndent = current ? /^\s*/.exec(h[4]!)![0].replace(/\t/g, '    ').length : -1;
       cur = {
@@ -233,6 +257,7 @@ export function patchHunks(patch: string): PatchHunk[] {
         dropped: [],
         conds: [],
         tests: [],
+        fnWords: [],
         words: [],
         code: [],
         lines: new Set(),
@@ -265,6 +290,9 @@ export function patchHunks(patch: string): PatchHunk[] {
     h.conds = PROSE_FILE.test(h.file) ? [] : conditionFacts(ch.minus, ch.plus, h.pairs);
     h.tests = uniqStrings(ch.plus.flatMap(testTitles)).slice(0, 8);
     h.words = uniqStrings([...ch.minus, ...ch.plus].flatMap(wordsOf)).slice(0, 400);
+    h.fnWords = [...(byFn.get(h) ?? [])].map(
+      ([fn, ls]) => `${fn}: ${uniqStrings(ls.flatMap(wordsOf)).slice(0, 120).join(' ')}`,
+    );
     h.code = keyCodeLines(ch.minus, ch.plus);
     h.minus = ch.minus;
     h.plus = ch.plus;
@@ -730,6 +758,7 @@ export function buildEvidenceGraph(input: GraphInputs): EvidenceGraph {
       dropped: h.dropped,
       conds: h.conds,
       tests: h.tests,
+      fnWords: h.fnWords,
       words: h.words,
       code: h.code,
     });

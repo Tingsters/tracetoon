@@ -681,3 +681,193 @@ export function entryRow(g: GraphEngine, ctx?: SentenceLinks): Row | undefined {
     cites: uniqStr([...(h ? [String(h.change), String(h.diff)] : []), ...cites]),
   };
 }
+
+// --- Where each behavior lives ---------------------------------------------
+
+/** Most `owners` rows, and per change unit. */
+export const MAX_OWNER_ROWS = 6;
+const OWNERS_PER_CHANGE = 5;
+/** Characters of a sentence excerpt in an `owners` row. */
+const OWNER_TEXT = 80;
+
+/**
+ * Where each behavior lives: commit sentences mapped to the one or two changed
+ * functions whose changed lines say what the sentence says. A hunk's changed
+ * lines are split by the function they sit in (`fnWords`, with a doc comment
+ * going to the definition below it), so a hunk that defines several functions
+ * still tells them apart. A sentence linked to hunks (`→ H#`) is matched only
+ * against the functions in those hunks; an unlinked one against every changed
+ * source function, with a higher bar. Kept only when one or two functions
+ * clearly lead (high precision), and only in change units where at least two
+ * distinct functions own different sentences: that is where a writer pins one
+ * function's behavior on its neighbour. Never says who calls whom.
+ */
+/** A sentence's clauses: split at `;`, and at `: ` when both sides say something. */
+export function clausesOf(text: string): string[] {
+  const words = (x: string) => x.trim().split(/\s+/).filter(Boolean).length;
+  const out: string[] = [];
+  for (const part of text.split(/;\s+/)) {
+    const i = part.indexOf(': ');
+    if (i > 0 && words(part.slice(0, i)) >= 3 && words(part.slice(i + 2)) >= 3)
+      out.push(part.slice(0, i), part.slice(i + 2));
+    else out.push(part);
+  }
+  return out.map((x) => x.trim().replace(/[.;:,]+$/, '')).filter(Boolean);
+}
+
+export function ownerRows(
+  g: GraphEngine,
+  ctx: SentenceLinks,
+  max = MAX_OWNER_ROWS,
+): Row[] {
+  let hunks: Row[];
+  try {
+    hunks = g.run(
+      `MATCH (c:Change)-[:HAS]->(h:Hunk)-[:OF]->(f:File)
+       RETURN c.id AS change, h.id AS id, h.file AS file, f.role AS role, h.diff AS diff,
+              h.fnWords AS fnWords`,
+    ).rows;
+  } catch {
+    return [];
+  }
+  type Seg = {
+    fn: string;
+    file: string;
+    change: string;
+    hunk: string;
+    diff: string;
+    words: Set<string>;
+  };
+  const segs: Seg[] = [];
+  for (const h of hunks) {
+    if (unitRole(String(h.file), String(h.role ?? '')) !== 'src') continue;
+    for (const entry of ((h.fnWords as string[]) ?? []).map(String)) {
+      const i = entry.indexOf(': ');
+      const fn = i < 0 ? entry : entry.slice(0, i);
+      if (!NAME.test(fn) || !CALLABLE.test(fn) || fn.length < 4) continue;
+      segs.push({
+        fn,
+        file: String(h.file),
+        change: String(h.change),
+        hunk: String(h.id),
+        diff: String(h.diff),
+        words: wordsOf(i < 0 ? '' : entry.slice(i + 2)),
+      });
+    }
+  }
+  if (!segs.length) return [];
+  const byNum = (a: string, b: string) =>
+    Number(a.replace(/\D/g, '')) - Number(b.replace(/\D/g, ''));
+  type Hit = { ref: string; text: string; fns: Seg[][]; change: string; file: string };
+  const hits: Hit[] = [];
+  for (const s of ctx.sentences) {
+    // Sentences, not subjects: a subject sums up what its sentences detail.
+    if (!s.ref.includes('#')) continue;
+    const linked = new Set(ctx.links[s.ref] ?? []);
+    const linkedFiles = new Set(segs.filter((x) => linked.has(x.hunk)).map((x) => x.file));
+    // Linked: the functions of the linked hunks' files, those hunks first.
+    const pool = linked.size ? segs.filter((x) => linkedFiles.has(x.file)) : segs;
+    const byFn = new Map<string, Seg[]>();
+    for (const x of pool) {
+      const key = `${x.file}#${x.fn}`;
+      byFn.set(key, [...(byFn.get(key) ?? []), x]);
+    }
+    // A word most of the pool's functions share tells them apart less.
+    const fnSets = [...byFn.values()].map((xs) => ({
+      xs,
+      words: new Set(xs.flatMap((x) => [...x.words])),
+      name: nameWordsOf(xs[0]!.fn),
+    }));
+    const df = (w: string, of: (f: (typeof fnSets)[number]) => Iterable<string>) =>
+      fnSets.filter((f) => [...of(f)].includes(w)).length;
+    const done = new Set<string>();
+    for (const clause of clausesOf(s.text)) {
+      const sw = wordsOf(clause);
+      if (sw.size < 3) continue;
+      const scored = fnSets
+        .map(({ xs, words, name }) => {
+          const named = name
+            .filter((w) => sw.has(w))
+            .reduce((n, w) => n + (df(w, (f) => f.name) > 1 ? 1 : 2), 0);
+          const said = [...sw]
+            .filter((w) => words.has(w))
+            .reduce((n, w) => n + (df(w, (f) => f.words) > 2 ? 0.5 : 1), 0);
+          const tied = xs.some((x) => linked.has(x.hunk)) ? 2 : 0;
+          return { xs, score: said + named + tied };
+        })
+        .sort((a, b) => b.score - a.score || a.xs[0]!.fn.localeCompare(b.xs[0]!.fn));
+      const top = scored[0];
+      if (!top) continue;
+      const bar = linked.size ? 3 : 4;
+      if (top.score < bar) continue;
+      const chosen = scored.filter((x) => x.score >= Math.max(bar, top.score * 0.75));
+      if (chosen.length > 2) continue;
+      // A clear lead over every other function.
+      const rest = scored[chosen.length];
+      if (rest && rest.score > top.score * (linked.size ? 0.7 : 0.6)) continue;
+      // Both functions in one file, or the row would name two places.
+      if (chosen.some((c) => c.xs[0]!.file !== top.xs[0]!.file)) continue;
+      const key = chosen.map((c) => c.xs[0]!.fn).join(' ');
+      if (done.has(key)) continue;
+      done.add(key);
+      hits.push({
+        ref: s.ref,
+        text: clause,
+        fns: chosen.map((c) => c.xs),
+        change: top.xs[0]!.change,
+        file: top.xs[0]!.file,
+      });
+    }
+  }
+  // Change units where two or more distinct functions own different sentences.
+  const fnsOf = (h: Hit) => h.fns.map((xs) => xs[0]!.fn);
+  const confused = new Set(
+    [...new Set(hits.map((h) => h.change))].filter((ch) => {
+      const own = hits.filter((h) => h.change === ch);
+      return own.some((a) =>
+        own.some(
+          (b) =>
+            a !== b &&
+            a.file === b.file &&
+            fnsOf(a).some((f) => !fnsOf(b).includes(f)) &&
+            fnsOf(b).some((f) => !fnsOf(a).includes(f)),
+        ),
+      );
+    }),
+  );
+  const out: Row[] = [];
+  const perChange = new Map<string, number>();
+  const seenFn = new Set<string>();
+  // One row per function first, so each owner in a unit gets a turn.
+  // Units with the most distinct owners first: there a writer mixes them up most.
+  const owners = (ch: string) =>
+    new Set(hits.filter((h) => h.change === ch).flatMap(fnsOf)).size;
+  const ordered = hits
+    .filter((h) => confused.has(h.change))
+    .sort((a, b) => owners(b.change) - owners(a.change) || a.change.localeCompare(b.change));
+  const taken = new Set<string>();
+  const take = (h: Hit) => {
+    const n = perChange.get(h.change) ?? 0;
+    if (taken.has(`${h.ref} ${h.text}`) || n >= OWNERS_PER_CHANGE || out.length >= max) return;
+    taken.add(`${h.ref} ${h.text}`);
+    perChange.set(h.change, n + 1);
+    for (const f of fnsOf(h)) seenFn.add(f);
+    const diffs = [...new Set(h.fns.flat().map((x) => x.diff))].sort(byNum).slice(0, 2);
+    out.push({
+      change: h.change,
+      behavior: clipAt(h.text, OWNER_TEXT),
+      function: fnsOf(h)
+        .map((f) => `\`${f}\``)
+        .join(' '),
+      file: h.file,
+      cites: [h.ref, ...diffs].join(' '),
+    });
+  };
+  for (const h of ordered) if (fnsOf(h).some((f) => !seenFn.has(f))) take(h);
+  for (const h of ordered) take(h);
+  return out.sort(
+    (a, b) =>
+      String(a.change).localeCompare(String(b.change)) ||
+      String(a.file).localeCompare(String(b.file)),
+  );
+}

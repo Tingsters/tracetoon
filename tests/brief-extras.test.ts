@@ -305,6 +305,7 @@ describe('change units split by file role', () => {
     dropped: [],
     conds: [],
     tests: [],
+    fnWords: [],
     words: [],
     code: [],
     lines: new Set(),

@@ -55,7 +55,7 @@ export function renderNeighborhood(
   const toon = (titles: string[]) =>
     toToon(sections.filter((s) => titles.includes(s.title) && s.rows.length)).trimEnd();
   const head = toon(['limits', 'doNotSay']);
-  const tail = toon(['process', 'tests', 'housekeeping', 'validation']);
+  const tail = toon(['owners', 'process', 'tests', 'housekeeping', 'validation']);
   const around = (head ? head.length + 1 : 0) + (tail ? tail.length + 1 : 0);
   const budgetChars = Math.max(
     0,

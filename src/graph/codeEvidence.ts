@@ -60,7 +60,17 @@ export function evidenceLines(minus: string[], plus: string[], file: string): st
     else flush();
   }
   flush();
-  const key = keyCodeLines(minus, plus, 24);
+  // Changed boolean conditions: one line naming dropped and kept operands,
+  // in place of the bare `- a ||` / `+ … || b` lines they are made of.
+  const ops = operandChanges(minus, plus);
+  const consumed = new Set(ops.flatMap((o) => o.lines).map(norm));
+  const key = keyCodeLines(minus, plus, 24).filter(
+    (k) =>
+      !k
+        .split(/\s+⇒\s+/)
+        .map((x) => x.replace(/^[-+]\s/, ''))
+        .some((x) => [...consumed].some((c) => c.startsWith(norm(x).replace(/…$/, '')))),
+  );
   const literal: string[] = [];
   const cond: string[] = [];
   const rest: string[] = [];
@@ -73,12 +83,199 @@ export function evidenceLines(minus: string[], plus: string[], file: string): st
   }
   return [
     ...comments.slice(0, 3),
+    ...ops.slice(0, 2).map((o) => `± ${o.text}`),
     ...literal.slice(0, 3),
     ...cond.slice(0, 2),
     ...rest.slice(0, 2),
   ]
     .slice(0, MAX_KEY_LINES)
     .map((l) => clip(l, 240));
+}
+
+const norm = (l: string) => l.replace(/\s+/g, ' ').trim();
+
+/** Chains of `&&`/`||` in a hunk's removed or added lines: one line, or lines joined at a trailing or leading operator. */
+function chainsOf(lines: string[]): { text: string; lines: string[] }[] {
+  const out: { text: string; lines: string[] }[] = [];
+  const ends = (l: string) => /(\|\||&&)\s*$/.test(l);
+  const starts = (l: string) => /^\s*(\|\||&&)/.test(l);
+  for (let i = 0; i < lines.length; i++) {
+    if (isComment(lines[i]!)) continue;
+    const run = [lines[i]!];
+    while (
+      i + 1 < lines.length &&
+      !isComment(lines[i + 1]!) &&
+      (ends(run.at(-1)!) || starts(lines[i + 1]!))
+    )
+      run.push(lines[++i]!);
+    const text = norm(run.join(' '));
+    if (/\|\||&&/.test(text.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, '""')))
+      out.push({ text, lines: run });
+  }
+  return out;
+}
+
+/**
+ * The operands of a boolean condition: split at `&&`/`||` at the shallowest
+ * bracket depth they occur, inside the brackets that hold them; an `if (`,
+ * `return`, `x =` or `(e) =>` head and trailing punctuation dropped.
+ */
+export function operandsOf(text: string, single = false): string[] {
+  type Op = { at: number; depth: number };
+  const ops: Op[] = [];
+  const open: number[] = [];
+  const pairs = new Map<number, number>();
+  let quote = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = '';
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    else if ('([{'.includes(c)) open.push(i);
+    else if (')]}'.includes(c)) {
+      const o = open.pop();
+      if (o !== undefined) pairs.set(o, i);
+    } else if ((c === '|' || c === '&') && text[i + 1] === c) {
+      ops.push({ at: i, depth: open.length });
+      i++;
+    }
+  }
+  if (!ops.length) {
+    const one = single ? cleanOperand(text, 0) : '';
+    return one ? [one] : [];
+  }
+  const depth = Math.min(...ops.map((o) => o.depth));
+  const first = ops.find((o) => o.depth === depth)!;
+  // The brackets that hold the shallowest operators.
+  let lo = 0;
+  let hi = text.length;
+  if (depth > 0) {
+    const holders = [...pairs]
+      .filter(([o, c]) => o < first.at && c > first.at)
+      .sort((a, b) => b[0] - a[0]);
+    const unclosed = open.filter((o) => o < first.at).sort((a, b) => b - a);
+    const o = Math.max(holders[0]?.[0] ?? -1, unclosed[0] ?? -1);
+    lo = o + 1;
+    hi = pairs.get(o) ?? text.length;
+  }
+  const at = ops.filter((o) => o.depth === depth && o.at >= lo && o.at < hi).map((o) => o.at);
+  const parts: string[] = [];
+  let from = lo;
+  for (const a of at) {
+    parts.push(text.slice(from, a));
+    from = a + 2;
+  }
+  parts.push(text.slice(from, hi));
+  return parts.map(cleanOperand).filter(Boolean);
+}
+/** An operand without a leading `if (`, `return`, `x =` or `(e) =>`, trailing punctuation or stray brackets. */
+function cleanOperand(p: string, i: number): string {
+  let t = norm(p);
+  if (i === 0)
+    t = t
+      .replace(/^(?:\}\s*)?(?:else\s+)?(?:if|elif|while|unless|return)\b\s*/, '')
+      .replace(/^(?:(?:const|let|var)\s+)?[\w$.]+\s*=(?![=>])\s*/, '')
+      .replace(/^(?:\([\w$,\s]*\)|[\w$]+)\s*=>\s*/, '');
+  t = t.replace(/[\s,;{:]+$/, '');
+  // Brackets the split left unbalanced at either end.
+  while (/^\(/.test(t) && !balanced(t)) t = t.slice(1).trim();
+  while (/\)$/.test(t) && !balanced(t)) t = t.slice(0, -1).trim();
+  while (/^\(.*\)$/.test(t) && balanced(t.slice(1, -1)) && wraps(t)) t = t.slice(1, -1).trim();
+  return t;
+}
+
+const balanced = (t: string) => {
+  let d = 0;
+  for (const c of t.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, '""')) {
+    if ('([{'.includes(c)) d++;
+    else if (')]}'.includes(c) && --d < 0) return false;
+  }
+  return d === 0;
+};
+/** The first bracket closes at the last character. */
+const wraps = (t: string) => {
+  let d = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === '(') d++;
+    else if (t[i] === ')' && --d === 0) return i === t.length - 1;
+  }
+  return false;
+};
+
+/** An operand that reads as true/false: a comparison, a negation, a predicate call. */
+const BOOLEANISH =
+  /[=!]==?|[<>]=?|^!|\.(?:includes|has|some|every|startsWith|endsWith|test|match|exec)\(|\b(?:is|has|can|should|was)[A-Z]\w*\(|^(?:true|false)$/;
+
+const tick = (s: string, n: number) => `\`${clip(s, n).replace(/`/g, "'")}\``;
+
+/**
+ * Changed boolean conditions: a removed `&&`/`||` chain and the added chain
+ * sharing the most operands with it, as `was … → now …` (short ones) or the
+ * operands the change dropped, kept and added. `lines` are the removed and
+ * added lines the chains span.
+ */
+export function operandChanges(
+  minus: string[],
+  plus: string[],
+): { text: string; lines: string[] }[] {
+  // Chains, and single condition lines a chain may have become or come from.
+  const sides = (lines: string[]) => {
+    const chains = chainsOf(lines);
+    const inChain = new Set(chains.flatMap((c) => c.lines));
+    const singles = lines
+      .filter((l) => !inChain.has(l) && !isComment(l) && CONDITION.test(l))
+      .map((l) => ({ text: norm(l), lines: [l] }));
+    return [
+      ...chains.map((c) => ({ ...c, ops: operandsOf(c.text) })),
+      ...singles.map((c) => ({ ...c, ops: operandsOf(c.text, true) })),
+    ];
+  };
+  const gone = sides(minus);
+  const now = sides(plus);
+  const out: { text: string; lines: string[] }[] = [];
+  const used = new Set<number>();
+  for (const g of gone) {
+    if (!g.ops.length) continue;
+    let best = -1;
+    let shared = 0;
+    now.forEach((p, i) => {
+      if (used.has(i)) return;
+      const n = p.ops.filter((o) => g.ops.includes(o)).length;
+      if (n > shared) {
+        shared = n;
+        best = i;
+      }
+    });
+    if (best < 0) continue;
+    const p = now[best]!;
+    if (g.ops.length < 2 && p.ops.length < 2) continue;
+    const dropped = g.ops.filter((o) => !p.ops.includes(o));
+    const added = p.ops.filter((o) => !g.ops.includes(o));
+    if (!dropped.length && !added.length) continue;
+    // Conditions only: a value fallback (`a || 'x'`) is a value change.
+    if (![...dropped, ...added].every((o) => BOOLEANISH.test(o))) continue;
+    used.add(best);
+    const kept = g.ops.filter((o) => p.ops.includes(o));
+    const list = (xs: string[], n: number) => xs.map((x) => tick(x, n)).join(', ');
+    const whole = (ops: string[], text: string) =>
+      /&&/.test(text) && !/\|\|/.test(text) ? ops.join(' && ') : ops.join(' || ');
+    const was = whole(g.ops, g.text);
+    const is = whole(p.ops, p.text);
+    const head =
+      was.length <= 60 && is.length <= 60
+        ? `was ${tick(was, 60)} → now ${tick(is, 60)}; `
+        : 'condition changed, ';
+    const parts = [
+      dropped.length ? `dropped: ${list(dropped, 70)}` : '',
+      added.length ? `added: ${list(added, 70)}` : '',
+      kept.length ? `kept: ${list(kept, 45)}` : '',
+    ].filter(Boolean);
+    out.push({ text: clip(`${head}${parts.join('; ')}`, 230), lines: [...g.lines, ...p.lines] });
+  }
+  return out;
 }
 
 /** Number and version tokens of a hunk's changed lines, for the conflict check. */
@@ -121,6 +318,26 @@ export const CODE_SHARE = 0.11;
 /** Lines per commit sentence, and characters per line. */
 const PER_ROW = 2;
 const LINE_CHARS = 110;
+
+/**
+ * A key line with its direction spelled out, so a writer can't read a removed
+ * line as added: `removed: …`, `added: …`, `was \`old\` → now \`new\`` for a
+ * pair, and the operand line (`± …`) as it is.
+ */
+export function directional(l: string): string {
+  if (l.startsWith('± ')) return clip(l.slice(2), OPERAND_CHARS);
+  const pair = /^- (.*?)\s+⇒\s+\+ (.*)$/.exec(l);
+  if (pair) {
+    const side = (x: string) => clip(x, PAIR_CHARS).replace(/`/g, "'");
+    return `was \`${side(pair[1]!)}\` → now \`${side(pair[2]!)}\``;
+  }
+  if (l.startsWith('+ ')) return `added: ${clip(l.slice(2), LINE_CHARS)}`;
+  if (l.startsWith('- ')) return `removed: ${clip(l.slice(2), LINE_CHARS)}`;
+  return clip(l, LINE_CHARS);
+}
+/** Characters of an operand line, and of each side of a pair. */
+const OPERAND_CHARS = 200;
+const PAIR_CHARS = 60;
 
 interface HunkInfo {
   id: string;
@@ -177,9 +394,10 @@ export function addCodeCells(
         const shared = [...wordsOf(l)].filter((w) => words.has(w)).length;
         if (shared)
           out.push({
-            text: `${h.diff} ${clip(l, LINE_CHARS)}`,
+            text: `${h.diff} ${directional(l)}`,
             hunk: id,
-            score: shared * 10 - i,
+            // Operand lines first: they say which way a condition changed.
+            score: shared * 10 - i + (l.startsWith('± ') ? 15 : 0),
           });
       });
     }
@@ -205,7 +423,9 @@ export function addCodeCells(
       const c = cands[i]!;
       const line = c.find((l) => !shown.has(l));
       if (!line) return;
-      const cost = line.length + 3;
+      // The direction words (`added:`, `removed:`) cost what `+`/`-` did:
+      // spelling them out never pushes a line out.
+      const cost = line.length + 3 - (/^\S+ (?:added|removed): /.exec(line) ? 6 : 0);
       if (used + cost > budget) return;
       used += cost;
       shown.add(line);
@@ -395,10 +615,12 @@ export function conflictRows(
       const h = info.get(id);
       if (!h || PROSE_FILE.test(h.file)) continue;
       for (const l of h.keyLines) {
+        // Operand lines restate conditions; they carry no new comment or value.
+        if (l.startsWith('± ')) continue;
         const body = l.replace(/^[-+]\s/, '');
         // Only what the change adds: a `- old ⇒ + new` pair speaks for its new side.
-        const added = body.includes('  ⇒  + ')
-          ? body.split('  ⇒  + ')[1]!
+        const added = /\s⇒\s+\+ /.test(body)
+          ? body.split(/\s⇒\s+\+ /)[1]!
           : l.startsWith('- ')
             ? ''
             : body;

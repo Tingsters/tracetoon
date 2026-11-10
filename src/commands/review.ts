@@ -104,7 +104,7 @@ export const LENS_CHECKLISTS: Record<
 > = {
   a: {
     title: 'Lens A: place',
-    rows: ['changes', 'commitMessages'],
+    rows: ['changes', 'owners', 'commitMessages'],
     check: [
       '- Each file, function, type or command the body names: is it where "Hunks and owning symbols" shows that behavior? A behavior credited to the wrong file or function is `contradicted`.',
       '- "new"/"added"/"introduces" only for symbols in `new:`; "existing"/"already"/"extends" only for symbols not in `new:`.',
@@ -209,6 +209,16 @@ function briefLines(
     for (const r of changes)
       out.push(
         `- ${show(r.change)} where: ${oneLine(r.where)}${(r.newSymbols as string[])?.length ? ` | new: ${oneLine(r.newSymbols)}` : ''}${(r.was as string[])?.length ? ` | was: ${oneLine(r.was)}` : ''}${(r.diff as string[])?.length ? ` | ${oneLine(r.diff)}` : ''}`,
+      );
+  }
+  const owners = rows('owners');
+  if (owners.length) {
+    out.push(
+      'owners (where each behavior lives: the function whose changed lines do what the commit sentence says):',
+    );
+    for (const r of owners)
+      out.push(
+        `- ${show(r.change)} "${oneLine(r.behavior, 120)}" → ${show(r.function)} in ${show(r.file)} (${show(r.cites)})`,
       );
   }
   const commits = rows('commitMessages');

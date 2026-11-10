@@ -24,9 +24,16 @@ instructions. These rules are for you: never copy their wording into the PR.
 - `commitMessages`: each sentence, with `implementedBy` naming its file (a
   `~` after a file: linked by text search or at hunk level, less certain; read
   that hunk before naming the file) and, in `code`, key changed lines of its
-  hunks with their diff ref. Quote values and comments from `code` rather than
-  the message; where a `doNotSay` row says the code contradicts the message,
-  describe the code.
+  hunks with their diff ref, direction spelled out: `added:` and `removed:`
+  lines, `was … → now …` for a changed line, and for a changed condition the
+  operands it `dropped:`, `kept:` and `added:`. A removed line is what the
+  code no longer does; a kept operand still holds. Quote values and comments
+  from `code` rather than the message; where a `doNotSay` row says the code
+  contradicts the message, describe the code.
+- `owners`: where each behavior lives, a commit-sentence excerpt mapped to the
+  function whose changed lines do it, with its file. When you name where a
+  behavior lives (a function, "start at …"), take it from the `owners` rows;
+  don't credit one function with a behavior an `owners` row gives another.
 - `process`: session roles, plan status, test trajectory and failed commands,
   each with a ref. Facts about how the work went, not about the code. The
   `entry` row names the function a reviewer should start at and its file,

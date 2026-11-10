@@ -20,6 +20,7 @@ import { addSearchEvidence, fillSearchLinks } from './searchBrief.ts';
 import {
   capLimits,
   entryRow,
+  ownerRows,
   failedPublishRows,
   noPassAfterCommitRow,
   remotePathRows,
@@ -1450,6 +1451,8 @@ export function briefParts(
   };
   const entry = entryRow(g, links);
   if (entry) process.push({ ref: `PR${process.length + 1}`, ...entry });
+  // Where each behavior lives: commit sentences → the function that does it.
+  const owners = ownerRows(g, links);
 
   // Open points first: writers often read only the head of the output.
   const sections: Section[] = [
@@ -1471,6 +1474,10 @@ export function briefParts(
       ],
       changeRows,
     ),
+    // Only when it has rows: most PRs have no unit where owners get mixed up.
+    ...(owners.length
+      ? [section('owners', ['change', 'behavior', 'function', 'file', 'cites'], owners)]
+      : []),
     section('process', ['ref', 'kind', 'fact', 'cites'], process),
     section('requests', ['ref', 'kind', 'text', 'truncated'], requests),
     section('background', ['ref', 'kind', 'text'], background),

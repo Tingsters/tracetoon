@@ -366,7 +366,7 @@ describe('search links', () => {
     expect(after.hunkLinks[`${A}#2`]).toEqual(['H2']);
     // Code lines, cited by diff ref.
     const code = String(row(after.sections, `${A}#1`).code);
-    expect(code).toMatch(/^diff:\d+-\d+ \+ \/\/ The API sorts by tag name/);
+    expect(code).toMatch(/^diff:\d+-\d+ added: \/\/ The API sorts by tag name/);
     // The comment contradicts the sentence's ordering: a doNotSay row says so.
     const dns = after.sections.find((s) => s.title === 'doNotSay')!.rows;
     const conflict = dns.find((r) => r.kind === 'commit vs code')!;
