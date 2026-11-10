@@ -721,7 +721,7 @@ export function misattributedTests(
       return {
         sentence,
         severity: 'check',
-        problem: `"${phrase.trim()}": the test titles in ${top.f.file} show that, not ${m.file}'s. Attribute each tested behavior to the test file whose titles show it; don't group them under one file.`,
+        problem: `"${phrase.trim()}": the test titles in ${top.f.file} show that, not ${m.file.file}'s. Attribute each tested behavior to the test file whose titles show it; don't group them under one file.`,
       };
     }
   }

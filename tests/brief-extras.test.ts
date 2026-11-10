@@ -705,6 +705,7 @@ describe('tested behaviors attributed to the file whose titles show them', () =>
     expect(flag?.severity).toBe('check');
     expect(flag?.problem).toContain('"binary changes"');
     expect(flag?.problem).toContain('tests/render.test.ts');
+    expect(flag?.problem).toContain("not tests/alpha-fix.test.ts's");
     // By path, too.
     expect(
       misattributedTests(
