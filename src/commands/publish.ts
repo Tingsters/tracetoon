@@ -182,6 +182,26 @@ export function digestStale(
   return `${added && added !== '0' ? `${added} commit(s) were` : 'Commits were'} added after the digest; run \`tracetoon digest\` again so the description and checks see them.`;
 }
 
+/**
+ * The `--head` for `gh pr create`: `owner:branch` when origin is a fork of the
+ * repository gh targets (its default repo), else the bare branch. Without the
+ * owner, GitHub looks for the branch in the base repository and refuses.
+ */
+export function prHead(
+  branch: string,
+  originOwner: string | undefined,
+  baseRepo: string | undefined,
+): string {
+  const baseOwner = baseRepo?.split('/')[0];
+  return originOwner && baseOwner && originOwner.toLowerCase() !== baseOwner.toLowerCase()
+    ? `${originOwner}:${branch}`
+    : branch;
+}
+function ghBaseRepo(root: string): string | undefined {
+  const r = gh(root, ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner']);
+  const name = r.ok ? r.stdout.trim() : '';
+  return /^[^/\s]+\/[^/\s]+$/.test(name) ? name : undefined;
+}
 function loadRun(cwd: string, runId?: string): { run: Run; truth: PrTruth } {
   const truth = prTruth(cwd, { noGh: true });
   return { run: findRun(truth.gitDir, runId), truth };
@@ -320,7 +340,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
   const findingAt = findings.length ? leakLocations(title, body) : [];
   const comicSha = comic ? sha(comic.data) : undefined;
   const approval: Approval = {
-    ...(readTask(run)
+    ...(readTask(run) || receipts(run).length
       ? {
           workspaceFingerprint: workFingerprint(truth.toplevel),
           originSha: sha(
@@ -782,6 +802,8 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       '.url',
     ]).stdout.trim();
   } else {
+    const head = prHead(approval.head, truth.remote?.owner, ghBaseRepo(truth.toplevel));
+    const headOwner = head.includes(':') ? head.split(':')[0]!.toLowerCase() : undefined;
     // A timed-out create may have succeeded on GitHub. Reconcile before every create.
     const listing = gh(truth.toplevel, [
       'pr',
@@ -793,7 +815,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       '--base',
       approval.base,
       '--json',
-      'number,url,title,body,headRefName,baseRefName,headRefOid',
+      'number,url,title,body,headRefName,baseRefName,headRefOid,headRepositoryOwner',
     ]);
     if (!listing.ok)
       throw new UserError(
@@ -805,10 +827,16 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       headRefName?: string;
       baseRefName?: string;
       headRefOid?: string;
+      headRepositoryOwner?: { login?: string };
     }[];
     try {
       existing = JSON.parse(listing.stdout);
       if (!Array.isArray(existing)) throw new Error();
+      // From a fork, only PRs whose head lives in that fork are ours.
+      if (headOwner)
+        existing = existing.filter(
+          (pr) => (pr.headRepositoryOwner?.login ?? '').toLowerCase() === headOwner,
+        );
     } catch {
       throw new UserError(
         'GitHub returned an unreadable PR list; publication stopped before creating a duplicate.',
@@ -836,15 +864,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
         throw new UserError(
           'A PR already exists for this branch and base. Refresh context and review its update instead of creating another.',
         );
-      const create = [
-        'pr',
-        'create',
-        '--base',
-        approval.base,
-        '--head',
-        approval.head,
-        ...args,
-      ];
+      const create = ['pr', 'create', '--base', approval.base, '--head', head, ...args];
       if (opts.draft) create.push('--draft');
       progress.attemptedCreate = true;
       writeLocal(progressPath, progress);
