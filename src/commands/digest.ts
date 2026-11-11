@@ -103,7 +103,8 @@ export function digestCmd(
   } catch {
     // Optional telemetry must not prevent creation of the evidence packet.
   }
-  if (readTask(run)) {
+  // Receipts count whether or not the run was started with `task begin`.
+  if (readTask(run) || receipts(run).length) {
     const report = checkReport(truth.toplevel, run);
     const validation = report.map((c) => ({
       name: c.name,
