@@ -43,6 +43,26 @@ test('failed test files and empty selections cannot report a passing source run'
   );
 });
 
+test('a test file that blocks forever is killed and fails with the output it had', async () => {
+  const root = tempDir('tracetoon-hung-file-');
+  // A synchronous wait cannot be interrupted by bun's per-test timeout, like a hung spawnSync.
+  writeFileSync(
+    join(root, 'hang.test.ts'),
+    "import {test} from 'bun:test'; test('prints first',()=>{}); test('blocks',()=>{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,120000);});",
+  );
+  const before = process.env.TRACETOON_TEST_FILE_TIMEOUT_MS;
+  process.env.TRACETOON_TEST_FILE_TIMEOUT_MS = '4000';
+  try {
+    const started = Date.now();
+    const results = await runTestFiles({ root, files: ['hang.test.ts'], quiet: true });
+    expect(results[0]!.code).toBe(1);
+    expect(Date.now() - started).toBeLessThan(60_000);
+  } finally {
+    if (before === undefined) delete process.env.TRACETOON_TEST_FILE_TIMEOUT_MS;
+    else process.env.TRACETOON_TEST_FILE_TIMEOUT_MS = before;
+  }
+});
+
 test('source discovery includes tracked and new tests throughout the repo, excluding private trails', () => {
   const repo = makeRepo();
   repo.commit('src/inside.test.ts', '// tracked fixture\n', 'Add source test');

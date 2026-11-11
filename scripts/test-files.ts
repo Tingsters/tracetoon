@@ -92,6 +92,24 @@ export function sourceTestFiles(root: string): string[] {
   return files;
 }
 
+/** How long one test file may run before the runner kills it (default 15 minutes). */
+const FILE_TIMEOUT_MS = () => {
+  const ms = Number(process.env.TRACETOON_TEST_FILE_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 15 * 60_000;
+};
+
+/** Kill a process and its children (on Windows, `child.kill()` leaves them running). */
+function killTree(pid: number | undefined) {
+  if (!pid) return;
+  try {
+    if (process.platform === 'win32')
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+    else process.kill(pid, 'SIGKILL');
+  } catch {
+    // already gone
+  }
+}
+
 export async function runTestFiles(options: {
   root: string;
   files: string[];
@@ -162,18 +180,34 @@ export async function runTestFiles(options: {
         child.once('error', (error) => {
           stderr += error.message;
         });
-        child.once('close', (code) => {
+        let settled = false;
+        const finish = (code: number) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(watchdog);
           if (!options.quiet) {
             process.stdout.write(stdout);
             process.stderr.write(stderr);
           }
           resolve({
             file,
-            code: code ?? 1,
+            code,
             ms: Math.round(performance.now() - started),
             report,
           });
-        });
+        };
+        // A file that never finishes (a child that hangs, or an orphan that keeps the
+        // pipes open so `close` never fires) must fail with its output so far, not
+        // stall the whole job until the CI time limit.
+        const limit = FILE_TIMEOUT_MS();
+        const watchdog = setTimeout(() => {
+          const message = `\n[test runner] ${file} did not finish within ${Math.round(limit / 1000)}s; killing it. The output above is everything it printed.\n`;
+          stderr += message;
+          appendFileSync(logFile, message);
+          killTree(child.pid);
+          finish(1);
+        }, limit);
+        child.once('close', (code) => finish(code ?? 1));
       });
       results[index] = result;
     }
