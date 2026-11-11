@@ -142,7 +142,8 @@ export function digestCmd(
   // Check receipts first, so the evidence graph sees which checks are fresh.
   let checksReport: ReturnType<typeof checkReport> | undefined;
   let verification: ReturnType<typeof receiptEvidence> | undefined;
-  if (readTask(run)) {
+  // Receipts count whether or not the run was started with `task begin`.
+  if (readTask(run) || receipts(run).length) {
     checksReport = checkReport(truth.toplevel, run);
     verification = receiptEvidence(truth.toplevel, run, checksReport);
   }

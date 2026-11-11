@@ -64,6 +64,35 @@ function inputFingerprint(
 const HOST_SESSION_VARS =
   /^(CODEX_TOOL_CALL_ID|CODEX_THREAD_ID|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_CODE_SESSION_ID|CLAUDE_CODE_SESSION_ATTENDED|CLAUDE_CODE_CHILD_SESSION|CLAUDE_CODE_MESSAGING_\w+|AI_AGENT)$/;
 
+/**
+ * Result lines of a check's output: the last three that report counts.
+ * stderr is read before stdout, so a wrapper's own total on stdout ("46 passed,
+ * 0 failed") wins over the last child's per-file lines on stderr; a runner that
+ * writes only one stream is unaffected.
+ */
+export function checkSummary(
+  stdout: string,
+  stderr: string,
+  scrub: (text: string) => string = (t) => t,
+): string[] {
+  return scrub(`${stderr}\n${stdout}`)
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .split(/\r?\n/)
+    .filter((s) =>
+      /\b\d+\s+(?:pass(?:ed|es)?|fail(?:ed|ures?|s)?|tests?|checks?)\b|\b(?:Tests|Test Files):/i.test(
+        s,
+      ),
+    )
+    .slice(-3)
+    .map((s) => s.slice(0, 200));
+}
+/**
+ * Terminal, display and temp-directory variables: they differ between shells
+ * of one machine without changing what a check does, so they don't invalidate
+ * a receipt.
+ */
+const VOLATILE_VARS =
+  /^(TMPDIR|TMP|TEMP|TERM|TERM_PROGRAM\w*|COLORTERM|COLUMNS|LINES|DISPLAY|WAYLAND_DISPLAY|WINDOWID|DBUS_SESSION_BUS_ADDRESS|XDG_SESSION_\w+|XDG_RUNTIME_DIR|SSH_\w+|VTE_VERSION|KITTY_\w+|ITERM_\w+|TMUX\w*|STY|WT_SESSION|WT_PROFILE_ID)$/;
 export function checkEnvironment(env: NodeJS.ProcessEnv = process.env): string {
   // Hash, don't log, the environment. Changed PATH/toolchain/options invalidate reuse.
   return hash([
@@ -75,7 +104,8 @@ export function checkEnvironment(env: NodeJS.ProcessEnv = process.env): string {
       .filter(
         ([k]) =>
           !/^(TRACETOON|FAKE_|_|PWD$|OLDPWD$|SHLVL$|SHELL$)/.test(k) &&
-          !HOST_SESSION_VARS.test(k),
+          !HOST_SESSION_VARS.test(k) &&
+          !VOLATILE_VARS.test(k),
       )
       .sort(([a], [b]) => a.localeCompare(b)),
   ]);
@@ -301,15 +331,9 @@ function prepareCheck(
                 ? 'The command changed validation inputs; run checks after finalizing those changes.'
                 : (result?.error?.message ?? '')),
           ) || undefined,
-        summary: makeScrubber([root])
-          .text(`${result?.stdout ?? ''}\n${result?.stderr ?? ''}`)
-          .replace(/\x1b\[[0-9;]*m/g, '')
-          .split(/\r?\n/)
-          .filter((s) =>
-            /\b\d+\s+(?:pass|fail|tests?|checks?)\b|\b(?:Tests|Test Files):/.test(s),
-          )
-          .slice(-3)
-          .map((s) => s.slice(0, 200)),
+        summary: checkSummary(result?.stdout ?? '', result?.stderr ?? '', (t) =>
+          makeScrubber([root]).text(t),
+        ),
         startedAt,
         durationMs: Math.round(performance.now() - start),
         reuse: {
