@@ -522,7 +522,10 @@ describe('review run --all and the merged list', () => {
     expect(r.merged.items[0].passes.sort()).toEqual(['general', 'general 2', 'lens d']);
     const md = readFileSync(join(run.dir, 'review-findings-merged.md'), 'utf8');
     expect(md).toContain('1. overstated — "always uses the given name"');
-    expect(md).toContain('[lens d, general, general 2]');
+    // Pass order follows import order, which depends on which concurrent run finished first.
+    const line = md.split('\n').find((l) => l.startsWith('1. overstated'))!;
+    const listed = /\[([^\]]+)\]\s*$/.exec(line)![1]!.split(', ').sort();
+    expect(listed).toEqual(['general', 'general 2', 'lens d']);
     expect(r.planMissing).toEqual([]);
     // Recheck none: the plan is met without any recheck, and the next step says so.
     expect(r.next).toContain('ONE edit pass');
