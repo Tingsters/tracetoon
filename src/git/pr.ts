@@ -372,7 +372,10 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     : existingPr(toplevel, head, target?.repo, originOwner);
   const known = opts.base ?? pr?.baseRefName;
   let base: string, ref: string;
-  if (known) ({ branch: base, ref } = resolveBase(toplevel, known, target?.repo));
+  // Keep an explicit base as given (`upstream/main` stays `upstream/main`):
+  // later commands resolve it again from context.json, and a bare `main` would
+  // then mean origin's copy. prBase turns it into the branch the PR targets.
+  if (known) ({ ref } = resolveBase(toplevel, (base = known), target?.repo));
   else {
     const refs = baseRefs(toplevel);
     base = chooseBase(refs);

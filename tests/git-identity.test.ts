@@ -149,7 +149,9 @@ describe('base branch detection from one ref listing', () => {
     repo.commit('index.html', '<p>new</p>', 'site work');
     for (const given of ['upstream/gh-pages', 'gh-pages']) {
       const truth = prTruth(repo.root, { noGh: true, base: given });
-      expect(truth.base).toBe('gh-pages');
+      // Kept as given, so a later command resolving it again gets the same diff.
+      expect(truth.base).toBe(given);
+      expect(prTruth(repo.root, { noGh: true, base: truth.base }).mergeBase).toBe(base);
       expect(truth.mergeBase).toBe(base);
       expect(truth.commits.map((c) => c.subject)).toEqual(['site work']);
     }
