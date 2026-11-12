@@ -48,6 +48,13 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
   CHECK_PROGRESS_CONTRACT,
   PREPARATION_CONTRACT,
   {
+    // Needs the generated build.json and bundle, which aren't committed.
+    id: 'launcher-runtime-selection',
+    file: 'tests/runtime.test.ts',
+    pattern: 'skips an executable from another build and runs the matching shipped bundle',
+    minimum: 1,
+  },
+  {
     id: 'trace-selection-and-redaction',
     file: 'tests/flow.test.ts',
     pattern: 'matches the session that wrote the code and drops other repos',

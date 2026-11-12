@@ -32,6 +32,9 @@ const result = spawnSync(
     'build',
     '--compile',
     ...(manifest.recipe.native.minify ? ['--minify'] : []),
+    // The build identity is compiled in; src/version.ts falls back to `source` without it.
+    '--define',
+    `${manifest.recipe.identity}=${JSON.stringify(manifest)}`,
     './src/cli.ts',
     ...output,
     ...args,

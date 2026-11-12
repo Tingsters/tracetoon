@@ -13,6 +13,11 @@ $env:TRACETOON_LAUNCHER = Join-Path $here 'tracetoon.cmd'
 
 $buildInfoPath = Join-Path $skill 'build.json'
 $buildId = if (Test-Path $buildInfoPath) { (Get-Content $buildInfoPath -Raw | ConvertFrom-Json).buildId } else { $null }
+if (-not $buildId) {
+  # Build outputs aren't committed: a source checkout has no build.json until it is built.
+  [Console]::Error.WriteLine('tracetoon: this copy has no build (no build.json; a source checkout?). Run `bun run bundle` to build it, or `bun src/cli.ts` from the checkout. Plugin users: install from the release branch.')
+  exit 3
+}
 function Test-MatchingRuntime([string]$program, [string[]]$leading = @()) {
   if (-not $buildId) { return $false }
   try {

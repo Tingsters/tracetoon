@@ -93,8 +93,8 @@ skill copy and the hooks together, restoring the old files if any step fails.
 `--channel stable` ignores release candidates; `--to <version>` installs a
 specific release, which is also how to roll back. Re-running the installer
 works too. `TRACETOON_DISABLE_UPDATES=1` blocks `update`. A Claude Code plugin
-or a source checkout is not replaced in place: update the plugin with
-`/plugin marketplace update`. To remove, set `TRACETOON_UNINSTALL=1` and run the
+is not replaced in place: update it with `/plugin marketplace update`. A source
+checkout updates with `git pull`. To remove, set `TRACETOON_UNINSTALL=1` and run the
 installer again. Downloads are checked against the release's SHA-256 checksums.
 After an update, reload your host; Codex may require trusting the new entries
 in `/hooks`. `tracetoon doctor --json` distinguishes configured hooks, observed
@@ -156,11 +156,10 @@ Turn it off at whichever level you need. Any "off" wins:
 <details>
 <summary>Other ways to install</summary>
 
-- **Claude Code plugin:** `/plugin marketplace add Tingsters/tracetoon#release`
-  (published releases; the `release` branch is moved by each release, starting
-  with the first one cut after it was added to the workflow), then
-  `/plugin install tracetoon@tracetoon`. Without `#release` you follow `main`,
-  which can be ahead of any release. Update with `/plugin marketplace update
+- **Claude Code plugin:** `/plugin marketplace add Tingsters/tracetoon`, then
+  `/plugin install tracetoon@tracetoon`. The plugin comes from the `release`
+  branch, which carries each published release with its built bundle (main has
+  only source). Update with `/plugin marketplace update
   tracetoon`, or turn on auto-update for it under `/plugin` > Marketplaces
   (third-party marketplaces start with it off); run `/reload-plugins` after.
   The plugin runs its bundled copy under Bun or Node 22+. For the prebuilt
@@ -379,7 +378,8 @@ bun run dependencies:prepare  # isolated Showtail source at build-dependencies.j
 bun install
 bun test
 bun run typecheck
-bun run bundle      # rebuilds plugin/skills/tracetoon/dist/tracetoon.mjs
+bun src/cli.ts doctor   # run from source (build id `source`); nothing to build first
+bun run bundle      # builds dist/tracetoon.mjs and build.json for packaged runs (not committed)
 ```
 
 Tracetoon builds on [`@showtail/agent-traces`](https://github.com/Tingsters/Showtail/tree/main/packages/agent-traces),

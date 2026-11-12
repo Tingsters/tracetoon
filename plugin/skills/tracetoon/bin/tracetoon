@@ -18,6 +18,11 @@ TRACETOON_LAUNCHER="$here/tracetoon"
 export TRACETOON_LAUNCHER
 
 build=$(sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$skill/build.json" 2>/dev/null || true)
+if [ -z "$build" ]; then
+  # Build outputs aren't committed: a source checkout has no build.json until it is built.
+  echo 'tracetoon: this copy has no build (no build.json; a source checkout?). Run `bun run bundle` to build it, or `bun src/cli.ts` from the checkout. Plugin users: install from the release branch.' >&2
+  exit 3
+fi
 matches() {
   [ -n "$build" ] || return 1
   info=$("$@" build-info --json 2>/dev/null) || return 1

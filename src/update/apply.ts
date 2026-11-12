@@ -53,7 +53,7 @@ function wantedHash(checksums: string, file: string): string | undefined {
 }
 
 /** Unpack a zip with whatever the machine has (Windows 10+ and macOS ship a bsdtar). */
-function unzip(zip: string, dir: string): void {
+export function unzip(zip: string, dir: string): void {
   const tools: [string, string[]][] = [
     ['unzip', ['-q', zip, '-d', dir]],
     ['bsdtar', ['-xf', zip, '-C', dir]],
