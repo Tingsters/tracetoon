@@ -204,6 +204,9 @@ if [ "$os" != windows ]; then
   esac
 fi
 
+# Records how this copy was installed, for `tracetoon update`.
+printf '{\n  "method": "installer",\n  "version": "%s",\n  "tag": "%s",\n  "path": "%s"\n}\n' "$ver" "$tag" "$stable" > "$home_root/install.json" || true
+
 # Comics need an image route: say what's there and what to do next.
 "$stable" images --brief 2>/dev/null || true
 say "Done. Restart your agent, then ask it to open a PR."

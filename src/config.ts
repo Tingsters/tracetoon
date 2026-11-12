@@ -35,7 +35,16 @@ export interface Config {
   style: string;
   /** Use Tracetoon for PRs at all. Off here, or in any other switch, wins. */
   enabled: boolean;
+  /** Updates: `off` never looks, `notify` says so when a newer release exists, `install` also installs it. */
+  autoUpdate: AutoUpdate;
+  /** `latest` includes release candidates; `stable` only full releases. */
+  updateChannel: UpdateChannel;
 }
+
+export const AUTO_UPDATES = ['off', 'notify', 'install'] as const;
+export type AutoUpdate = (typeof AUTO_UPDATES)[number];
+export const UPDATE_CHANNELS = ['stable', 'latest'] as const;
+export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
 
 export const DEFAULTS: Config = {
   enabled: true,
@@ -46,6 +55,8 @@ export const DEFAULTS: Config = {
   imageConsent: [],
   comic: 'allowed',
   style: 'auto',
+  autoUpdate: 'notify',
+  updateChannel: 'latest',
 };
 
 export function userConfigPath(): string {
@@ -74,17 +85,29 @@ function readJson(p: string): Partial<Config> {
   }
 }
 
+function oneOf<T extends string>(allowed: readonly T[], v: unknown, fallback: T): T {
+  return (allowed as readonly unknown[]).includes(v) ? (v as T) : fallback;
+}
+
 export function loadConfig(root?: string): Config {
   const user = readJson(userConfigPath());
   // Only the user can approve sending prompts to an image service: a repo's
   // config file can't do it for them.
-  const { imageConsent: _ignored, ...repo } = root ? readJson(repoConfigPath(root)) : {};
+  // Likewise only the user decides whether and how this machine updates its own programs.
+  const {
+    imageConsent: _consent,
+    autoUpdate: _auto,
+    updateChannel: _channel,
+    ...repo
+  } = root ? readJson(repoConfigPath(root)) : {};
   return {
     ...DEFAULTS,
     ...user,
     ...repo,
     comic: comicMode(repo.comic ?? user.comic ?? DEFAULTS.comic),
     imageConsent: user.imageConsent ?? DEFAULTS.imageConsent,
+    autoUpdate: oneOf(AUTO_UPDATES, user.autoUpdate, DEFAULTS.autoUpdate),
+    updateChannel: oneOf(UPDATE_CHANNELS, user.updateChannel, DEFAULTS.updateChannel),
   };
 }
 
