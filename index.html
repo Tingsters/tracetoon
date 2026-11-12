@@ -3,66 +3,489 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tracetoon: pull requests written from what actually happened</title>
-<meta name="description" content="Tracetoon writes pull request descriptions from the AI agent session logs already on your machine, with a preview you approve.">
+<title>Tracetoon: PRs with receipts. And comics.</title>
+<meta name="description" content="Tracetoon writes pull requests from the AI agent session logs already on your machine. An embedded evidence graph makes them more accurate and cheaper to write, and it follows each repo's rules, comics included.">
+<meta property="og:title" content="Tracetoon: PRs with receipts. And comics.">
+<meta property="og:description" content="Pull requests written from what your agent actually did. Judged better, 35–41% cheaper, and each one can come with a comic.">
+<meta property="og:image" content="https://tracetoon.com/img/og-image.png">
+<meta property="og:url" content="https://tracetoon.com/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#fffdf8; --fg:#1d1b16; --muted:#5c574b; --accent:#b4440b; --code:#f3eee2; --line:#e3dccb; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#17150f; --fg:#f1ecde; --muted:#aaa392; --accent:#f08a4b; --code:#25221a; --line:#37332a; } }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:18px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  main { max-width:760px; margin:0 auto; padding:2.5rem 1.25rem 3rem; }
-  h1 { font-size:2.4rem; line-height:1.15; margin:0 0 .4rem; }
-  h2 { font-size:1.35rem; margin:2.2rem 0 .6rem; }
-  .lede { color:var(--muted); font-size:1.15rem; margin:0 0 1.5rem; }
-  img.hero { width:100%; height:auto; border:1px solid var(--line); border-radius:8px; }
+  :root {
+    --bg:#fffdf6; --fg:#1b1913; --muted:#5a5548; --line:#e4dccb; --card:#ffffff;
+    --code:#1b1913; --code-fg:#f6f1e3; --accent:#c2410c; --accent-fg:#ffffff;
+    --pow:#ffd84a; --pow-fg:#1b1913; --teal:#0f8f80; --good:#15803d;
+    --ink:#1b1913; --shadow:4px 4px 0 var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#14130f; --fg:#f2ede0; --muted:#aaa392; --line:#38342b; --card:#1d1b16;
+      --code:#0b0a08; --code-fg:#f2ede0; --accent:#fb8a4c; --accent-fg:#14130f;
+      --teal:#2dd4bf; --good:#4ade80; --ink:#000000;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#14130f; --fg:#f2ede0; --muted:#aaa392; --line:#38342b; --card:#1d1b16;
+    --code:#0b0a08; --code-fg:#f2ede0; --accent:#fb8a4c; --accent-fg:#14130f;
+    --teal:#2dd4bf; --good:#4ade80; --ink:#000000;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; scroll-padding-top:70px; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; overflow-x:hidden; }
   a { color:var(--accent); }
-  ul { padding-left:1.2rem; }
-  li { margin:.45rem 0; }
-  pre { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:.8rem 1rem; overflow-x:auto; font-size:.85rem; line-height:1.45; }
-  .btn { display:inline-block; margin:.4rem .6rem .4rem 0; padding:.55rem 1rem; border:1px solid var(--accent); border-radius:6px; text-decoration:none; font-weight:600; }
-  .btn.primary { background:var(--accent); color:var(--bg); }
-  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+  img { max-width:100%; height:auto; display:block; }
+  code { font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:var(--line); padding:.08em .35em; border-radius:4px; }
+  .wrap { max-width:1120px; margin:0 auto; padding:0 16px; }
+  .wrap > * { min-width:0; }
+  .display { font-family:Bangers,"Comic Neue",system-ui,sans-serif; letter-spacing:.03em; font-weight:400; }
+
+  /* shared site header: identical on index.html and evidence-graph.html */
+  :root { --sh-bg:#fffdf6; --sh-fg:#1b1913; --sh-ink:#1b1913; --sh-accent:#c2410c; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --sh-bg:#14130f; --sh-fg:#f2ede0; --sh-ink:#000000; --sh-accent:#fb8a4c; } }
+  :root[data-theme="dark"] { --sh-bg:#14130f; --sh-fg:#f2ede0; --sh-ink:#000000; --sh-accent:#fb8a4c; }
+  .site-top { position:sticky; top:0; z-index:50; background:var(--sh-bg); border-bottom:2px solid var(--sh-ink); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .site-top .site-wrap { max-width:1120px; margin:0 auto; padding:0 16px; display:flex; align-items:center; gap:1rem; height:58px; box-sizing:border-box; }
+  .site-brand { display:flex; align-items:center; gap:.45rem; text-decoration:none; color:var(--sh-fg); }
+  .site-brand img { width:36px; height:36px; display:block; }
+  .site-brand span { font-family:Bangers,"Comic Neue",system-ui,sans-serif; font-weight:400; letter-spacing:.03em; font-size:1.75rem; line-height:1; }
+  .site-top nav { margin-left:auto; display:flex; gap:1.1rem; }
+  .site-top nav a { color:var(--sh-fg); text-decoration:none; font-weight:600; font-size:.95rem; }
+  .site-top nav a:hover, .site-top nav a[aria-current="page"] { color:var(--sh-accent); }
+  .site-top nav a.ext { display:inline-flex; align-items:center; gap:.2em; }
+  .site-top nav a.ext svg { width:.8em; height:.8em; }
+  .site-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  @media (max-width:600px) { .site-top nav a.opt { display:none; } .site-top nav { gap:.85rem; } .site-brand span { font-size:1.5rem; } }
+
+  /* hero */
+  .hero { padding:2rem 0 2.5rem; }
+  .hero .wrap { display:grid; grid-template-columns:1.05fr 1fr; gap:2.5rem; align-items:center; }
+  .tagline { font-size:clamp(2.6rem,6vw,4.4rem); line-height:.98; margin:0 0 .8rem; }
+  .tagline em { font-style:normal; background:var(--pow); color:var(--pow-fg); padding:0 .18em; border:3px solid var(--ink); box-shadow:var(--shadow); display:inline-block; transform:rotate(-2deg); }
+  .lede { font-size:1.12rem; color:var(--muted); margin:0 0 1.25rem; max-width:34em; }
+  .lede strong { color:var(--fg); }
+  .hero-art { border:3px solid var(--ink); box-shadow:6px 6px 0 var(--ink); border-radius:6px; overflow:hidden; background:#fff; }
+  @media (max-width:880px) { .hero .wrap { grid-template-columns:1fr; gap:1.75rem; } .hero { padding-top:1.25rem; } }
+
+  /* install card */
+  .install { background:var(--card); border:3px solid var(--ink); box-shadow:var(--shadow); border-radius:8px; padding:.9rem; }
+  .install h2 { margin:0 0 .5rem; font-size:1.02rem; }
+  .num { background:var(--accent); color:var(--accent-fg); border-radius:999px; width:1.45em; height:1.45em; display:inline-grid; place-items:center; font-size:.82em; font-weight:700; margin-right:.35rem; }
+  .tabs { display:none; flex-wrap:wrap; gap:.3rem; margin-bottom:.5rem; }
+  .js .tabs { display:flex; }
+  .tabs button { font:inherit; font-size:.85rem; font-weight:600; padding:.25rem .7rem; border:2px solid var(--ink); border-radius:999px; background:transparent; color:var(--fg); cursor:pointer; }
+  .tabs button[aria-selected="true"] { background:var(--pow); color:var(--pow-fg); }
+  .cmd { position:relative; margin:0 0 .5rem; }
+  .cmd .os { font-size:.8rem; color:var(--muted); font-weight:600; margin:0 0 .2rem; }
+  .js .cmd .os { display:none; }
+  .cmd[hidden] { display:none; }
+  .cmd pre { margin:0; background:var(--code); color:var(--code-fg); border-radius:6px; padding:.7rem 4.6rem .7rem .8rem; white-space:pre-wrap; word-break:break-all; font:.84rem/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .cmd pre code { background:none; padding:0; font:inherit; }
+  .copy { display:none; position:absolute; right:.4rem; top:50%; transform:translateY(-50%); font:600 .78rem system-ui,sans-serif; padding:.3rem .6rem; border-radius:5px; border:0; background:var(--pow); color:var(--pow-fg); cursor:pointer; }
+  .js .copy { display:block; }
+  .then { margin:.4rem 0 0; font-size:.95rem; }
+  .ask { font-family:"Comic Neue",system-ui,sans-serif; font-weight:700; background:var(--pow); color:var(--pow-fg); padding:.05em .4em; border-radius:4px; }
+  .chips { display:flex; flex-wrap:wrap; gap:.35rem; margin:.8rem 0 0; padding:0; list-style:none; font-size:.8rem; }
+  .chips li { border:1.5px solid var(--line); border-radius:999px; padding:.1rem .6rem; color:var(--muted); }
+  .chips li.yes { border-color:var(--good); color:var(--fg); }
+  .chips li.yes::before { content:"✓ "; color:var(--good); font-weight:700; }
+
+  /* proof strip */
+  .proof { display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; margin:1.1rem 0 .3rem; }
+  .proof div { border-left:4px solid var(--accent); padding:.1rem 0 .1rem .6rem; }
+  .proof b { display:block; font-family:Bangers,system-ui,sans-serif; font-weight:400; font-size:1.9rem; line-height:1; letter-spacing:.03em; }
+  .proof span { font-size:.8rem; color:var(--muted); line-height:1.3; display:block; }
+  .more { font-size:.88rem; font-weight:600; }
+
+  /* sections */
+  section.adv { padding:3.5rem 0; border-top:2px dashed var(--line); }
+  section.adv .wrap { display:grid; grid-template-columns:1.1fr 1fr; gap:2.5rem; align-items:center; }
+  section.adv.flip .art { order:2; }
+  .art figure { margin:0; }
+  .art img { border:3px solid var(--ink); box-shadow:6px 6px 0 var(--ink); border-radius:6px; background:#fff; }
+  .art figcaption { font-size:.82rem; color:var(--muted); margin-top:.8rem; }
+  .kicker { display:inline-block; font-family:Bangers,system-ui,sans-serif; letter-spacing:.06em; font-size:1rem; background:var(--pow); color:var(--pow-fg); border:2px solid var(--ink); padding:0 .55rem; transform:rotate(-1.5deg); margin-bottom:.6rem; }
+  h2.big { font-size:clamp(2rem,4.2vw,2.9rem); line-height:1.02; margin:0 0 .8rem; }
+  .copytext p { margin:0 0 .8rem; }
+  .copytext ul { padding-left:1.1rem; margin:.4rem 0 1rem; }
+  .copytext li { margin:.35rem 0; }
+  .stat { display:flex; align-items:center; gap:.9rem; background:var(--card); border:2px solid var(--ink); border-radius:8px; padding:.65rem .9rem; box-shadow:3px 3px 0 var(--ink); }
+  .stat b { font-family:Bangers,system-ui,sans-serif; font-weight:400; font-size:2.2rem; line-height:1; color:var(--accent); white-space:nowrap; letter-spacing:.03em; }
+  .stat span { font-size:.9rem; line-height:1.35; }
+  @media (max-width:880px) { section.adv .wrap { grid-template-columns:1fr; gap:1.5rem; } section.adv.flip .art { order:0; } section.adv { padding:2.5rem 0; } }
+  @media (max-width:420px) { .stat { flex-direction:column; align-items:flex-start; gap:.3rem; } }
+
+  /* scoreboard bars and evidence chain */
+  .score { list-style:none; padding:0 !important; margin:.6rem 0 1rem; display:grid; gap:.4rem; }
+  .score li { display:grid; grid-template-columns:minmax(7.5rem,10rem) 1fr 2.8rem; align-items:center; gap:.6rem; font-size:.86rem; margin:0 !important; }
+  .bar { height:14px; background:var(--line); border-radius:999px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--muted); border-radius:999px; }
+  .bar i.win { background:var(--accent); }
+  .score b { font-variant-numeric:tabular-nums; text-align:right; }
+  .chain { display:flex; flex-wrap:wrap; align-items:center; gap:.3rem; margin:.4rem 0 1rem; padding:0 !important; list-style:none; font-size:.82rem; font-weight:600; }
+  .chain li { border:2px solid var(--teal); border-radius:999px; padding:.05rem .6rem; margin:0 !important; }
+  .chain li.arrow { border:0; color:var(--teal); padding:0; }
+
+  /* talk */
+  .talk { padding:3.5rem 0; background:#1b1913; color:#f6f1e3; border-top:3px solid #000; }
+  .talk p { color:#d8d2c2; max-width:44em; }
+  .video { position:relative; aspect-ratio:16/9; border:3px solid var(--pow); border-radius:8px; overflow:hidden; background:#000; box-shadow:6px 6px 0 var(--pow); margin-top:1.2rem; }
+  .video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+
+  /* steps */
+  .how { padding:3.5rem 0 2.5rem; }
+  .steps { list-style:none; padding:0; margin:1.2rem 0 0; display:grid; grid-template-columns:repeat(5,1fr); gap:.8rem; counter-reset:s; }
+  .steps li { counter-increment:s; background:var(--card); border:2px solid var(--ink); border-radius:8px; padding:.9rem .8rem; box-shadow:3px 3px 0 var(--ink); font-size:.9rem; line-height:1.4; }
+  .steps li::before { content:counter(s); font-family:Bangers,system-ui,sans-serif; font-size:1.6rem; color:var(--accent); display:block; line-height:1; margin-bottom:.3rem; }
+  .steps b { display:block; margin-bottom:.25rem; font-size:.98rem; }
+  @media (max-width:880px) { .steps { grid-template-columns:1fr 1fr; } }
+  @media (max-width:520px) { .steps { grid-template-columns:1fr; } }
+
+  /* fine print */
+  .fine { padding:0 0 3rem; }
+  details { border:2px solid var(--line); border-radius:8px; padding:.8rem 1rem; background:var(--card); }
+  summary { cursor:pointer; font-weight:700; }
+  details p, details li { font-size:.92rem; color:var(--muted); }
+  table { border-collapse:collapse; width:100%; font-size:.88rem; margin:.6rem 0; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:.35rem .5rem; border-bottom:1px solid var(--line); }
+  .tablewrap { overflow-x:auto; }
+
+  /* closing */
+  .cta { padding:3rem 0 3.5rem; background:var(--pow); color:var(--pow-fg); border-top:3px solid var(--ink); border-bottom:3px solid var(--ink); }
+  .cta .wrap { display:grid; grid-template-columns:1fr 1.1fr; gap:2rem; align-items:center; }
+  .cta h2 { font-size:clamp(2.2rem,5vw,3.4rem); line-height:1; margin:0 0 .5rem; }
+  .cta p { margin:0; }
+  .cta p.update { margin-top:.9rem; font-size:.95rem; }
+  .cta p.update .ask { background:var(--card); color:var(--fg); border:2px solid var(--ink); }
+  .cta .install { color:var(--fg); }
+  @media (max-width:880px) { .cta .wrap { grid-template-columns:1fr; } }
+  footer { padding:1.5rem 0 2.5rem; color:var(--muted); font-size:.88rem; }
+  footer .wrap { display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; }
 </style>
 </head>
 <body>
+
+<header class="site-top">
+  <div class="site-wrap">
+    <a class="site-brand" href="./" aria-label="Tracetoon home">
+      <img src="favicon.svg" alt="" width="36" height="36">
+      <span>Tracetoon</span>
+    </a>
+    <nav aria-label="Site">
+      <a href="#install">Install</a>
+      <a href="#why" class="opt">Why</a>
+      <a href="#talk" class="opt">Talk</a>
+      <a href="evidence-graph.html">Results</a>
+      <a href="https://github.com/Tingsters/tracetoon" class="ext">GitHub<svg viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5h5v5M9.5 2.5 3 9"/></svg><span class="site-sr"> (leaves this site)</span></a>
+    </nav>
+  </div>
+</header>
+
 <main>
-  <h1>Tracetoon</h1>
-  <p class="lede">AI-written pull requests are mostly slop: vague, padded, and confident about tests nobody saw pass. Tracetoon writes the PR from what actually happened in your agent sessions.</p>
+  <section class="hero" id="install">
+    <div class="wrap">
+      <div>
+        <h1 class="tagline display">PRs with receipts. <em>And comics.</em></h1>
+        <p class="lede">Your coding agent already kept the receipts: what you asked for, what it changed, what actually ran. <strong>Tracetoon turns them into a pull request reviewers can trust.</strong> Every claim is checked against the evidence, it costs less to write, and there's a comic on top.</p>
 
-  <img class="hero" src="tracetoon-hero.png" alt="Before: a developer recoils from a pull request reading 'Improves robustness and code quality. All tests pass (probably)'. After: the same developer grins and points at a short pull request reading 'What you asked. What ran. What changed.' with a comic pinned to it.">
+        <div class="install" data-install>
+          <h2><span class="num">1</span>Install it for every agent on your machine</h2>
+          <div class="tabs" role="tablist" aria-label="Operating system">
+            <button type="button" role="tab" aria-selected="true" data-os="unix">macOS · Linux · Git Bash</button>
+            <button type="button" role="tab" aria-selected="false" data-os="win">Windows PowerShell</button>
+          </div>
+          <div class="cmd" data-os="unix">
+            <p class="os">macOS, Linux, Git Bash</p>
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh</code></pre>
+            <button class="copy" type="button">Copy</button>
+          </div>
+          <div class="cmd" data-os="win">
+            <p class="os">Windows PowerShell</p>
+            <pre><code>irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex</code></pre>
+            <button class="copy" type="button">Copy</button>
+          </div>
+          <p class="then"><span class="num">2</span>Restart your agent. Then, on any branch, ask: <span class="ask">“Open a PR for this branch with Tracetoon.”</span></p>
+          <ul class="chips" aria-label="Supported agents">
+            <li class="yes">Claude Code</li><li class="yes">Codex</li><li class="yes">Antigravity</li><li>Cursor (planned)</li><li>Windsurf (planned)</li><li>Copilot CLI (planned)</li>
+          </ul>
+        </div>
 
-  <p>
-    <a class="btn primary" href="https://github.com/Tingsters/tracetoon">View on GitHub</a>
-    <a class="btn" href="#install">Install</a>
-  </p>
+        <div class="proof">
+          <div><b>18–1</b><span>head-to-head wins over Tracetoon without the graph (Claude)</span></div>
+          <div><b>0</b><span>factual errors in 25 Codex-written PRs</span></div>
+          <div><b>−41%</b><span>cost per PR: $0.41 vs $0.69</span></div>
+        </div>
+        <a class="more" href="evidence-graph.html">Read the full results →</a>
+      </div>
+      <div class="hero-art">
+        <img src="img/hero.webp" width="1400" height="837" fetchpriority="high"
+             alt="Comic titled NO MORE PR SLOP. Before: a developer recoils from a pull request reading 'Improves robustness and code quality. All tests pass (probably)'. After: the same developer grins and points at a pull request reading 'What you asked. What ran. What changed.' with a comic pinned to it.">
+      </div>
+    </div>
+  </section>
 
-  <h2>Better PRs</h2>
-  <p>The sessions behind your branch are already on your machine: Claude Code, Codex and Antigravity keep their logs. Tracetoon finds the ones that produced this branch and turns them into a redacted digest your agent writes from. You see the exact text, and approve it, before anything is posted.</p>
-  <ul>
-    <li><strong>Written from evidence.</strong> What you asked for, the plan you approved, the decisions you made, and every test, build and lint run with its result.</li>
-    <li><strong>Honest about what's known.</strong> Something that wasn't captured is "not captured", not "not done".</li>
-    <li><strong>Short and reviewable.</strong> The problem and the result first, then the reason for the approach, what was checked, and where to start reviewing.</li>
-    <li><strong>Checked before you post.</strong> An advisory claim check marks sentences the evidence contradicts or doesn't establish.</li>
-    <li><strong>Your words stay yours.</strong> Text you write in the PR, or edit on GitHub later, is kept on the next update.</li>
-  </ul>
+  <section class="adv" id="why">
+    <div class="wrap">
+      <div class="art">
+        <figure>
+          <img src="img/comic-quality.webp" width="1400" height="934" loading="lazy"
+               alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers.">
+        </figure>
+      </div>
+      <div class="copytext">
+        <span class="kicker">Better PRs</span>
+        <h2 class="big display">Judged blind. Picked almost every time.</h2>
+        <p>AI-written PRs are usually vague and padded, and they sound sure about tests nobody saw pass. Tracetoon writes from the session logs that Claude Code, Codex and Antigravity already keep. The PR says <strong>why</strong> the change was made, <strong>what</strong> changed, and <strong>what actually ran</strong>.</p>
+        <p>Here is one real PR, written three ways and scored 0–100 by the same judges:</p>
+        <ul class="score" aria-label="Composite quality score, 0 to 100">
+          <li>Agent writes it alone <span class="bar"><i style="width:47.3%"></i></span><b>47</b></li>
+          <li>Tracetoon, old workflow <span class="bar"><i style="width:65.3%"></i></span><b>65</b></li>
+          <li>Tracetoon + graph <span class="bar"><i class="win" style="width:80.4%"></i></span><b>80</b></li>
+        </ul>
+        <div class="stat"><b>18–1 · 12–1</b><span>Head-to-head wins over Tracetoon's own no-graph workflow, on Claude and Codex. A win only counts when two judges each read both orders and all four readings agree.</span></div>
+      </div>
+    </div>
+  </section>
 
-  <h2>Comics</h2>
-  <p>Each PR can get a one-off comic: a joke about how the work really went, with characters and an art style made up for that PR. Comics are optional.</p>
+  <section class="adv flip" id="graph">
+    <div class="wrap">
+      <div class="art">
+        <figure>
+          <img src="img/comic-graph.webp" width="1400" height="934" loading="lazy"
+               alt="Two-panel comic. Where did this come from: a baffled developer surrounded by log printouts stares at a pull request under a giant ??? . Follow the string: the developer, now in a detective hat with a magnifying glass, points at a cork board where red string links cards labeled Your request, The edit, Test run and PR sentence.">
+        </figure>
+      </div>
+      <div class="copytext">
+        <span class="kicker">Evidence graph</span>
+        <h2 class="big display">Every sentence has a receipt.</h2>
+        <p>Before any model writes a word, Tracetoon builds a small graph of your branch. It links every change in the diff back to the conversation that produced it:</p>
+        <ul class="chain" aria-label="Evidence chain">
+          <li>your request</li><li class="arrow" aria-hidden="true">→</li><li>agent edit</li><li class="arrow" aria-hidden="true">→</li><li>hunk in the diff</li><li class="arrow" aria-hidden="true">→</li><li>commit sentence</li><li class="arrow" aria-hidden="true">→</li><li>test run</li>
+        </ul>
+        <ul>
+          <li><strong>Credit goes to the right code.</strong> The brief names the function that owns each behavior and marks what's new and what only changed. It also flags code where a word like "always" would be wrong.</li>
+          <li><strong>Validation comes from receipts.</strong> Tracetoon writes the Validation section from the test and build runs on the final code. The model never gets to type "all tests pass."</li>
+          <li><strong>The why, not just the what.</strong> Plans, decisions and the original request come along with the code, so context coverage rose 5–7 points.</li>
+        </ul>
+        <div class="stat"><b>¾ fewer</b><span>unsupported claims on Claude, and zero factual errors across all 25 Codex drafts.</span></div>
+      </div>
+    </div>
+  </section>
 
-  <h2 id="install">Install</h2>
-  <p>One command installs Tracetoon for every agent on your machine.</p>
-<pre>
-# macOS, Linux, Git Bash
-curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
+  <section class="adv" id="embedded">
+    <div class="wrap">
+      <div class="art">
+        <figure>
+          <img src="img/comic-embedded.webp" width="1400" height="934" loading="lazy"
+               alt="Two-panel comic. Most graph databases: a giant angry server rack tangled in cables, with a sticky note reading 'Setup: 3 days', looms over a panicking developer. Relate, embedded: the developer relaxes on a park bench with a laptop and opens a lunchbox holding a tiny glowing graph, saying 'No server? Nice.' while the server rack sulks in the distance.">
+        </figure>
+      </div>
+      <div class="copytext">
+        <span class="kicker">Embedded database</span>
+        <h2 class="big display">A graph database that fits in your pocket.</h2>
+        <p>The graph runs on <a href="https://github.com/relatedb/relate">Relate</a>, an open-source embedded graph database written in Rust. Tracetoon ships it compiled to WebAssembly inside the CLI, so there's nothing else to install.</p>
+        <ul>
+          <li><strong>No server, no setup.</strong> It runs inside the CLI on Linux, macOS and Windows, works offline, and builds a fresh graph for every PR.</li>
+          <li><strong>Real queries, not guesswork.</strong> A few lines of Cypher answer questions like "which request led to this code?" and "did a test pass after the last edit?" Relate's BM25 fulltext index links each commit sentence to the code it describes.</li>
+          <li><strong>Same evidence in, same brief out.</strong> Every fact traces back to a hunk and a session line, so you, or another agent, can audit any sentence.</li>
+        </ul>
+        <div class="stat"><b>0 tokens</b><span>to build the graph and the evidence brief. It's a deterministic step, not a model call.</span></div>
+      </div>
+    </div>
+  </section>
 
-# Windows PowerShell
-irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
-</pre>
-  <p>Restart your agent, then in any repo with your work on a branch, ask: <em>"Open a PR for this branch with Tracetoon."</em></p>
+  <section class="adv flip" id="cost">
+    <div class="wrap">
+      <div class="art">
+        <figure>
+          <img src="img/comic-cost.webp" width="1400" height="837" loading="lazy"
+               alt="Two-panel comic. Without the graph: three tired robots buried in scrolls of session logs say 'Re-reading it. Again.' With the graph: one cheerful robot holds up a map labeled evidence graph and says 'Done. Two checks. Half the tokens.' while two small flying reviewer robots inspect it with magnifying glasses.">
+          <figcaption>Drawn by Tracetoon's own comic step.</figcaption>
+        </figure>
+      </div>
+      <div class="copytext">
+        <span class="kicker">Cost savings</span>
+        <h2 class="big display">A sharp brief lets cheap workers check the work.</h2>
+        <p>Without a map, an expensive model rereads your source to check its own claims, two or three times per PR. With the graph, that work is done once, before any model runs. Then:</p>
+        <ul>
+          <li><strong>One strong writer</strong> drafts from a 2–3K-token brief instead of the whole session history, and writes 7K tokens instead of 22K.</li>
+          <li><strong>Two cheap reviewers</strong> (Haiku or Luna, at extra-high reasoning effort) check a short packet. That costs about 4¢ per PR on Claude and under 1¢ on Codex.</li>
+          <li><strong>One edit pass.</strong> The reviewers' findings merge into a single list. There are no repeat review rounds and no forked subagents.</li>
+        </ul>
+        <ul class="score" aria-label="Cost per PR in US dollars">
+          <li>Claude, no graph <span class="bar"><i style="width:100%"></i></span><b>$0.69</b></li>
+          <li>Claude + graph <span class="bar"><i class="win" style="width:59%"></i></span><b>$0.41</b></li>
+          <li>Codex, no graph <span class="bar"><i style="width:46.4%"></i></span><b>$0.32</b></li>
+          <li>Codex + graph <span class="bar"><i class="win" style="width:30%"></i></span><b>$0.21</b></li>
+        </ul>
+        <div class="stat"><b>−41% · −35%</b><span>cost per PR on Claude and Codex, while quality went <em>up</em>. <a href="evidence-graph.html#cost">See the token math →</a></span></div>
+      </div>
+    </div>
+  </section>
 
-  <footer>
-    Open source under the Apache-2.0 license. <a href="https://github.com/Tingsters/tracetoon">github.com/Tingsters/tracetoon</a>
-  </footer>
+  <section class="adv" id="control">
+    <div class="wrap">
+      <div class="art">
+        <figure>
+          <img src="img/comic-workflow.webp" width="1400" height="934" loading="lazy"
+               alt="Two-panel comic. Just ask: a relaxed developer with a coffee mug says 'Open a PR for this branch.' and a robot gives a thumbs up. House rules: the robot points at a monitor reading PR OPENED, says 'Done! Comic skipped.' and tucks a comic strip into a drawer under a framed sign reading NO IMAGES IN PRs.">
+        </figure>
+      </div>
+      <div class="copytext">
+        <span class="kicker">Fits your workflow</span>
+        <h2 class="big display">Just ask for a PR. It knows the house rules.</h2>
+        <ul>
+          <li><strong>Nothing new to learn.</strong> Ask your agent for a PR, or let it run <code>gh pr create</code> as usual. Tracetoon writes the description, has it reviewed and creates the PR. Then it tells you what it did: the link, whether a comic is included, and any sessions it left out.</li>
+          <li><strong>Your words stay yours.</strong> Anything you write in the PR, or edit on GitHub later, is kept on the next update.</li>
+          <li><strong>Follows the house rules.</strong> Tracetoon reads each repo's AI policies, <code>AGENTS.md</code>, PR templates and contribution guides, and adds any disclosure the repo asks for. Where a repo's rules forbid images in PRs, the comic is left out automatically.</li>
+          <li><strong>Private by default.</strong> Logs are read on your machine, and private paths and secrets are redacted from the evidence.</li>
+          <li><strong>Easy to switch off.</strong> Run <code>tracetoon off</code> to turn it off everywhere or per repo, or set <code>TRACETOON=0</code> for a single command.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="adv flip" id="comics">
+    <div class="wrap">
+      <div class="art">
+        <figure>
+          <a href="https://github.com/Tingsters/tracetoon/pull/17"><img src="img/comic-pr17.webp" width="1200" height="717" loading="lazy"
+               alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign."></a>
+          <figcaption>The comic for <a href="https://github.com/Tingsters/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</figcaption>
+        </figure>
+      </div>
+      <div class="copytext">
+        <span class="kicker">Comics</span>
+        <h2 class="big display">And a comic nobody asked for. Everyone reads it.</h2>
+        <p>Each PR can get a one-off comic: a joke about how the work really went, with characters, a format and an art style made up for that PR. It might be a gag strip, a before and after, a movie poster or an instruction manual. Your agent proofreads every word.</p>
+        <ul>
+          <li>It's drawn with an image route you already have: the Codex CLI with a ChatGPT login, Antigravity, or an OpenAI or Gemini API key.</li>
+          <li>It respects the repo. Where contributing rules forbid images in PRs, Tracetoon skips the comic and tells you why.</li>
+          <li>It's your choice. Run <code>tracetoon config set comic off</code> and your PRs have no comic. Set it to <code>always</code> to ignore repo rules.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="talk" id="talk">
+    <div class="wrap">
+      <span class="kicker">AI Engineer talk</span>
+      <h2 class="big display">Your PR says the tests passed. Prove it.</h2>
+      <p>Stephen Chin and Cassandra Chin explain why agent-written PRs need receipts, and how Tracetoon gets them from the session logs.</p>
+      <div class="video">
+        <iframe src="https://www.youtube-nocookie.com/embed/gbeuC0ud1p4" loading="lazy"
+                title="Your PR Says the Tests Passed. Prove It. (Stephen Chin and Cassandra Chin, AI Engineer)"
+                allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+    </div>
+  </section>
+
+  <section class="how" id="how">
+    <div class="wrap">
+      <span class="kicker">Under the hood</span>
+      <h2 class="big display">From session logs to a reviewed PR</h2>
+      <ol class="steps">
+        <li><b>Find the sessions</b>Tracetoon matches agent edits to lines in your diff, and asks you when a session is ambiguous.</li>
+        <li><b>Build the graph</b><code>tracetoon prepare</code> turns the logs and git history into a redacted evidence brief, using 0 tokens.</li>
+        <li><b>Write</b>One strong model drafts 250–400 words and ties each fact to a row of the brief.</li>
+        <li><b>Check</b>Deterministic checks run first, then two cheap reviewers. One edit pass applies their findings.</li>
+        <li><b>Publish</b>Tracetoon creates the PR, adds the comic if the repo allows it, and tells you what it did.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="fine" id="method">
+    <div class="wrap">
+      <details>
+        <summary>How we measured (and what's not perfect yet)</summary>
+        <p>The numbers come from <strong>prbench</strong>: 5 real PRs from Tracetoon's own development, each with its original agent session logs, and 5 drafts per PR for each setup. For each PR, a person wrote a fact sheet from the diff and the sessions. AI judges scored every draft against that fact sheet with a 10-item reviewer rubric. Claude runs used Opus 5.5 and Sonnet 5.5 as judges; Codex runs used Sol 6.1 and Terra 6.1. A head-to-head win counts only when both judges, each reading the pair in both orders, pick the same draft. Each comparison uses the same model with the graph and without it. All figures are from the shipped build (round 23).</p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th></th><th>Claude · Sonnet 5.5</th><th>Codex · Terra 6.1</th></tr></thead>
+            <tbody>
+              <tr><td>Head-to-head (wins–losses)</td><td>18–1, 6 ties</td><td>12–1, 12 ties</td></tr>
+              <tr><td>Composite quality (0–100), graph vs no graph</td><td>78.9 vs 73.7 (+5.2)</td><td>86.6 vs 83.2 (+3.5)</td></tr>
+              <tr><td>Context covered</td><td>0.45 vs 0.38</td><td>0.44 vs 0.39</td></tr>
+              <tr><td>Cost per PR</td><td>$0.407 vs $0.690 (−41%)</td><td>$0.207 vs $0.320 (−35%)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <ul>
+          <li>Scores vary by about ±3 composite points from run to run. A second Codex run of the same build scored +5.2.</li>
+          <li>Not perfect yet: on Claude, the graph drafts flag fewer open questions; on Codex, they're wordier than a very terse baseline.</li>
+          <li>The graph doesn't turn a small model into a mid-size one: Haiku as the writer still lost. The win comes from a strong writer plus cheap checkers.</li>
+        </ul>
+        <p><a href="evidence-graph.html">Read the full write-up, with every chart, the case study and the Cypher →</a></p>
+      </details>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="wrap">
+      <div>
+        <h2 class="display">Ship PRs people actually want to read.</h2>
+        <p>It's open source under Apache-2.0, and your logs stay on your machine.</p>
+        <p class="update">Already installed? To update, ask your agent: <span class="ask">“Update Tracetoon.”</span> This works whether you used the installer, the plugin, or just the skill.</p>
+      </div>
+      <div class="install" data-install>
+        <div class="tabs" role="tablist" aria-label="Operating system">
+          <button type="button" role="tab" aria-selected="true" data-os="unix">macOS · Linux · Git Bash</button>
+          <button type="button" role="tab" aria-selected="false" data-os="win">Windows PowerShell</button>
+        </div>
+        <div class="cmd" data-os="unix">
+          <p class="os">macOS, Linux, Git Bash</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh</code></pre>
+          <button class="copy" type="button">Copy</button>
+        </div>
+        <div class="cmd" data-os="win">
+          <p class="os">Windows PowerShell</p>
+          <pre><code>irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex</code></pre>
+          <button class="copy" type="button">Copy</button>
+        </div>
+        <p class="then">Then ask your agent: <span class="ask">“Open a PR for this branch with Tracetoon.”</span></p>
+      </div>
+    </div>
+  </section>
 </main>
+
+<footer>
+  <div class="wrap">
+    <span>Tracetoon is open source under the Apache-2.0 license.</span>
+    <a href="https://github.com/Tingsters/tracetoon">github.com/Tingsters/tracetoon</a>
+    <a href="evidence-graph.html">Evidence graph results</a>
+    <a href="https://github.com/relatedb/relate">Built on Relate</a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  document.documentElement.classList.add('js');
+  var plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  function pick(os) {
+    document.querySelectorAll('[data-install]').forEach(function (box) {
+      box.querySelectorAll('.tabs button').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.os === os)); });
+      box.querySelectorAll('.cmd').forEach(function (c) { c.hidden = c.dataset.os !== os; });
+    });
+  }
+  pick(/Win/i.test(plat) ? 'win' : 'unix');
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () { pick(b.dataset.os); });
+  });
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.parentNode.querySelector('code').textContent;
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+      }, function () {});
+    });
+  });
+})();
+</script>
 </body>
 </html>
