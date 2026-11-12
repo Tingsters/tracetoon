@@ -196,7 +196,7 @@ svg .mono{font-family:var(--mono)}
   <li><b>Finds the matching sessions.</b> It identifies which sessions produced the current branch by matching agent edits to lines in the diff, and asks when a session is ambiguous.</li>
   <li><b>Builds a redacted evidence set.</b> It pulls prompts, plans, edits, runs and commits from those logs, with private paths and secrets removed.</li>
   <li><b>Writes the description.</b> The agent drafts the PR body from that evidence, and Tracetoon checks it: every factual sentence must trace back to evidence, and the Validation section is generated from recorded test and build runs, not typed by the model.</li>
-  <li><b>Draws an optional comic.</b> Tracetoon can turn the story of the change into a four-panel comic that goes in the PR. It is optional: Tracetoon leaves it out where a repo's contributing rules forbid images in PRs, and you can turn comics off yourself.</li>
+  <li><b>Draws an optional comic.</b> Tracetoon can turn the story of the change into a comic that goes in the PR. It is optional: Tracetoon leaves it out where a repo's contributing rules forbid images in PRs, and you can turn comics off yourself.</li>
   <li><b>Creates the PR.</b> The agent has the draft reviewed, creates the PR through the normal workflow, and then reports what it did: the link, whether a comic is included, and any sessions it left out.</li>
 </ul>
 <p>Tracetoon installs a hook that redirects the agent's <code>gh pr create</code> through this workflow, respects repository AI policies (for example, repos that ask for author-written PR text), and can be turned off per repo. This page compares two versions of its drafting step: the original multi-agent workflow and a new version built on an evidence graph.</p>
