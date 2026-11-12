@@ -1,6 +1,6 @@
 /** Resolve shared source from a locked checkout, never a mutable sibling repo. */
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve, relative } from 'node:path';
+import { dirname, join, resolve, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
@@ -38,6 +38,19 @@ function git(args: string[], cwd = root): string {
     );
   return result.stdout.trim();
 }
+/** A linked worktree reuses the main checkout's pinned copy as a local clone source. */
+function mainCheckoutSource(): string | undefined {
+  try {
+    const common = git(['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    const candidate = join(dirname(common), '.tracetoon-deps', 'Showtail');
+    return resolve(candidate) !== resolve(root, '.tracetoon-deps', 'Showtail') &&
+      existsSync(join(candidate, '.git'))
+      ? candidate
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 export function prepareDependencies(source?: string) {
   const lock = JSON.parse(readFileSync(join(root, 'build-dependencies.json'), 'utf8'));
   if (
@@ -54,7 +67,7 @@ export function prepareDependencies(source?: string) {
       '--quiet',
       '--no-checkout',
       '--no-hardlinks',
-      source ?? lock.showtail.repository,
+      source ?? mainCheckoutSource() ?? lock.showtail.repository,
       target,
     ]);
     git(['config', 'core.autocrlf', 'false'], target);

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { makeRepo, tempDir } from './helpers.ts';
@@ -7,6 +7,7 @@ import { parseBodyReview } from '../src/contribution/bodyReview.ts';
 import { executeCheck, checkReport } from '../src/workflow/checks.ts';
 import { newRun } from '../src/run.ts';
 import { repository } from '../src/workflow/state.ts';
+import { dependencyFingerprint } from '../src/workflow/validationInputs.ts';
 
 test('shared preparation, immutable code snapshots and batch expansion preserve evidence', () => {
   const repo = makeRepo(),
@@ -133,4 +134,38 @@ test('equivalent check aliases reuse execution and locked dependency edits inval
   expect(alias.startedAt).toBe(first.startedAt);
   writeFileSync(join(dir, 'module.ts'), 'export const value = 2;');
   expect(checkReport(repo.root, run).every((c) => !c.current)).toBe(true);
+}, 30000);
+test('locked dependencies shared from another worktree through a link validate', () => {
+  const repo = makeRepo(),
+    run = newRun(repository(repo.root).gitDir),
+    lock = JSON.stringify({
+      schema: 'tracetoon.build-dependencies/v1',
+      showtail: { revision: 'a'.repeat(40) },
+    });
+  writeFileSync(join(repo.root, '.gitignore'), '.tracetoon-deps/\n');
+  writeFileSync(join(repo.root, 'build-dependencies.json'), lock);
+  const shared = tempDir(),
+    pkg = join(shared, 'Showtail', 'packages', 'agent-traces');
+  mkdirSync(join(pkg, 'src'), { recursive: true });
+  writeFileSync(join(pkg, 'src', 'module.ts'), 'export const value = 1;');
+  symlinkSync(shared, join(repo.root, '.tracetoon-deps'), 'dir');
+  // The same bytes in a real directory fingerprint identically.
+  const local = makeRepo();
+  writeFileSync(join(local.root, 'build-dependencies.json'), lock);
+  const localPkg = join(
+    local.root,
+    '.tracetoon-deps',
+    'Showtail',
+    'packages',
+    'agent-traces',
+  );
+  mkdirSync(join(localPkg, 'src'), { recursive: true });
+  writeFileSync(join(localPkg, 'src', 'module.ts'), 'export const value = 1;');
+  expect(dependencyFingerprint(repo.root)).toBe(dependencyFingerprint(local.root));
+  const command = [process.execPath, '-e', 'console.log("1 pass")'];
+  expect(executeCheck(repo.root, run, { name: 'tests', command }).outcome).toBe('passed');
+  writeFileSync(join(pkg, 'src', 'module.ts'), 'export const value = 2;');
+  expect(checkReport(repo.root, run).every((c) => !c.current)).toBe(true);
+  symlinkSync(join(pkg, 'src'), join(pkg, 'linked'), 'dir');
+  expect(() => dependencyFingerprint(repo.root)).toThrow('contains a symlink');
 }, 30000);
