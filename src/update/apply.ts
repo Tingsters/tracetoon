@@ -30,6 +30,18 @@ export interface Applied {
   hooks: boolean;
 }
 
+/**
+ * Remove leftovers. Never throws: once files are swapped in, a leftover that cannot
+ * be deleted (on Windows, the old running binary) must not undo or fail the update.
+ */
+function discard(path: string): void {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {
+    /* the next update clears it */
+  }
+}
+
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 function wantedHash(checksums: string, file: string): string | undefined {
@@ -152,7 +164,7 @@ export async function applyRelease(
     if (!run(next, ['--version']).ok)
       throw new Error('the downloaded binary does not run');
     const aside = `${layout.stable}.old-${id}`;
-    rmSync(aside, { force: true });
+    discard(aside);
     if (existsSync(layout.stable)) renameSync(layout.stable, aside);
     try {
       renameSync(next, layout.stable);
@@ -176,10 +188,9 @@ export async function applyRelease(
     }
 
     // 5. Everything is in place: discard the old copies and register the hooks again.
-    for (const t of targets)
-      rmSync(`${t.dir}.old-${id}`, { recursive: true, force: true });
-    rmSync(`${layout.assets}.old-${id}`, { recursive: true, force: true });
-    rmSync(aside, { force: true }); // may fail on Windows while in use; the next update clears it
+    for (const t of targets) discard(`${t.dir}.old-${id}`);
+    discard(`${layout.assets}.old-${id}`);
+    discard(aside); // Windows keeps the old running binary locked; the next update clears it
     const hooks = run(layout.stable, ['hook', 'install'], { env }).ok;
     // Everything is installed by now: a receipt that cannot be written must not undo that.
     try {
@@ -210,8 +221,8 @@ export async function applyRelease(
       }
     throw e;
   } finally {
-    for (const s of staged) rmSync(s, { recursive: true, force: true });
-    rmSync(`${layout.stable}.new-${id}`, { force: true });
-    rmSync(tmp, { recursive: true, force: true });
+    for (const s of staged) discard(s);
+    discard(`${layout.stable}.new-${id}`);
+    discard(tmp);
   }
 }
