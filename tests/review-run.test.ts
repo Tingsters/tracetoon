@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -20,7 +19,7 @@ import { findRun } from '../src/run.ts';
 import { git } from '../src/util/exec.ts';
 import { writeLocal } from '../src/util/localJson.ts';
 import { repository, tasks } from '../src/workflow/state.ts';
-import { makeRepo, tempDir } from './helpers.ts';
+import { makeRepo, spawnToFiles, tempDir } from './helpers.ts';
 
 const CLI = resolve(import.meta.dir, '../src/cli.ts');
 const FAKE = resolve(import.meta.dir, 'fake-codex-review.ts');
@@ -42,9 +41,8 @@ afterEach(() => {
 const env = () => ({ ...process.env, CI: '', TRACETOON: '1' });
 
 function cli(root: string, args: string[], extra: Record<string, string> = {}) {
-  const result = spawnSync(process.execPath, [CLI, '--json', ...args], {
+  const result = spawnToFiles(process.execPath, [CLI, '--json', ...args], {
     cwd: root,
-    encoding: 'utf8',
     // A hung child must fail this test with its output, not block the file for 15 minutes.
     timeout: 180_000,
     killSignal: 'SIGKILL',
@@ -65,7 +63,7 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
   });
   if (result.error)
     throw new Error(
-      `tracetoon ${args.join(' ')} did not finish (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
+      `tracetoon ${args.join(' ')} did not finish after ${result.ms}ms (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
     );
   let json: any;
   try {

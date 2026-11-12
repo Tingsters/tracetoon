@@ -6,7 +6,6 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { leanPacket, WHOLE_DIFF_CHARS } from '../src/commands/review.ts';
@@ -31,7 +30,7 @@ import { repository, tasks } from '../src/workflow/state.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
 import { git } from '../src/util/exec.ts';
 import { findRun } from '../src/run.ts';
-import { makeRepo, tempDir } from './helpers.ts';
+import { makeRepo, spawnToFiles, tempDir } from './helpers.ts';
 
 setDefaultTimeout(180_000);
 
@@ -300,9 +299,8 @@ afterEach(() => {
 });
 const env = () => ({ ...process.env, CI: '', TRACETOON: '1' });
 function cli(root: string, args: string[]) {
-  const result = spawnSync(process.execPath, [CLI, '--json', ...args], {
+  const result = spawnToFiles(process.execPath, [CLI, '--json', ...args], {
     cwd: root,
-    encoding: 'utf8',
     // A hung child must fail this test with its output instead of blocking the file.
     timeout: 180_000,
     killSignal: 'SIGKILL',
@@ -319,7 +317,7 @@ function cli(root: string, args: string[]) {
   });
   if (result.error)
     throw new Error(
-      `tracetoon ${args.join(' ')} did not finish (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
+      `tracetoon ${args.join(' ')} did not finish after ${result.ms}ms (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
     );
   let json: any;
   try {
