@@ -100,6 +100,11 @@ describe('update notice', () => {
     const release = takeLock(env, NOW);
     writeState(env, { notifiedAt: undefined, notifiedVersion: undefined });
     expect(notice('claude', NOW + 1000).spawned).toEqual([]);
+    // A lock left behind by a killed updater does not block installs for ever.
+    writeState(env, { notifiedAt: undefined, notifiedVersion: undefined });
+    expect(notice('claude', NOW + 16 * 60_000).spawned).toEqual([
+      ['update', '--auto', '--quiet'],
+    ]);
     release!();
   });
 });

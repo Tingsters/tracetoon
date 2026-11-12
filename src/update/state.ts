@@ -40,6 +40,18 @@ export function writeState(env: NodeJS.ProcessEnv, patch: Partial<UpdateState>):
   writeLocal(statePath(env), { ...readState(env), ...patch });
 }
 
+/** Whether a live updater holds the lock (a lock older than LOCK_STALE_MS is a killed one). */
+export function lockHeld(
+  env: NodeJS.ProcessEnv = process.env,
+  now = Date.now(),
+): boolean {
+  try {
+    return now - Number(readFileSync(lockPath(env), 'utf8')) < LOCK_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
 /** One updater at a time (a background install and a user's `update` must not interleave). */
 export function takeLock(
   env: NodeJS.ProcessEnv = process.env,
@@ -118,7 +130,7 @@ export function updateNotice(
 
   let text: string;
   if (config.autoUpdate === 'install') {
-    if (!existsSync(lockPath(env))) start(['update', '--auto', '--quiet']);
+    if (!lockHeld(env, now)) start(['update', '--auto', '--quiet']);
     text = `Tracetoon ${state.latest} is being installed in the background (you have ${TOOL_VERSION}). Reload your agent when it finishes.`;
   } else {
     text = `Tracetoon ${state.latest} is available (you have ${TOOL_VERSION}). Run: tracetoon update`;
