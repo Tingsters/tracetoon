@@ -9,7 +9,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
-import { afterAll } from 'bun:test';
+import { afterAll, mock } from 'bun:test';
+import * as childProcess from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git } from '../src/util/exec.ts';
@@ -294,3 +295,28 @@ export function spawnToFiles(
     closeSync(err);
   }
 }
+
+// Run the tracetoon CLI through tests/spawn-guard.ts, so a Bun that does not exit after the
+// command finished (seen on Windows CI) cannot stall a test. Every test file runs this preload.
+const GUARD = join(import.meta.dir, 'spawn-guard.ts');
+const realSpawnSync = childProcess.spawnSync;
+let guarded = 0;
+let doneDir: string | undefined;
+mock.module('node:child_process', () => ({
+  ...childProcess,
+  spawnSync: (command: string, args?: readonly string[], options?: SpawnSyncOptions) => {
+    if (
+      command === process.execPath &&
+      Array.isArray(args) &&
+      /(?:^|[\\/])(?:cli\.ts|tracetoon\.mjs)$/.test(String(args[0]))
+    ) {
+      doneDir ??= tempDir('tracetoon-exit-');
+      const doneFile = join(doneDir, String(++guarded));
+      return realSpawnSync(process.execPath, [GUARD, command, ...args], {
+        ...options,
+        env: { ...(options?.env ?? process.env), TRACETOON_EXIT_FILE: doneFile },
+      });
+    }
+    return (realSpawnSync as (...a: unknown[]) => unknown)(command, args, options);
+  },
+}));
