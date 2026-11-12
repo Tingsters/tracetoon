@@ -52,6 +52,9 @@ try {
   console.log(
     `Verified ${cases.length} packaged contract(s) against ${compiled ? 'the native executable' : 'the shipped bundle'}.`,
   );
+  // Exit explicitly after flushing: Bun on Windows can fail to exit on its own.
+  await new Promise<void>((done) => process.stdout.write('', () => done()));
+  process.exit(0);
 } catch (e) {
   console.error(`Packaged results could not be verified: ${(e as Error).message}`);
   process.exit(1);

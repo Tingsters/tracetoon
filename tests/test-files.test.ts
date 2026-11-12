@@ -63,6 +63,40 @@ test('a test file that blocks forever is killed and fails with the output it had
   }
 });
 
+test('a file whose bun process does not exit after its summary is killed and judged by the summary', async () => {
+  const root = tempDir('tracetoon-late-exit-');
+  // The tests finish, then the exit handler blocks: bun printed its summary and never exits.
+  const block =
+    "process.on('exit',()=>{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,120000);});";
+  writeFileSync(
+    join(root, 'pass.test.ts'),
+    `import {test} from 'bun:test'; ${block} test('passes',()=>{});`,
+  );
+  writeFileSync(
+    join(root, 'fail.test.ts'),
+    `import {test,expect} from 'bun:test'; ${block} test('fails',()=>expect(1).toBe(2));`,
+  );
+  const before = process.env.TRACETOON_TEST_EXIT_GRACE_MS;
+  process.env.TRACETOON_TEST_EXIT_GRACE_MS = '1500';
+  try {
+    const started = Date.now();
+    const results = await runTestFiles({
+      root,
+      files: ['pass.test.ts', 'fail.test.ts'],
+      workers: 2,
+      quiet: true,
+    });
+    expect(results.map((r) => [r.file, r.code])).toEqual([
+      ['pass.test.ts', 0],
+      ['fail.test.ts', 1],
+    ]);
+    expect(Date.now() - started).toBeLessThan(60_000);
+  } finally {
+    if (before === undefined) delete process.env.TRACETOON_TEST_EXIT_GRACE_MS;
+    else process.env.TRACETOON_TEST_EXIT_GRACE_MS = before;
+  }
+});
+
 test('source discovery includes tracked and new tests throughout the repo, excluding private trails', () => {
   const repo = makeRepo();
   repo.commit('src/inside.test.ts', '// tracked fixture\n', 'Add source test');

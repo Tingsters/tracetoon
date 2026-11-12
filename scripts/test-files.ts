@@ -92,6 +92,14 @@ export function sourceTestFiles(root: string): string[] {
   return files;
 }
 
+/** Bun's end-of-run line, printed once all of a file's tests have finished. */
+const SUMMARY = /\bRan \d+ tests? across \d+ files?\./;
+/** How long bun may take to exit after the summary before the runner stops waiting. */
+const EXIT_GRACE_MS = () => {
+  const ms = Number(process.env.TRACETOON_TEST_EXIT_GRACE_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 20_000;
+};
+
 /** How long one test file may run before the runner kills it (default 15 minutes). */
 const FILE_TIMEOUT_MS = () => {
   const ms = Number(process.env.TRACETOON_TEST_FILE_TIMEOUT_MS);
@@ -170,13 +178,32 @@ export async function runTestFiles(options: {
         );
         let stdout = '',
           stderr = '';
+        let finishAfterSummary: ReturnType<typeof setTimeout> | undefined;
+        const sawSummary = () => {
+          if (finishAfterSummary || !SUMMARY.test(stdout + stderr)) return;
+          // Bun 1.3 on Windows sometimes does not exit after printing its summary (seen
+          // in CI for a different file each time). The file is done: give the process a
+          // moment, then kill it and take the result from what it printed.
+          finishAfterSummary = setTimeout(() => {
+            const text = stdout + stderr;
+            const failures = Number(/^\s*(\d+) fail/m.exec(text)?.[1] ?? 1);
+            const errors = Number(/^\s*(\d+) errors?\b/m.exec(text)?.[1] ?? 0);
+            const note = `\n[test runner] ${file} printed its summary but bun did not exit within ${EXIT_GRACE_MS() / 1000}s; killed it and used the summary.\n`;
+            stderr += note;
+            appendFileSync(logFile, note);
+            killTree(child.pid);
+            finish(failures || errors ? 1 : 0);
+          }, EXIT_GRACE_MS());
+        };
         child.stdout!.on('data', (chunk) => {
           stdout += String(chunk);
           appendFileSync(logFile, chunk);
+          sawSummary();
         });
         child.stderr!.on('data', (chunk) => {
           stderr += String(chunk);
           appendFileSync(logFile, chunk);
+          sawSummary();
         });
         child.once('error', (error) => {
           stderr += error.message;
@@ -186,6 +213,12 @@ export async function runTestFiles(options: {
           if (settled) return;
           settled = true;
           clearTimeout(watchdog);
+          clearTimeout(finishAfterSummary);
+          // A killed child's pipes can stay open (an orphan holds them); do not let them
+          // keep this process alive.
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          child.unref();
           if (!options.quiet) {
             process.stdout.write(stdout);
             process.stderr.write(stderr);
