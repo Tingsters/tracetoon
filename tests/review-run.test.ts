@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -20,7 +19,7 @@ import { findRun } from '../src/run.ts';
 import { git } from '../src/util/exec.ts';
 import { writeLocal } from '../src/util/localJson.ts';
 import { repository, tasks } from '../src/workflow/state.ts';
-import { makeRepo, tempDir } from './helpers.ts';
+import { makeRepo, spawnToFiles, tempDir } from './helpers.ts';
 
 const CLI = resolve(import.meta.dir, '../src/cli.ts');
 const FAKE = resolve(import.meta.dir, 'fake-codex-review.ts');
@@ -42,9 +41,11 @@ afterEach(() => {
 const env = () => ({ ...process.env, CI: '', TRACETOON: '1' });
 
 function cli(root: string, args: string[], extra: Record<string, string> = {}) {
-  const result = spawnSync(process.execPath, [CLI, '--json', ...args], {
+  const result = spawnToFiles(process.execPath, [CLI, '--json', ...args], {
     cwd: root,
-    encoding: 'utf8',
+    // A hung child must fail this test with its output, not block the file for 15 minutes.
+    timeout: 90_000,
+    killSignal: 'SIGKILL',
     env: {
       ...env(),
       CLAUDE_CONFIG_DIR: join(dirname(config), 'claude'),
@@ -52,6 +53,7 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
       GEMINI_HOME: join(dirname(config), 'gemini'),
       TRACETOON_GH_SCRIPT: resolve(import.meta.dir, 'fake-gh.ts'),
       TRACETOON_CODEX_BIN: FAKE,
+      TRACETOON_REVIEW_TIMEOUT_MS: '60000',
       FAKE_CODEX_LOG: log,
       CODEX_THREAD_ID: '',
       CLAUDE_CODE_SESSION_ID: '',
@@ -59,6 +61,21 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
       ...extra,
     },
   });
+  // Bun on Windows sometimes does not exit after the command finished. A call that timed
+  // out with its whole JSON result on stdout is a finished call.
+  let finishedLate = false;
+  if (result.error)
+    try {
+      const done = JSON.parse(result.stdout);
+      result.status = done && typeof done === 'object' && 'error' in done ? 1 : 0;
+      finishedLate = true;
+    } catch {
+      // not a complete result: a real hang
+    }
+  if (result.error && !finishedLate)
+    throw new Error(
+      `tracetoon ${args.join(' ')} did not finish after ${result.ms}ms (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
+    );
   let json: any;
   try {
     json = JSON.parse(result.stdout);

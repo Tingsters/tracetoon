@@ -92,6 +92,32 @@ export function sourceTestFiles(root: string): string[] {
   return files;
 }
 
+/** Bun's end-of-run line, printed once all of a file's tests have finished. */
+const SUMMARY = /\bRan \d+ tests? across \d+ files?\./;
+/** How long bun may take to exit after the summary before the runner stops waiting. */
+const EXIT_GRACE_MS = () => {
+  const ms = Number(process.env.TRACETOON_TEST_EXIT_GRACE_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 20_000;
+};
+
+/** How long one test file may run before the runner kills it (default 15 minutes). */
+const FILE_TIMEOUT_MS = () => {
+  const ms = Number(process.env.TRACETOON_TEST_FILE_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 15 * 60_000;
+};
+
+/** Kill a process and its children (on Windows, `child.kill()` leaves them running). */
+function killTree(pid: number | undefined) {
+  if (!pid) return;
+  try {
+    if (process.platform === 'win32')
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+    else process.kill(pid, 'SIGKILL');
+  } catch {
+    // already gone
+  }
+}
+
 export async function runTestFiles(options: {
   root: string;
   files: string[];
@@ -135,10 +161,11 @@ export async function runTestFiles(options: {
           [
             'test',
             file,
-            // Many tests spawn the CLI or a fake reviewer; Bun's 5s default is too tight on
-            // loaded CI runners. (bunfig.toml's `timeout` is ignored by Bun 1.3.)
+            // Many tests spawn the CLI (about 10s per call on a Windows runner) or a fake
+            // reviewer; Bun's 5s default is far too tight. (bunfig.toml's `timeout` is
+            // ignored by Bun 1.3.) A real hang is caught by the per-file watchdog below.
             '--timeout',
-            '30000',
+            '120000',
             ...(options.args ?? []),
             ...(report ? ['--reporter=junit', '--reporter-outfile', report] : []),
           ],
@@ -151,29 +178,70 @@ export async function runTestFiles(options: {
         );
         let stdout = '',
           stderr = '';
+        let finishAfterSummary: ReturnType<typeof setTimeout> | undefined;
+        const sawSummary = () => {
+          if (finishAfterSummary || !SUMMARY.test(stdout + stderr)) return;
+          // Bun 1.3 on Windows sometimes does not exit after printing its summary (seen
+          // in CI for a different file each time). The file is done: give the process a
+          // moment, then kill it and take the result from what it printed.
+          finishAfterSummary = setTimeout(() => {
+            const text = stdout + stderr;
+            const failures = Number(/^\s*(\d+) fail/m.exec(text)?.[1] ?? 1);
+            const errors = Number(/^\s*(\d+) errors?\b/m.exec(text)?.[1] ?? 0);
+            const note = `\n[test runner] ${file} printed its summary but bun did not exit within ${EXIT_GRACE_MS() / 1000}s; killed it and used the summary.\n`;
+            stderr += note;
+            appendFileSync(logFile, note);
+            killTree(child.pid);
+            finish(failures || errors ? 1 : 0);
+          }, EXIT_GRACE_MS());
+        };
         child.stdout!.on('data', (chunk) => {
           stdout += String(chunk);
           appendFileSync(logFile, chunk);
+          sawSummary();
         });
         child.stderr!.on('data', (chunk) => {
           stderr += String(chunk);
           appendFileSync(logFile, chunk);
+          sawSummary();
         });
         child.once('error', (error) => {
           stderr += error.message;
         });
-        child.once('close', (code) => {
+        let settled = false;
+        const finish = (code: number) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(watchdog);
+          clearTimeout(finishAfterSummary);
+          // A killed child's pipes can stay open (an orphan holds them); do not let them
+          // keep this process alive.
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          child.unref();
           if (!options.quiet) {
             process.stdout.write(stdout);
             process.stderr.write(stderr);
           }
           resolve({
             file,
-            code: code ?? 1,
+            code,
             ms: Math.round(performance.now() - started),
             report,
           });
-        });
+        };
+        // A file that never finishes (a child that hangs, or an orphan that keeps the
+        // pipes open so `close` never fires) must fail with its output so far, not
+        // stall the whole job until the CI time limit.
+        const limit = FILE_TIMEOUT_MS();
+        const watchdog = setTimeout(() => {
+          const message = `\n[test runner] ${file} did not finish within ${Math.round(limit / 1000)}s; killing it. The output above is everything it printed.\n`;
+          stderr += message;
+          appendFileSync(logFile, message);
+          killTree(child.pid);
+          finish(1);
+        }, limit);
+        child.once('close', (code) => finish(code ?? 1));
       });
       results[index] = result;
     }

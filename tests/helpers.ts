@@ -1,5 +1,16 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { afterAll } from 'bun:test';
+import {
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
+import { afterAll, mock } from 'bun:test';
+import * as childProcess from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git } from '../src/util/exec.ts';
@@ -251,3 +262,61 @@ export class ClaudeLog {
     return p;
   }
 }
+
+let spawned = 0;
+/**
+ * Run a command to completion with its stdout and stderr redirected to files.
+ * With pipes, spawnSync on Windows returns only once every holder of the pipe
+ * has closed it, so a leftover descendant of the command stalls the caller even
+ * though the command itself finished. With files it returns when the command exits.
+ */
+export function spawnToFiles(
+  command: string,
+  args: string[],
+  options: SpawnSyncOptions = {},
+): { status: number | null; stdout: string; stderr: string; error?: Error; ms: number } {
+  const dir = tempDir('tracetoon-out-');
+  const outFile = join(dir, `${++spawned}.out`);
+  const errFile = join(dir, `${spawned}.err`);
+  const out = openSync(outFile, 'w');
+  const err = openSync(errFile, 'w');
+  const started = Date.now();
+  try {
+    const r = spawnSync(command, args, { ...options, stdio: ['ignore', out, err] });
+    return {
+      status: r.status,
+      stdout: readFileSync(outFile, 'utf8'),
+      stderr: readFileSync(errFile, 'utf8'),
+      error: r.error,
+      ms: Date.now() - started,
+    };
+  } finally {
+    closeSync(out);
+    closeSync(err);
+  }
+}
+
+// Run the tracetoon CLI through tests/spawn-guard.ts, so a Bun that does not exit after the
+// command finished (seen on Windows CI) cannot stall a test. Every test file runs this preload.
+const GUARD = join(import.meta.dir, 'spawn-guard.ts');
+const realSpawnSync = childProcess.spawnSync;
+let guarded = 0;
+let doneDir: string | undefined;
+mock.module('node:child_process', () => ({
+  ...childProcess,
+  spawnSync: (command: string, args?: readonly string[], options?: SpawnSyncOptions) => {
+    if (
+      command === process.execPath &&
+      Array.isArray(args) &&
+      /(?:^|[\\/])(?:cli\.ts|tracetoon\.mjs)$/.test(String(args[0]))
+    ) {
+      doneDir ??= tempDir('tracetoon-exit-');
+      const doneFile = join(doneDir, String(++guarded));
+      return realSpawnSync(process.execPath, [GUARD, command, ...args], {
+        ...options,
+        env: { ...(options?.env ?? process.env), TRACETOON_EXIT_FILE: doneFile },
+      });
+    }
+    return (realSpawnSync as (...a: unknown[]) => unknown)(command, args, options);
+  },
+}));

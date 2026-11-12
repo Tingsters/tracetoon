@@ -6,7 +6,6 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { leanPacket, WHOLE_DIFF_CHARS } from '../src/commands/review.ts';
@@ -31,7 +30,7 @@ import { repository, tasks } from '../src/workflow/state.ts';
 import { readLocal, writeLocal } from '../src/util/localJson.ts';
 import { git } from '../src/util/exec.ts';
 import { findRun } from '../src/run.ts';
-import { makeRepo, tempDir } from './helpers.ts';
+import { makeRepo, spawnToFiles, tempDir } from './helpers.ts';
 
 setDefaultTimeout(180_000);
 
@@ -300,9 +299,11 @@ afterEach(() => {
 });
 const env = () => ({ ...process.env, CI: '', TRACETOON: '1' });
 function cli(root: string, args: string[]) {
-  const result = spawnSync(process.execPath, [CLI, '--json', ...args], {
+  const result = spawnToFiles(process.execPath, [CLI, '--json', ...args], {
     cwd: root,
-    encoding: 'utf8',
+    // A hung child must fail this test with its output instead of blocking the file.
+    timeout: 90_000,
+    killSignal: 'SIGKILL',
     env: {
       ...env(),
       CLAUDE_CONFIG_DIR: join(dirname(config), 'claude'),
@@ -314,6 +315,21 @@ function cli(root: string, args: string[]) {
       CLAUDE_SESSION_ID: '',
     },
   });
+  // Bun on Windows sometimes does not exit after the command finished. A call that timed
+  // out with its whole JSON result on stdout is a finished call.
+  let finishedLate = false;
+  if (result.error)
+    try {
+      const done = JSON.parse(result.stdout);
+      result.status = done && typeof done === 'object' && 'error' in done ? 1 : 0;
+      finishedLate = true;
+    } catch {
+      // not a complete result: a real hang
+    }
+  if (result.error && !finishedLate)
+    throw new Error(
+      `tracetoon ${args.join(' ')} did not finish after ${result.ms}ms (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
+    );
   let json: any;
   try {
     json = JSON.parse(result.stdout);

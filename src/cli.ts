@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { writeFileSync } from 'node:fs';
 import { Command } from 'commander';
 import {
   loadConfig,
@@ -518,6 +519,11 @@ config.command('set <key> <value>').action((key: string, value: string) => {
   emit(g(), c, () => `${key} = ${String(c[key as keyof Config])}`);
 });
 
+// A test harness may name a file to receive the exit code just before exit (see
+// tests/spawn-guard.ts). Cleared now, so nothing this process starts inherits it.
+const exitFile = process.env.TRACETOON_EXIT_FILE;
+delete process.env.TRACETOON_EXIT_FILE;
+
 try {
   await program.parseAsync(process.argv);
 } catch (e) {
@@ -550,3 +556,16 @@ try {
     }
   }
 }
+
+// Leave explicitly once output is flushed. On Windows a finished command's process has been
+// seen to keep running after it printed its whole result (CI tests waited the full timeout
+// for `review import`), so a natural exit cannot be relied on.
+await new Promise<void>((done) => process.stdout.write('', () => done()));
+await new Promise<void>((done) => process.stderr.write('', () => done()));
+if (exitFile)
+  try {
+    writeFileSync(exitFile, String(process.exitCode ?? 0));
+  } catch {
+    // only a test aid
+  }
+process.exit(process.exitCode ?? 0);

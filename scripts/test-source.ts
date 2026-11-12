@@ -22,4 +22,6 @@ const failed = results.filter((r) => r.code !== 0);
 console.log(
   `Source test files: ${results.length - failed.length} passed, ${failed.length} failed (up to ${TEST_FILE_WORKERS} fresh processes).`,
 );
-process.exitCode = failed.length ? 1 : 0;
+// Exit explicitly after flushing: Bun on Windows can fail to exit on its own.
+await new Promise<void>((done) => process.stdout.write('', () => done()));
+process.exit(failed.length ? 1 : 0);
