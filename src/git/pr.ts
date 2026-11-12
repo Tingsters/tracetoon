@@ -153,6 +153,58 @@ function baseRef(refs: Map<string, string>, base: string): string {
   return refs.has(`refs/remotes/origin/${base}`) ? `origin/${base}` : base;
 }
 
+/**
+ * An explicit base, as the branch a PR targets and the ref to diff against.
+ * `<remote>/<branch>` (say `upstream/gh-pages`) names that remote's branch.
+ * A bare branch diffs against origin's copy, else the copy on the remote that
+ * hosts the target repo, else the only remote that has it, else the local
+ * branch. A fork clone often has the base only on `upstream`. Anything else
+ * (a commit, say) is returned as both.
+ */
+export function resolveBase(
+  cwd: string,
+  base: string,
+  targetRepo?: string,
+): { branch: string; ref: string } {
+  const remotes = new Map<string, string | undefined>();
+  for (const line of git(cwd, ['remote', '-v']).stdout.split(/\r?\n/)) {
+    const [name, url] = line.split(/\s+/);
+    if (name && !remotes.has(name)) {
+      const r = parseRemote(url ?? '');
+      remotes.set(name, r ? `${r.owner}/${r.name}`.toLowerCase() : undefined);
+    }
+  }
+  const listed = new Set(
+    git(cwd, [
+      'for-each-ref',
+      '--format=%(refname)',
+      `refs/remotes/${base}`,
+      `refs/remotes/*/${base}`,
+    ])
+      .stdout.split(/\r?\n/)
+      .filter(Boolean),
+  );
+  // Longest remote name first, so `a/b` wins over `a` for `a/b/main`.
+  const named = [...remotes.keys()]
+    .sort((a, b) => b.length - a.length)
+    .find((r) => base.startsWith(`${r}/`) && listed.has(`refs/remotes/${base}`));
+  if (named) return { branch: base.slice(named.length + 1), ref: base };
+  const has = (remote: string) => listed.has(`refs/remotes/${remote}/${base}`);
+  const target = targetRepo?.toLowerCase();
+  const targetRemote = target
+    ? [...remotes].find(([, repo]) => repo === target)?.[0]
+    : undefined;
+  const holders = [...remotes.keys()].filter(has);
+  const remote = has('origin')
+    ? 'origin'
+    : targetRemote && has(targetRemote)
+      ? targetRemote
+      : holders.length === 1
+        ? holders[0]
+        : undefined;
+  return { branch: base, ref: remote ? `${remote}/${base}` : base };
+}
+
 export function existingPr(
   cwd: string,
   head: string,
@@ -319,9 +371,16 @@ export function prTruth(cwd: string, opts: TruthOptions = {}): PrTruth {
     ? undefined
     : existingPr(toplevel, head, target?.repo, originOwner);
   const known = opts.base ?? pr?.baseRefName;
-  const refs = baseRefs(toplevel, known ? [known] : []);
-  const base = known ?? chooseBase(refs);
-  const ref = baseRef(refs, base);
+  let base: string, ref: string;
+  // Keep an explicit base as given (`upstream/main` stays `upstream/main`):
+  // later commands resolve it again from context.json, and a bare `main` would
+  // then mean origin's copy. prBase turns it into the branch the PR targets.
+  if (known) ({ ref } = resolveBase(toplevel, (base = known), target?.repo));
+  else {
+    const refs = baseRefs(toplevel);
+    base = chooseBase(refs);
+    ref = baseRef(refs, base);
+  }
   const mergeBase = git(toplevel, ['merge-base', ref, headRef]).stdout.trim() || ref;
   const commits = commitsBetween(toplevel, mergeBase, headRef);
   // The log starts at the merge base itself, so its first entry also gives the

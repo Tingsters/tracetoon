@@ -68,7 +68,7 @@ import {
   type PrMeta,
 } from '../github/body.ts';
 import type { AiPolicy } from '../github/repoContext.ts';
-import { defaultBase, prTruth, type PrTruth } from '../git/pr.ts';
+import { defaultBase, prTruth, resolveBase, type PrTruth } from '../git/pr.ts';
 import { findRun, readJson, readText, writeJson, type Run } from '../run.ts';
 import { repoWeb } from '../github/history.ts';
 import {
@@ -194,13 +194,15 @@ const codeFor = (approval: Approval, body: string) =>
 /**
  * The branch to open the PR against. A digest can compare with a commit (to
  * tell the story of the whole history, say), but a PR targets a branch: then
- * it's the repo's default branch.
+ * it's the repo's default branch. A base on another remote (`upstream/gh-pages`,
+ * or `gh-pages` that only `upstream` has) targets that branch.
  */
-export function prBase(root: string, base: string): string {
-  const branch = (name: string) =>
-    git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`]).ok ||
-    git(root, ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${name}`]).ok;
-  return branch(base) ? base : defaultBase(root);
+export function prBase(root: string, base: string, targetRepo?: string): string {
+  const { branch, ref } = resolveBase(root, base, targetRepo);
+  const isBranch =
+    ref !== branch ||
+    git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).ok;
+  return isBranch ? branch : defaultBase(root);
 }
 
 /** Commits added since the digest, which its checks can't see. */
@@ -490,7 +492,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
     allowFindings: !!opts.allowFindings,
     mode: ctx.existingPr ? 'edit' : 'create',
     prNumber: ctx.existingPr?.number,
-    base: prBase(truth.toplevel, digest.pr.base),
+    base: prBase(truth.toplevel, digest.pr.base, targetRepo),
     head: digest.pr.head,
     ...(targetRepo ? { repo: targetRepo } : {}),
     policy: ctx.aiPolicy.verdict,
@@ -683,7 +685,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
         `Rendered "${title}" (${approval.mode === 'edit' ? `update PR #${approval.prNumber}` : 'new PR'})${comic ? ' with comic' : ''}`,
         approval.repo ? targetLine(target) : '',
         approval.mode === 'create'
-          ? `PR base: ${approval.base}${approval.base !== digest.pr.base ? ` (the story covers changes since ${digest.pr.base.slice(0, 12)})` : ''}`
+          ? `PR base: ${approval.base}${approval.base !== digest.pr.base ? ` (the story covers changes since ${/^[a-f0-9]{40,64}$/.test(digest.pr.base) ? digest.pr.base.slice(0, 12) : digest.pr.base})` : ''}`
           : '',
         stale ? `Warning: ${stale}` : '',
         findings.length && !approval.allowFindings

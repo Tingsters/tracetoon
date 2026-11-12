@@ -213,14 +213,16 @@ describe('evidence graph', () => {
     expect(cli(repo.root, 'query', 'nope', '--run', run).code).toBe(1);
     const outline = cli(repo.root, 'query', 'outline', '--run', run);
     expect(outline.stdout).toContain('files[3]{');
+    // TOON quotes a value that reads as a number, so an all-digit short SHA
+    // (about 1 commit in 300) comes out as "992475804136".
     expect(outline.stdout).toMatch(
-      /\n  src\/farewell\.ts,behavior,3,0,1,0,S2,[0-9a-f]{12},none\n/,
+      /\n  src\/farewell\.ts,behavior,3,0,1,0,S2,("?)[0-9a-f]{12}\1,none\n/,
     );
     expect(outline.stdout).toMatch(
-      /\n  src\/greet\.ts,behavior,3,0,1,0,S1,[0-9a-f]{12},R2:failed R1:passed\n/,
+      /\n  src\/greet\.ts,behavior,3,0,1,0,S1,("?)[0-9a-f]{12}\1,R2:failed R1:passed\n/,
     );
     expect(outline.stdout).toMatch(
-      /\n  src\/manual\.ts,behavior,1,0,1,1,"",[0-9a-f]{12},no captured edit\n/,
+      /\n  src\/manual\.ts,behavior,1,0,1,1,"",("?)[0-9a-f]{12}\1,no captured edit\n/,
     );
   });
 
