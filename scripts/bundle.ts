@@ -1,8 +1,8 @@
 // Builds the single-file bundle the skill ships (plugin/skills/tracetoon/dist/tracetoon.mjs).
 // The output is made pure ASCII: every non-ASCII character becomes a \u escape, so
 // the file reads the same in any runtime whatever encoding it assumes.
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { buildManifest, recordOutput } from './build-info.ts';
 
 const manifest = buildManifest();
@@ -21,6 +21,8 @@ const result = await Bun.build({
   target: manifest.recipe.bundle.target,
   minify: manifest.recipe.bundle.minify,
   format: manifest.recipe.bundle.format,
+  // The build identity is compiled in; src/version.ts falls back to `source` without it.
+  define: { [manifest.recipe.identity]: JSON.stringify(manifest) },
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);
@@ -39,6 +41,8 @@ if (manifest.recipe.bundle.ascii)
       .join(''),
   );
 code = code.replace(/^#!.*\n/, '');
+// dist/ isn't committed, so a fresh clone doesn't have the directory yet.
+mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, `#!/usr/bin/env node\n${code}`);
 const size = readFileSync(out).length;
 console.log(`bundle: ${out} (${(size / 1024).toFixed(0)} KB, ASCII only)`);

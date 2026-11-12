@@ -7,7 +7,7 @@ import { hookStatus } from '../hook/install.ts';
 import { switchState } from '../hook/switches.ts';
 import { ADAPTERS, PLANNED } from '../trace/registry.ts';
 import { gh, git, run } from '../util/exec.ts';
-import { TOOL_VERSION, BUILD_INFO } from '../version.ts';
+import { TOOL_VERSION, BUILD_INFO, FROM_SOURCE } from '../version.ts';
 import { loadConfig, userConfigPath } from '../config.ts';
 import { readLocal } from '../util/localJson.ts';
 import { readState } from '../update/state.ts';
@@ -257,9 +257,11 @@ export function doctor(
         ? 'skill installed for:'
         : 'skill not installed for any agent (run the installer)',
       ...installs.map((i) => {
-        const stale = !i.matchesRuntime
-          ? ' (different or unknown build: run tracetoon update to bring runtime and skill together)'
-          : '';
+        // A source checkout has no build of its own to compare installed skills with.
+        const stale =
+          !i.matchesRuntime && !FROM_SOURCE
+            ? ' (different or unknown build: run tracetoon update to bring runtime and skill together)'
+            : '';
         return `  ${i.agent.padEnd(14)} ${i.version ?? 'unknown version'}${stale}`;
       }),
       update.available
@@ -274,8 +276,9 @@ export function doctor(
           .join(', ') || 'no agents found'
       }${report.prHook.some((h) => !h.installed) ? ' (add with: tracetoon hook install)' : ''}`,
       ...report.prHook.filter((h) => h.problem).map((h) => `  ${h.label}: ${h.problem}`),
+      // From source there is no build to compare the installed hooks with.
       ...hookRuntimes
-        .filter((h) => !h.matchesRuntime)
+        .filter((h) => !h.matchesRuntime && !FROM_SOURCE)
         .map(
           (h) =>
             `  ${h.agent} hook runtime differs or predates build identity; run: tracetoon update.`,

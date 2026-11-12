@@ -5,4 +5,7 @@ node_modules/
 *.tmp.ts
 *.tmp.png
 plugin/skills/tracetoon/bin/tracetoon-*-*
-plugin/skills/tracetoon/dist/*.build.json
+# Build outputs: `bun run bundle` writes them; the release workflow publishes them
+# on the `release` branch. Never commit them to main.
+plugin/skills/tracetoon/build.json
+plugin/skills/tracetoon/dist/

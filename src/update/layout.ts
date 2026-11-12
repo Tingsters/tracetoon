@@ -2,6 +2,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { FROM_SOURCE } from '../version.ts';
 
 export interface Layout {
   homeRoot: string;
@@ -49,6 +50,7 @@ export function updatable(
   layout: Layout,
   execPath = process.execPath,
   env: NodeJS.ProcessEnv = process.env,
+  fromSource = FROM_SOURCE,
 ): Eligibility {
   if (env.TRACETOON_BIN)
     return {
@@ -61,10 +63,13 @@ export function updatable(
   if (!/^tracetoon(-[a-z]+-[a-z0-9]+)?(\.exe)?$/i.test(basename(execPath)))
     return {
       ok: false,
-      reason:
-        'This copy runs from a bundle (a Claude Code plugin or a source checkout). ' +
-        'Update the plugin with /plugin marketplace update, or install the binary: ' +
-        'curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh',
+      reason: fromSource
+        ? 'This copy runs from a source checkout (bun src/cli.ts). Pull the checkout to update it, ' +
+          'or install the binary: ' +
+          'curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh'
+        : 'This copy runs from a bundle (a Claude Code plugin). ' +
+          'Update the plugin with /plugin marketplace update, or install the binary: ' +
+          'curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh',
     };
   return {
     ok: false,

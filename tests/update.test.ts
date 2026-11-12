@@ -69,8 +69,10 @@ describe('what update may replace', () => {
     mkdirSync(join(layout.stable, '..'), { recursive: true });
     writeFileSync(layout.stable, 'x');
     expect(updatable(layout, layout.stable, {}).ok).toBe(true);
-    const bundle = updatable(layout, '/usr/bin/bun', {});
+    const bundle = updatable(layout, '/usr/bin/bun', {}, false);
     expect(!bundle.ok && bundle.reason).toContain('plugin');
+    const source = updatable(layout, '/usr/bin/bun', {}, true);
+    expect(!source.ok && source.reason).toContain('source checkout');
     const other = updatable(layout, '/tmp/tracetoon-linux-x64', {});
     expect(!other.ok && other.reason).toContain('not the installed one');
     const external = updatable(layout, layout.stable, { TRACETOON_BIN: '/x' });
@@ -276,8 +278,9 @@ describe.skipIf(!canRun)('update against a fake release server', () => {
 
   test('refuses outside an installed binary, and when disabled', async () => {
     const m = machine();
+    // From source the refusal names the checkout; from the bundle, the plugin.
     await expect(updateCmd({ to: '9.0.0-rc.1' }, m.env, m.home)).rejects.toThrow(
-      /bundle/,
+      /source checkout|bundle/,
     );
     await expect(
       updateCmd({ check: true }, { ...m.env, TRACETOON_DISABLE_UPDATES: '1' }, m.home),

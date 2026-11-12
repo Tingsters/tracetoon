@@ -6,7 +6,12 @@
   "plugins": [
     {
       "name": "tracetoon",
-      "source": "./plugin",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Tingsters/tracetoon.git",
+        "path": "plugin",
+        "ref": "release"
+      },
       "description": "Creates your PR with a description written from your Claude Code, Codex and Antigravity session logs, and an optional one-off comic."
     }
   ]

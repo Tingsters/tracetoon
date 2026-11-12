@@ -47,7 +47,7 @@ per budget, provenance lookup cost, and timings.
 | `src/hook/` | The agent PR hook (`hook pre-pr`), its install/uninstall into each agent's config, and the on/off switches |
 | `src/workflow/` | Worktree-local task lifecycle, exact-content validation receipts, host-session registry and publication recovery |
 | `src/commands/` | The CLI commands |
-| `plugin/skills/tracetoon/` | The Agent Skills folder that ships: SKILL.md, references, launchers, bundle, assets |
+| `plugin/skills/tracetoon/` | The Agent Skills folder that ships: SKILL.md, references, launchers, assets (the bundle and build.json are build outputs, not committed) |
 
 ## Adding an agent
 
@@ -72,7 +72,10 @@ per budget, provenance lookup cost, and timings.
   suites fail intermittently under concurrent macOS load. Full coverage is kept.
   Windows runs two files at a time to reduce Git-process contention; Linux runs
   up to four. Every invocation retains per-file logs under `node_modules/.cache/test-logs`.
-- `bun run bundle` and commit `plugin/skills/tracetoon/dist/tracetoon.mjs`
+- Don't commit build outputs. `bun run bundle` writes `plugin/skills/tracetoon/dist/tracetoon.mjs`
+  and `build.json` for local packaged runs; both are ignored, because every source change
+  regenerates them. The release workflow publishes them on the `release` branch. A
+  checkout runs from source (`bun src/cli.ts`, build id `source`) without them.
 - `bun run test:bundled` exercises the shipped bundle; `bun run build` followed
   by `bun run test:compiled` rehearses publication against the native executable.
   Packaged runs select the public CLI/asset/launcher contracts declared in
@@ -81,7 +84,7 @@ per budget, provenance lookup cost, and timings.
   All source tests still run on each supported CI platform. Publication itself
   reuses current validation; it never launches these suites at publish.
   CI runs both packaged suites on every PR, on every platform, and is their
-  gate before merge: any change to shipped code (`src/`, assets, the bundle,
+  gate before merge: any change to shipped code (`src/`, assets, the launchers,
   dependencies) can affect them. Locally they are optional and take about two
   minutes. Run them when you want that signal before CI, especially for
   packaging changes such as `scripts/bundle.ts`, `scripts/build*.ts`,
@@ -115,8 +118,8 @@ tests and reader probes are not automated humor scores. Artifacts stay in .git/.
 ## Releasing
 
 Bump only `package.json`, then run `bun run bundle`. The build stamps the skill
-VERSION, plugin version and shared build identity; `bun run build:check` detects
-drift. Commit the generated files and open a same-repository PR. After all three
+VERSION and plugin version; commit those two (the bundle and `build.json` stay
+uncommitted) and open a same-repository PR. After all three
 platform suites pass, CI builds the five native targets and six skill archives,
 checks reproducibility, and rehearses the exact candidate bundle and Windows
 executable. It retains an artifact named for the source commit and workflow
@@ -145,9 +148,13 @@ development and held-out confirmation as not run. This does not turn the
 benchmark into a pass or establish a score/performance gain. The release notes
 publish that limitation; artifact identity and byte verification still apply.
 
-The marketplace plugin follows a `release` branch that the release workflow
-fast-forwards to each tagged commit, so plugin users receive only published
-releases (`/plugin marketplace add Tingsters/tracetoon#release`). Keep
+The marketplace serves the plugin from the `release` branch
+(`.claude-plugin/marketplace.json` names it), so plugin users receive only
+published releases. main has no bundle; for each tag the release workflow
+(`.github/scripts/release-branch.ts`) adds one commit to `release` with the
+verified bundle and `build.json` from the skill archive on top of the tagged
+source. Its parents are the previous `release` head and the tag, so the branch
+only fast-forwards and is never forced. Keep
 `.claude-plugin/marketplace.json` free of a `version` field: the plugin version
 comes from `plugin.json`, which the build stamps from `package.json`.
 

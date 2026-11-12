@@ -1,15 +1,26 @@
 import { beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tempDir } from './helpers.ts';
 
 setDefaultTimeout(90_000);
 const source = resolve(import.meta.dir, '../plugin/skills/tracetoon');
 const win = process.platform === 'win32';
+// Build outputs aren't committed: this runs once `bun run bundle` has made them, which
+// `bun run test:bundled` does (a packaged contract, so it can't be skipped there).
+const built = existsSync(join(source, 'build.json')) && existsSync(join(source, 'dist/tracetoon.mjs'));
 let skill: string;
 let oldRuntime: string;
 beforeAll(() => {
+  if (!built) return;
   skill = join(tempDir('tracetoon-launcher-'), 'skill');
   mkdirSync(join(skill, 'bin'), { recursive: true });
   mkdirSync(join(skill, 'dist'));
@@ -67,7 +78,7 @@ function launch(extra: NodeJS.ProcessEnv = {}) {
     },
   );
 }
-describe('packaged runtime selection', () => {
+describe.skipIf(!built)('packaged runtime selection', () => {
   test('skips an executable from another build and runs the matching shipped bundle', () => {
     const result = launch();
     expect(result.stderr).toBe('');

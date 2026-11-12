@@ -42,8 +42,8 @@ never while a PR is being made.
 
 If `update` says this copy runs from a plugin or a source checkout, it cannot
 replace itself: the plugin updates with `/plugin marketplace update` (its
-auto-update is off by default for third-party marketplaces), and the binary
-comes from the installer. `tracetoon update --to <version>` rolls back.
+auto-update is off by default for third-party marketplaces), a source checkout
+with `git pull`, and the binary comes from the installer. `tracetoon update --to <version>` rolls back.
 `tracetoon config set autoUpdate off|notify|install` controls the session
 notice and background installs; change it only when the user asks.
 

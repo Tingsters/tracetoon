@@ -12,6 +12,8 @@ export function buildManifest(check = false, stamp = true) {
   const recipe = JSON.parse(readFileSync(join(root, 'build.config.json'), 'utf8'));
   if (recipe.schema !== 'tracetoon.build-recipe/v1' || recipe.bunVersion !== Bun.version)
     throw new Error(`Builds require Bun ${recipe.bunVersion}; found ${Bun.version}.`);
+  if (!/^[A-Za-z_$][\w$]*$/.test(recipe.identity ?? ''))
+    throw new Error('build.config.json must name the identity constant the build compiles in.');
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
     .version as string;
   const pluginPath = join(root, 'plugin/.claude-plugin/plugin.json');
