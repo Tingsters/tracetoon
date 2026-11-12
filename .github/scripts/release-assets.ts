@@ -78,7 +78,18 @@ export interface RequestedPromotion extends PromotionIdentity {
     heldout: { status: 'not-run' };
   };
 }
-export type Promotion = AdoptionPromotion | RequestedPromotion;
+/** A requested release with no benchmark round: every stage is recorded as not run. */
+export interface UnevaluatedPromotion extends PromotionIdentity {
+  schema: 'tracetoon.release-promotion/v3';
+  decision: RequestedPromotion['decision'];
+  evaluations: {
+    calibration: { status: 'not-run' };
+    admission: { status: 'not-run' };
+    development: { status: 'not-run' };
+    heldout: { status: 'not-run' };
+  };
+}
+export type Promotion = AdoptionPromotion | RequestedPromotion | UnevaluatedPromotion;
 export function skillInventory(
   dir: string,
   prefix = '',
@@ -260,9 +271,11 @@ export function verifyCandidateInputs(out: string, skill?: string, revision?: st
 }
 export function validatePromotion(p: Promotion) {
   if (
-    !['tracetoon.release-promotion/v1', 'tracetoon.release-promotion/v2'].includes(
-      p.schema,
-    ) ||
+    ![
+      'tracetoon.release-promotion/v1',
+      'tracetoon.release-promotion/v2',
+      'tracetoon.release-promotion/v3',
+    ].includes(p.schema) ||
     !hash(p.buildId) ||
     !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(p.version) ||
     !Number.isSafeInteger(p.artifact?.runId) ||
@@ -279,7 +292,7 @@ export function validatePromotion(p: Promotion) {
     )
   )
     throw Error('Release promotion hashes are invalid.');
-  if (p.schema === 'tracetoon.release-promotion/v2') {
+  if (p.schema !== 'tracetoon.release-promotion/v1') {
     if (
       p.decision?.kind !== 'explicit-user-request' ||
       typeof p.decision.reason !== 'string' ||
@@ -288,6 +301,20 @@ export function validatePromotion(p: Promotion) {
       !Number.isFinite(Date.parse(p.decision.recordedAt))
     )
       throw Error('An explicit release request with a recorded reason is required.');
+    if (p.schema === 'tracetoon.release-promotion/v3') {
+      // No benchmark round: the record may not carry or imply any evaluation result.
+      const stages = ['calibration', 'admission', 'development', 'heldout'] as const;
+      if (
+        !p.evaluations ||
+        Object.keys(p.evaluations).sort().join() !== [...stages].sort().join() ||
+        stages.some(
+          (s) =>
+            JSON.stringify(p.evaluations[s]) !== JSON.stringify({ status: 'not-run' }),
+        )
+      )
+        throw Error('An unevaluated release must record every evaluation stage as not run.');
+      return;
+    }
     const e = p.evaluations;
     if (
       e?.calibration?.status !== 'passed' ||
@@ -330,7 +357,14 @@ export function promotionNotes(p: Promotion): string {
     `Promotes the retained CI artifact \`${p.artifact.id}\` from [run ${p.artifact.runId}](https://github.com/Tingsters/tracetoon/actions/runs/${p.artifact.runId}).`,
     '',
   ];
-  if (p.schema === 'tracetoon.release-promotion/v2')
+  if (p.schema === 'tracetoon.release-promotion/v3')
+    lines.push(
+      'Release basis: explicit user request, without a benchmark round.',
+      p.decision.reason,
+      '',
+      'No calibration, admission, development or held-out evaluation was run for this release. A benchmark score or performance gain has not been established.',
+    );
+  else if (p.schema === 'tracetoon.release-promotion/v2')
     lines.push(
       'Release basis: explicit user request after an inconclusive admission screen.',
       p.decision.reason,
