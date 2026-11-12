@@ -303,6 +303,9 @@ function cli(root: string, args: string[]) {
   const result = spawnSync(process.execPath, [CLI, '--json', ...args], {
     cwd: root,
     encoding: 'utf8',
+    // A hung child must fail this test with its output instead of blocking the file.
+    timeout: 180_000,
+    killSignal: 'SIGKILL',
     env: {
       ...env(),
       CLAUDE_CONFIG_DIR: join(dirname(config), 'claude'),
@@ -314,6 +317,10 @@ function cli(root: string, args: string[]) {
       CLAUDE_SESSION_ID: '',
     },
   });
+  if (result.error)
+    throw new Error(
+      `tracetoon ${args.join(' ')} did not finish (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
+    );
   let json: any;
   try {
     json = JSON.parse(result.stdout);

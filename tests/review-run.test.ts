@@ -45,6 +45,9 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
   const result = spawnSync(process.execPath, [CLI, '--json', ...args], {
     cwd: root,
     encoding: 'utf8',
+    // A hung child must fail this test with its output, not block the file for 15 minutes.
+    timeout: 180_000,
+    killSignal: 'SIGKILL',
     env: {
       ...env(),
       CLAUDE_CONFIG_DIR: join(dirname(config), 'claude'),
@@ -52,6 +55,7 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
       GEMINI_HOME: join(dirname(config), 'gemini'),
       TRACETOON_GH_SCRIPT: resolve(import.meta.dir, 'fake-gh.ts'),
       TRACETOON_CODEX_BIN: FAKE,
+      TRACETOON_REVIEW_TIMEOUT_MS: '60000',
       FAKE_CODEX_LOG: log,
       CODEX_THREAD_ID: '',
       CLAUDE_CODE_SESSION_ID: '',
@@ -59,6 +63,10 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
       ...extra,
     },
   });
+  if (result.error)
+    throw new Error(
+      `tracetoon ${args.join(' ')} did not finish (${result.error.message}).\nstdout: ${String(result.stdout).slice(-2000)}\nstderr: ${String(result.stderr).slice(-2000)}`,
+    );
   let json: any;
   try {
     json = JSON.parse(result.stdout);
