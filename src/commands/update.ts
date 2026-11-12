@@ -1,5 +1,6 @@
 /** `tracetoon update`: check for a newer release and install it in place. */
 import { homedir } from 'node:os';
+import { loadConfig } from '../config.ts';
 import { TOOL_VERSION } from '../version.ts';
 import { applyRelease } from '../update/apply.ts';
 import { installLayout, updatable } from '../update/layout.ts';
@@ -9,6 +10,7 @@ import {
   type Channel,
   type Release,
 } from '../update/release.ts';
+import { readState, takeLock, writeState } from '../update/state.ts';
 import { compareVersions, parseVersion } from '../update/version.ts';
 import { emit, UserError, type OutOpts } from './output.ts';
 
@@ -17,6 +19,10 @@ export interface UpdateOpts extends OutOpts {
   to?: string;
   channel?: string;
   exitCode?: boolean;
+  /** Print nothing (background runs). */
+  quiet?: boolean;
+  /** A background install: only when the user chose autoUpdate=install. */
+  auto?: boolean;
 }
 
 /** Exit code of `update --check --exit-code` when a newer release exists. */
@@ -29,9 +35,31 @@ export async function updateCmd(
 ): Promise<void> {
   if (env.TRACETOON_DISABLE_UPDATES === '1')
     throw new UserError('Updates are disabled here (TRACETOON_DISABLE_UPDATES=1).');
-  const channel = (opts.channel ?? 'latest') as Channel;
+  const config = loadConfig();
+  if (opts.auto && (config.autoUpdate !== 'install' || opts.check || opts.to)) return;
+  const channel = (opts.channel ?? config.updateChannel) as Channel;
   if (channel !== 'stable' && channel !== 'latest')
     throw new UserError('--channel must be stable or latest.');
+  // One updater at a time; a background install yields to a running one.
+  const unlock = opts.check ? undefined : takeLock(env);
+  if (!opts.check && !unlock) {
+    if (opts.auto) return;
+    throw new UserError('Another update is already running. Try again in a few minutes.');
+  }
+  try {
+    await update(opts, env, home, channel);
+  } finally {
+    unlock?.();
+  }
+}
+
+async function update(
+  opts: UpdateOpts,
+  env: NodeJS.ProcessEnv,
+  home: string,
+  channel: Channel,
+): Promise<void> {
+  const say: typeof emit = opts.quiet ? () => {} : emit;
 
   let releases: Release[];
   try {
@@ -39,6 +67,15 @@ export async function updateCmd(
   } catch (e) {
     throw new UserError(`Could not look up releases: ${(e as Error).message}`);
   }
+
+  // Remember what the channel's newest release is, for the next session's notice.
+  const newest = pickRelease(releases, channel);
+  writeState(env, {
+    checkedAt: new Date().toISOString(),
+    channel,
+    latest: newest?.version,
+    tag: newest?.tag,
+  });
 
   let target: Release | undefined;
   if (opts.to) {
@@ -69,7 +106,7 @@ export async function updateCmd(
   };
 
   if (opts.check) {
-    emit(opts, report, () =>
+    say(opts, report, () =>
       available
         ? `Tracetoon ${TOOL_VERSION} -> ${target.version} is available. Run: tracetoon update`
         : `Tracetoon ${TOOL_VERSION} is up to date.`,
@@ -98,7 +135,7 @@ export async function updateCmd(
   } catch (e) {
     throw new UserError(`Update failed: ${(e as Error).message}`);
   }
-  emit(opts, { ...report, updated: true, ...applied }, () =>
+  say(opts, { ...report, updated: true, ...applied }, () =>
     [
       `Updated Tracetoon ${TOOL_VERSION} -> ${target.version}.`,
       ...applied.skills.map((s) => `  skill: ${s.agent} (${s.dir})`),

@@ -26,6 +26,27 @@ to download the prebuilt binary from the Tracetoon GitHub release. If yes,
 re-run with the environment variable `TRACETOON_ALLOW_DOWNLOAD=1`. If no, follow
 [references/manual-mode.md](references/manual-mode.md).
 
+## Updating Tracetoon
+
+Only when the user asks to update or upgrade Tracetoon, or a session notice says
+a newer release exists and they ask about it. Never update on your own, and
+never while a PR is being made.
+
+1. Run `tracetoon update --check --json`. `updateAvailable: false` means they
+   are current; say so and stop. Otherwise `notes` holds the release notes.
+2. Tell the user the installed and newest versions and, in a few sentences, what
+   changed that matters to them. Say if the newest is a release candidate.
+3. Ask whether to update. If yes, run `tracetoon update` and report its output.
+4. Tell them to reload their agent (Codex may ask them to trust the hooks in
+   `/hooks`). Nothing changes in the running session until then.
+
+If `update` says this copy runs from a plugin or a source checkout, it cannot
+replace itself: the plugin updates with `/plugin marketplace update` (its
+auto-update is off by default for third-party marketplaces), and the binary
+comes from the installer. `tracetoon update --to <version>` rolls back.
+`tracetoon config set autoUpdate off|notify|install` controls the session
+notice and background installs; change it only when the user asks.
+
 ## When this skill is used
 
 Tracetoon replaces PR creation (`gh pr create`, a creation alias, `hub

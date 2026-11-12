@@ -25,7 +25,7 @@ matches() {
   case "$compact" in *"\"buildId\":\"$build\""*) return 0 ;; *) return 1 ;; esac
 }
 if [ -n "${TRACETOON_BIN:-}" ]; then
-  matches "$TRACETOON_BIN" || { echo 'tracetoon: explicit runtime does not match this skill build; update it.' >&2; exit 3; }
+  matches "$TRACETOON_BIN" || { echo 'tracetoon: explicit runtime does not match this skill build; run `tracetoon update` (or re-run the installer).' >&2; exit 3; }
   exec "$TRACETOON_BIN" "$@"
 fi
 
@@ -90,6 +90,6 @@ if [ "${TRACETOON_ALLOW_DOWNLOAD:-}" = 1 ] && command -v gh >/dev/null 2>&1; the
   rm -rf "$tmp"
 fi
 
-echo "tracetoon: no matching runtime for this skill build. Update the skill and runtime together, or use Bun/Node 22+ with its matching bundle." >&2
+echo "tracetoon: no matching runtime for this skill build. Run `tracetoon update` (or re-run the installer) to bring the skill and runtime together, or use Bun/Node 22+ with its matching bundle." >&2
 echo "tracetoon: set TRACETOON_ALLOW_DOWNLOAD=1 to fetch the release binary with gh." >&2
 exit 3

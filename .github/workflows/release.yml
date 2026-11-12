@@ -50,3 +50,8 @@ jobs:
           flags=""
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease";; esac
           gh release create "$GITHUB_REF_NAME" release/* --title "Tracetoon $GITHUB_REF_NAME" --notes-file release-notes.md --generate-notes $flags
+      # Claude Code's marketplace serves the plugin from the ref it was added at.
+      # `release` follows published releases: `/plugin marketplace add Tingsters/tracetoon#release`.
+      # A plain fast-forward (no force): tags are cut from main in order, so it always is one.
+      - name: Move the release branch to this release
+        run: git push origin "$GITHUB_SHA:refs/heads/release"

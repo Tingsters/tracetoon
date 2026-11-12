@@ -21,7 +21,7 @@ function Test-MatchingRuntime([string]$program, [string[]]$leading = @()) {
   } catch { return $false }
 }
 if ($env:TRACETOON_BIN) {
-  if (-not (Test-MatchingRuntime $env:TRACETOON_BIN)) { [Console]::Error.WriteLine('tracetoon: explicit runtime does not match this skill build; update it.'); exit 3 }
+  if (-not (Test-MatchingRuntime $env:TRACETOON_BIN)) { [Console]::Error.WriteLine('tracetoon: explicit runtime does not match this skill build; run `tracetoon update` (or re-run the installer).'); exit 3 }
   & $env:TRACETOON_BIN @args; exit $LASTEXITCODE
 }
 
@@ -72,6 +72,6 @@ if ($env:TRACETOON_ALLOW_DOWNLOAD -eq '1' -and (Get-Command gh -ErrorAction Sile
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
-[Console]::Error.WriteLine('tracetoon: no matching runtime for this skill build. Update the skill and runtime together, or use Bun/Node 22+ with its matching bundle.')
+[Console]::Error.WriteLine('tracetoon: no matching runtime for this skill build. Run `tracetoon update` (or re-run the installer) to bring the skill and runtime together, or use Bun/Node 22+ with its matching bundle.')
 [Console]::Error.WriteLine('tracetoon: set TRACETOON_ALLOW_DOWNLOAD=1 to fetch the release binary with gh.')
 exit 3

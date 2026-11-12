@@ -142,6 +142,12 @@ development and held-out confirmation as not run. This does not turn the
 benchmark into a pass or establish a score/performance gain. The release notes
 publish that limitation; artifact identity and byte verification still apply.
 
+The marketplace plugin follows a `release` branch that the release workflow
+fast-forwards to each tagged commit, so plugin users receive only published
+releases (`/plugin marketplace add Tingsters/tracetoon#release`). Keep
+`.claude-plugin/marketplace.json` free of a `version` field: the plugin version
+comes from `plugin.json`, which the build stamps from `package.json`.
+
 Push the matching `vX.Y.Z` tag after merging the validated changes. The release
 workflow verifies the successful originating CI run, artifact identity, source
 build identity, the recorded release basis and every asset checksum, then publishes

@@ -5,6 +5,8 @@ import {
   loadConfig,
   setUserConfig,
   COMIC_MODES,
+  AUTO_UPDATES,
+  UPDATE_CHANNELS,
   comicMode,
   DEFAULTS,
   userConfigPath,
@@ -143,6 +145,8 @@ program
   .option('--exit-code', `with --check: exit 10 when an update is available`)
   .option('--to <version>', 'install this release (also how to roll back)')
   .option('--channel <channel>', 'stable (releases only) or latest (includes candidates)')
+  .option('--quiet', 'print nothing (used by background checks)')
+  .option('--auto', 'install in the background, only when autoUpdate is install')
   .action((o) => updateCmd({ ...g(), ...o }));
 
 program
@@ -522,6 +526,10 @@ config.command('set <key> <value>').action((key: string, value: string) => {
     );
   if (key === 'comic' && ![...COMIC_MODES, 'true', 'false'].includes(value))
     throw new UserError('comic is off, allowed or always.');
+  if (key === 'autoUpdate' && !(AUTO_UPDATES as readonly string[]).includes(value))
+    throw new UserError(`autoUpdate is ${AUTO_UPDATES.join(', ')}.`);
+  if (key === 'updateChannel' && !(UPDATE_CHANNELS as readonly string[]).includes(value))
+    throw new UserError(`updateChannel is ${UPDATE_CHANNELS.join(' or ')}.`);
   const c = setUserConfig(
     key as keyof Config,
     key === 'comic'

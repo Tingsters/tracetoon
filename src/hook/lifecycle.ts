@@ -17,6 +17,7 @@ import type { Approval } from '../commands/publish.ts';
 import { BUILD_INFO } from '../version.ts';
 import { userConfigPath } from '../config.ts';
 import { publicationTargets } from './publicationTarget.ts';
+import { updateNotice } from '../update/state.ts';
 
 type Payload = Record<string, any>;
 // Stop remains accepted for installed hooks from older releases, but is inert.
@@ -120,10 +121,12 @@ export function lifecycle(
     };
     writeLocal(healthPath, health);
   }
+  // Said at the end of the session start; reads only local files.
+  const notice = event === 'SessionStart' ? updateNotice(agent, env) : undefined;
   const id = sessionId(p);
   const command = commandFrom(p).command;
   if (command && BYPASS_RE.test(command)) return;
-  if (!id) return; // No shared anonymous registry.
+  if (!id) return notice; // No shared anonymous registry.
   const transcript = p.transcript_path ?? p.transcriptPath;
   let host = readHost(id);
   const allRoots = payloadRoots(p);
@@ -137,7 +140,7 @@ export function lifecycle(
         transcript,
       );
   }
-  if (event !== 'PreToolUse') return;
+  if (event !== 'PreToolUse') return notice;
   host = readHost(id);
   const targets = publicationTargets(p, [...allRoots, ...host.repos.map((r) => r.root)]);
   if (targets?.kind !== 'pr') return;

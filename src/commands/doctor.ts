@@ -10,6 +10,8 @@ import { gh, git, run } from '../util/exec.ts';
 import { TOOL_VERSION, BUILD_INFO } from '../version.ts';
 import { loadConfig, userConfigPath } from '../config.ts';
 import { readLocal } from '../util/localJson.ts';
+import { readState } from '../update/state.ts';
+import { compareVersions } from '../update/version.ts';
 import { emit, type OutOpts } from './output.ts';
 import { nextStep, routeStatuses } from '../comic/routes.ts';
 import { resolveTarget, targetLine, type Target } from '../github/target.ts';
@@ -180,8 +182,21 @@ export function doctor(
       existsSync(hostHome(p.envVar, p.dir)) ||
       existsSync(join(hostHome(p.envVar, p.dir), 'sessions')),
   }));
+  const cfg = loadConfig();
+  const known = readState();
+  const update = {
+    autoUpdate: cfg.autoUpdate,
+    channel: cfg.updateChannel,
+    latest: known.latest ?? null,
+    checkedAt: known.checkedAt ?? null,
+    available:
+      !!known.latest &&
+      known.channel === cfg.updateChannel &&
+      compareVersions(known.latest, TOOL_VERSION) > 0,
+  };
   const report = {
     tool: `tracetoon ${TOOL_VERSION}`,
+    update,
     runtime,
     runtimeInfo: {
       ...BUILD_INFO,
@@ -243,10 +258,13 @@ export function doctor(
         : 'skill not installed for any agent (run the installer)',
       ...installs.map((i) => {
         const stale = !i.matchesRuntime
-          ? ' (different or unknown build: update the runtime and skill together)'
+          ? ' (different or unknown build: run tracetoon update to bring runtime and skill together)'
           : '';
         return `  ${i.agent.padEnd(14)} ${i.version ?? 'unknown version'}${stale}`;
       }),
+      update.available
+        ? `update available: ${update.latest} (you have ${TOOL_VERSION}); run: tracetoon update`
+        : `updates: ${update.autoUpdate}, ${update.channel} channel${update.checkedAt ? `, last checked ${update.checkedAt.slice(0, 10)}` : ', not checked yet'}`,
       `tracetoon here: ${report.switch.enabled ? 'on' : 'off'} (${report.switch.why})`,
       `PR hook: ${
         report.prHook
@@ -260,7 +278,7 @@ export function doctor(
         .filter((h) => !h.matchesRuntime)
         .map(
           (h) =>
-            `  ${h.agent} hook runtime differs or predates build identity; update it.`,
+            `  ${h.agent} hook runtime differs or predates build identity; run: tracetoon update.`,
         ),
     );
     const found = report.imageProviders.filter((p) => p.available);

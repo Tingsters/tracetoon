@@ -17,6 +17,9 @@ import { updateCmd } from '../src/commands/update.ts';
 import { run } from '../src/util/exec.ts';
 import { tempDir } from './helpers.ts';
 
+// Update state goes beside the user config: keep it out of the real one.
+process.env.TRACETOON_CONFIG = join(tempDir('tracetoon-config-'), 'config.json');
+
 describe('version ordering', () => {
   test('orders release candidates numerically, not as text', () => {
     expect(compareVersions('v1.0.0-rc.2', 'v1.0.0-rc.10')).toBeLessThan(0);

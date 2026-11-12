@@ -156,8 +156,17 @@ Turn it off at whichever level you need. Any "off" wins:
 <details>
 <summary>Other ways to install</summary>
 
-- **Claude Code plugin:** `/plugin marketplace add Tingsters/tracetoon`, then
-  `/plugin install tracetoon@tracetoon`.
+- **Claude Code plugin:** `/plugin marketplace add Tingsters/tracetoon#release`
+  (published releases; the `release` branch is moved by each release, starting
+  with the first one cut after it was added to the workflow), then
+  `/plugin install tracetoon@tracetoon`. Without `#release` you follow `main`,
+  which can be ahead of any release. Update with `/plugin marketplace update
+  tracetoon`, or turn on auto-update for it under `/plugin` > Marketplaces
+  (third-party marketplaces start with it off); run `/reload-plugins` after.
+  The plugin runs its bundled copy under Bun or Node 22+. For the prebuilt
+  binary and the PR hook, run the installer once; after that `tracetoon update`
+  keeps the binary, hooks and every installed skill copy in step, and
+  `tracetoon doctor` flags any that fall out of step.
 - **By hand:** unzip `tracetoon-skill.zip` (or a per-platform
   `tracetoon-skill-<os>-<arch>.zip`, which includes the binary) from a
   [release](https://github.com/Tingsters/tracetoon/releases) into your agent's
