@@ -180,6 +180,17 @@ describe('PR base and stale digests', () => {
     expect(prBase(repo.root, 'main')).toBe('main');
   });
 
+  test('a base that only another remote has is the PR base, not the default branch', () => {
+    const repo = makeRepo();
+    const head = git(repo.root, ['rev-parse', 'HEAD']).stdout.trim();
+    git(repo.root, ['remote', 'add', 'upstream', 'https://github.com/up/proj.git']);
+    git(repo.root, ['update-ref', 'refs/remotes/upstream/gh-pages', head]);
+    expect(prBase(repo.root, 'upstream/gh-pages')).toBe('gh-pages');
+    expect(prBase(repo.root, 'gh-pages', 'up/proj')).toBe('gh-pages');
+    // A name no remote or local branch has still falls back to the default.
+    expect(prBase(repo.root, 'nowhere')).toBe('main');
+  });
+
   test('commits added after the digest are flagged', () => {
     const repo = makeRepo();
     repo.commit('a.txt', 'a\n', 'feat: a');

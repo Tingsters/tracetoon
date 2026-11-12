@@ -139,4 +139,27 @@ describe('base branch detection from one ref listing', () => {
     g(repo.root, 'update-ref', 'refs/remotes/origin/stable', ahead);
     expect(prTruth(repo.root, { noGh: true, base: 'stable' }).mergeBase).toBe(ahead);
   });
+
+  test('a base that only another remote has: remote/branch or the bare branch', () => {
+    // A fork clone: the site branch exists only as upstream/gh-pages.
+    const repo = makeRepo();
+    const base = g(repo.root, 'rev-parse', 'main');
+    g(repo.root, 'remote', 'add', 'upstream', 'https://github.com/up/proj.git');
+    g(repo.root, 'update-ref', 'refs/remotes/upstream/gh-pages', base);
+    repo.commit('index.html', '<p>new</p>', 'site work');
+    for (const given of ['upstream/gh-pages', 'gh-pages']) {
+      const truth = prTruth(repo.root, { noGh: true, base: given });
+      expect(truth.base).toBe('gh-pages');
+      expect(truth.mergeBase).toBe(base);
+      expect(truth.commits.map((c) => c.subject)).toEqual(['site work']);
+    }
+    // origin's copy still wins over another remote's.
+    const ahead = g(repo.root, 'rev-parse', 'HEAD');
+    g(repo.root, 'update-ref', 'refs/remotes/origin/gh-pages', ahead);
+    expect(prTruth(repo.root, { noGh: true, base: 'gh-pages' }).mergeBase).toBe(ahead);
+    // An explicit remote is honored even when origin also has the branch.
+    expect(prTruth(repo.root, { noGh: true, base: 'upstream/gh-pages' }).mergeBase).toBe(
+      base,
+    );
+  });
 });
