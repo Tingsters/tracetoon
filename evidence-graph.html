@@ -1,0 +1,1008 @@
+<!doctype html><html><head><title>Tracetoon Evidence Graph</title><meta name="description" content="How an embedded Relate graph made Tracetoon's PR writer better and cheaper: 18–1 on Claude, 12–1 on Codex, at 59% and 65% of the token cost."><link rel="icon" href="favicon.svg" type="image/svg+xml"><meta property="og:title" content="An embedded graph made our PR writer better and cheaper"><meta property="og:image" content="https://tracetoon.com/img/comic-cost.webp"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet"><style>  /* shared site header: identical on index.html and evidence-graph.html */
+  :root { --sh-bg:#fffdf6; --sh-fg:#1b1913; --sh-ink:#1b1913; --sh-accent:#c2410c; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --sh-bg:#14130f; --sh-fg:#f2ede0; --sh-ink:#000000; --sh-accent:#fb8a4c; } }
+  :root[data-theme="dark"] { --sh-bg:#14130f; --sh-fg:#f2ede0; --sh-ink:#000000; --sh-accent:#fb8a4c; }
+  .site-top { position:sticky; top:0; z-index:50; background:var(--sh-bg); border-bottom:2px solid var(--sh-ink); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .site-top .site-wrap { max-width:1120px; margin:0 auto; padding:0 16px; display:flex; align-items:center; gap:1rem; height:58px; box-sizing:border-box; }
+  .site-brand { display:flex; align-items:center; gap:.45rem; text-decoration:none; color:var(--sh-fg); }
+  .site-brand img { width:36px; height:36px; display:block; }
+  .site-brand span { font-family:Bangers,"Comic Neue",system-ui,sans-serif; font-weight:400; letter-spacing:.03em; font-size:1.75rem; line-height:1; }
+  .site-top nav { margin-left:auto; display:flex; gap:1.1rem; }
+  .site-top nav a { color:var(--sh-fg); text-decoration:none; font-weight:600; font-size:.95rem; }
+  .site-top nav a:hover, .site-top nav a[aria-current="page"] { color:var(--sh-accent); }
+  .site-top nav a.ext { display:inline-flex; align-items:center; gap:.2em; }
+  .site-top nav a.ext svg { width:.8em; height:.8em; }
+  .site-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  @media (max-width:600px) { .site-top nav a.opt { display:none; } .site-top nav { gap:.85rem; } .site-brand span { font-size:1.5rem; } }
+html{scroll-padding-top:70px} .toc{top:calc(env(safe-area-inset-top,0px) + 82px) !important}</style><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body><header class="site-top">
+  <div class="site-wrap">
+    <a class="site-brand" href="./" aria-label="Tracetoon home">
+      <img src="favicon.svg" alt="" width="36" height="36">
+      <span>Tracetoon</span>
+    </a>
+    <nav aria-label="Site">
+      <a href="./#install">Install</a>
+      <a href="./#why" class="opt">Why</a>
+      <a href="./#talk" class="opt">Talk</a>
+      <a href="evidence-graph.html" aria-current="page">Results</a>
+      <a href="https://github.com/Tingsters/tracetoon" class="ext">GitHub<svg viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5h5v5M9.5 2.5 3 9"/></svg><span class="site-sr"> (leaves this site)</span></a>
+    </nav>
+  </div>
+</header>
+
+
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~70ch) with wide figure bands; a sticky section index on wide screens. */
+:root{
+  --bg:#f6f7f5; --surface:#ffffff; --fg:#17201d; --muted:#5b6762; --rule:#d9dfdb;
+  --graph:#0e7c66; --graph-soft:#d6efe8; --main:#8a6d3b; --main-soft:#f0e6d3;
+  --cheap:#4f7fbf; --warn:#b4472d; --warn-soft:#f6ddd5; --over:#9a6a00; --over-soft:#f7ebc7;
+  --add-soft:#d6efe8; --miss-soft:#e9ecea; --note:#eef2f0; --code:#eef1ee;
+  --display:"Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+  --body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#111715; --surface:#18201d; --fg:#e4ebe7; --muted:#9aa8a1; --rule:#2c3833;
+  --graph:#3fc4a6; --graph-soft:#163a32; --main:#d2ad6e; --main-soft:#3a2f1c;
+  --cheap:#7fa9e3; --warn:#ef8a6d; --warn-soft:#46231a; --over:#e6be5a; --over-soft:#3d3115;
+  --add-soft:#163a32; --miss-soft:#252e2a; --note:#1c2622; --code:#1d2622; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#111715; --surface:#18201d; --fg:#e4ebe7; --muted:#9aa8a1; --rule:#2c3833;
+  --graph:#3fc4a6; --graph-soft:#163a32; --main:#d2ad6e; --main-soft:#3a2f1c;
+  --cheap:#7fa9e3; --warn:#ef8a6d; --warn-soft:#46231a; --over:#e6be5a; --over-soft:#3d3115;
+  --add-soft:#163a32; --miss-soft:#252e2a; --note:#1c2622; --code:#1d2622; color-scheme:dark }
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.6}
+.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 80px;display:grid;grid-template-columns:190px minmax(0,1fr);gap:44px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);gap:0}.toc{display:none}}
+.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;font-size:13px;line-height:1.5}
+.toc a{display:block;color:var(--muted);text-decoration:none;padding:3px 0}
+.toc a:hover,.toc a:focus-visible{color:var(--graph)}
+.toc .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+main{min-width:0}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(34px,5vw,50px);font-weight:700;letter-spacing:-.01em}
+h2{font-size:clamp(25px,3.2vw,32px);font-weight:700;margin-top:72px;padding-top:24px;border-top:1px solid var(--rule)}
+h3{font-size:20px;font-weight:600;margin-top:32px}
+p,li{max-width:72ch}
+.kicker{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--graph);margin-bottom:12px}
+.lede{font-size:19px;color:var(--muted);margin-top:16px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:18px}
+a{color:var(--graph)}
+code,.mono{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 5px;border-radius:4px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:32px}
+.tile{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:6px}
+.tile .big{font-family:var(--display);font-size:36px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--graph)}
+.tile .sub{font-size:13px;color:var(--muted)}
+.tile .prov{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+figure{margin:28px 0 0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:20px 20px 14px}
+figcaption{font-size:13px;color:var(--muted);margin-top:10px;max-width:none}
+.fig-title{font-weight:600;font-size:15px;margin-bottom:6px}
+.chart{width:100%;overflow-x:auto}
+.chart svg{display:block;max-width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin-top:6px}
+.legend span::before{content:"";display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c)}
+.tbl{overflow-x:auto;margin-top:20px}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+td.n,th.n{text-align:right}
+td.better{color:var(--graph);font-weight:600}
+td.worse{color:var(--warn);font-weight:600}
+.callout{margin-top:24px;background:var(--note);border-left:3px solid var(--warn);border-radius:0 8px 8px 0;padding:14px 18px}
+.callout p{margin:6px 0;font-size:15px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:20px}
+.two>div{min-width:0}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px 20px}
+.card h4{margin:0 0 8px;font-family:var(--display);font-size:17px}
+.card.g{border-top:3px solid var(--graph)}
+.card.m{border-top:3px solid var(--main)}
+.card.n{border-top:3px solid var(--muted)}
+.card ol,.card ul{padding-left:20px;margin:6px 0}
+.card li{margin:4px 0;font-size:15px}
+pre.cypher{background:var(--code);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;overflow-x:auto;margin-top:14px;font-family:var(--mono);font-size:13px;line-height:1.55;white-space:pre}
+pre.mermaid{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px;overflow-x:auto;margin-top:16px}
+/* Side-by-side PR example */
+.ex{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:20px;align-items:start}
+@media (max-width:1100px){.ex{grid-template-columns:minmax(0,1fr)}}
+.pr{background:var(--surface);border:1px solid var(--rule);border-radius:10px;min-width:0;display:flex;flex-direction:column}
+.pr-head{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.pr-head .who{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.pr-head .who.n{color:var(--muted)} .pr-head .who.m{color:var(--main)} .pr-head .who.g{color:var(--graph)}
+.pr-head .ttl{font-weight:600;font-size:15px;margin-top:4px;line-height:1.35}
+.pr-head .score{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:999px;background:var(--note);color:var(--fg)}
+.chip.bad{background:var(--warn-soft);color:var(--warn)}
+.chip.good{background:var(--add-soft);color:var(--graph)}
+.pr-body{padding:12px 16px 16px;font-size:13.5px;line-height:1.55}
+.pr-body h5{font-size:13px;margin:12px 0 4px;font-weight:600}
+.pr-body p{margin:6px 0}
+.pr-body ul{padding-left:18px;margin:6px 0}
+.pr-body li{margin:3px 0}
+.pr-body code{font-size:.85em}
+mark{color:inherit;border-radius:3px;padding:0 2px}
+mark.err{background:var(--warn-soft);box-shadow:inset 0 -2px 0 var(--warn)}
+mark.over{background:var(--over-soft);box-shadow:inset 0 -2px 0 var(--over)}
+mark.add{background:var(--add-soft);box-shadow:inset 0 -2px 0 var(--graph)}
+.ann{margin:6px 0 10px;font-size:12px;line-height:1.45;padding:6px 9px;border-radius:6px}
+.ann.err{background:var(--warn-soft);color:var(--fg)} .ann.err b{color:var(--warn)}
+.ann.add{background:var(--add-soft);color:var(--fg)} .ann.add b{color:var(--graph)}
+.ann.miss{background:var(--miss-soft);color:var(--fg)} .ann.miss b{color:var(--muted)}
+.keys{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;margin-top:12px}
+.keys mark{font-size:12.5px}
+svg text{fill:var(--fg);font-family:var(--body)}
+svg .axis{stroke:var(--rule)}
+svg .muted{fill:var(--muted)}
+svg .mono{font-family:var(--mono)}
+:focus-visible{outline:2px solid var(--graph);outline-offset:2px}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sections">
+  <div class="lbl">Contents</div>
+  <a href="#tldr">The result</a>
+  <a href="#tracetoon">What Tracetoon is</a>
+  <a href="#example">One PR, three ways</a>
+  <a href="#judging">How quality is judged</a>
+  <a href="#quality">Where quality comes from</a>
+  <a href="#cost">Token cost</a>
+  <a href="#nograph">Tracetoon without a graph</a>
+  <a href="#graph">What the graph does</a>
+  <a href="#relate">Why Relate</a>
+  <a href="#journey">How we got here</a>
+  <a href="#cases">Per-case results</a>
+  <a href="#caveats">Method and caveats</a>
+  <a href="#appendix">Appendix: data</a>
+</nav>
+
+<main>
+<header id="tldr">
+  <div class="kicker">Tracetoon · evidence graph results · November 2026</div>
+  <h1>An embedded Relate graph made our PR writer better and cheaper</h1>
+  <p class="lede">Tracetoon writes pull-request descriptions from the AI agent session logs already on disk. We put a deterministic evidence graph, built in Relate, an embedded graph database written in Rust, between those logs and the writing model. In the build that ships, a mid-size model with the graph beat Tracetoon's own full multi-agent workflow in head-to-head judging, 18–1 on Claude and 12–1 on Codex, at 59% and 65% of the token cost.</p>
+  <div class="meta">Benchmark: prbench, 5 real PRs × 5 replicates per arm · rubric v6 · round 23, the shipped build (Tracetoon bd55f75 on Relate) · runs r23/claude/sonnet-close and r23/codex/terra-close</div>
+
+  <figure class="comic">
+    <img src="img/comic-cost.webp" alt="Two-panel comic. Left, labeled Without the graph: three tired robots hunch over an enormous unrolled scroll labeled session logs, saying Re-reading it. Again. Right, labeled With the graph: one small robot holds up a folded map labeled evidence graph while two tiny drones with magnifying glasses, labeled reviewers, check it; the robot says Done. Two checks. Half the tokens." style="display:block;width:100%;height:auto;border-radius:6px">
+    <figcaption>Drawn by Tracetoon's own comic step (Codex image route), the same way it can add a comic to a PR.</figcaption>
+  </figure>
+
+  <div class="tiles">
+    <div class="tile"><div class="prov">Claude · Sonnet 5.5</div><div class="big">18–1</div><div class="sub">Head-to-head wins–losses against the same model's no-graph workflow (6 ties)</div></div>
+    <div class="tile"><div class="prov">Claude · Sonnet 5.5</div><div class="big">+5.2</div><div class="sub">Composite quality, 78.9 vs 73.7 (95% CI +2.5 to +8.0)</div></div>
+    <div class="tile"><div class="prov">Claude · Sonnet 5.5</div><div class="big">−41%</div><div class="sub">Cost per PR, $0.407 vs $0.690</div></div>
+    <div class="tile"><div class="prov">Codex · Terra 6.1</div><div class="big">12–1</div><div class="sub">Head-to-head wins–losses (12 ties)</div></div>
+    <div class="tile"><div class="prov">Codex · Terra 6.1</div><div class="big">+3.5</div><div class="sub">Composite quality, 86.6 vs 83.2 (95% CI +1.8 to +5.1)</div></div>
+    <div class="tile"><div class="prov">Codex · Terra 6.1</div><div class="big">−35%</div><div class="sub">Cost per PR, $0.207 vs $0.320</div></div>
+  </div>
+
+  <figure>
+    <div class="fig-title">Quality up, cost down, on both providers</div>
+    <div class="chart" id="c-headline"></div>
+    <div class="legend"><span style="--c:var(--main)">Tracetoon without a graph</span><span style="--c:var(--graph)">Tracetoon with the graph</span></div>
+    <figcaption>Left: mean composite score (0–100) over 25 PR drafts per arm. Right: mean cost per PR draft in US dollars, from token counts. Each comparison uses the same model, cases, judges and baseline drafts on both sides.</figcaption>
+  </figure>
+  <p>The graph did not let us use a weaker writer. It let the same model do the job better with fewer tokens. On Claude, the graph version won 18 of the 25 paired comparisons outright and lost one. On Codex it won 12 and lost one, and the judges found no factual errors in any of its 25 drafts. Cost fell by 41% on Claude and 35% on Codex. A second Codex run of the same build came out at +5.2 (13–2), which shows how much one run can move. The rest of this page explains what the judges measure, where the gains come from, and what the graph does differently.</p>
+</header>
+
+<section>
+<h2 id="tracetoon">What Tracetoon is</h2>
+<p><a href="https://github.com/Tingsters/tracetoon">Tracetoon</a> is an open-source tool that writes better pull-request descriptions from the work an AI coding agent already did. Agents such as Claude Code, Codex and Antigravity keep session logs on disk: the user's requests, plans, decisions, file edits and the commands they ran. A PR description written from the diff alone loses most of that. It can't say why the change was made, what was tried first, or which tests actually ran on the final code.</p>
+<p>Tracetoon runs as an agent skill. When an agent is about to open a PR, Tracetoon takes over:</p>
+<ul>
+  <li><b>Finds the matching sessions.</b> It identifies which sessions produced the current branch by matching agent edits to lines in the diff, and asks when a session is ambiguous.</li>
+  <li><b>Builds a redacted evidence set.</b> It pulls prompts, plans, edits, runs and commits from those logs, with private paths and secrets removed.</li>
+  <li><b>Writes the description.</b> The agent drafts the PR body from that evidence, and Tracetoon checks it: every factual sentence must trace back to evidence, and the Validation section is generated from recorded test and build runs, not typed by the model.</li>
+  <li><b>Draws an optional comic.</b> Tracetoon can turn the story of the change into a four-panel comic that goes in the PR. It is optional: Tracetoon leaves it out where a repo's contributing rules forbid images in PRs, and you can turn comics off yourself.</li>
+  <li><b>Creates the PR.</b> The agent has the draft reviewed, creates the PR through the normal workflow, and then reports what it did: the link, whether a comic is included, and any sessions it left out.</li>
+</ul>
+<p>Tracetoon installs a hook that redirects the agent's <code>gh pr create</code> through this workflow, respects repository AI policies (for example, repos that ask for author-written PR text), and can be turned off per repo. This page compares two versions of its drafting step: the original multi-agent workflow and a new version built on an evidence graph.</p>
+</section>
+
+<section>
+<h2 id="example">One PR, three ways</h2>
+<p>The same change described three ways. The PR (<code>pr8</code> in the benchmark) fixes the preview link, which a user testing in Codex called "not very helpful". It also fixes two digest bugs found while dogfooding: commands prefixed with <code>cd</code> were filed under the wrong repo, and a <code>git log</code> in another repo could claim authorship of a commit. All three drafts were written by Claude Sonnet 5.5 and scored by the same judges against the same fact sheet. They are drafts from round 15, the earlier published comparison, so the graph draft here predates the brief changes in the shipped build.</p>
+<div class="keys">
+  <span><mark class="err">contradicted by the evidence</mark></span>
+  <span><mark class="over">overstated or vague</mark></span>
+  <span><mark class="add">detail the other versions missed</mark></span>
+</div>
+
+<div class="ex">
+  <article class="pr">
+    <div class="pr-head">
+      <div class="who n">Agent opens the PR itself · no Tracetoon</div>
+      <div class="ttl">Fix digest attribution and preview link</div>
+      <div class="score"><span class="chip">composite 47.3</span><span class="chip good">0 errors</span><span class="chip bad">context 0 of 5</span><span class="chip">76 words · est. $0.33 cached / $0.93 not cached</span></div>
+    </div>
+    <div class="pr-body">
+      <h5>Summary</h5>
+      <ul>
+        <li>Preview is now printed as a clickable <code>file:///</code> link.</li>
+        <li>Digest keeps earlier work and merely viewed commits out of a PR's story.</li>
+        <li>Commands prefixed with <code>cd</code> are judged by the directory they move to.</li>
+        <li><mark class="over">Version bump, rebuilt plugin bundle, updated tests and eval script.</mark></li>
+      </ul>
+      <div class="ann miss"><b>Vague.</b> "Updated eval script" hides that two eval cases are now pinned to fixed commits. The tests are listed but not what they check.</div>
+      <h5>Testing</h5>
+      <p>Tests were added in <code>tests/flow.test.ts</code>, <code>tests/units.test.ts</code> and <code>tests/summary-fixes.test.ts</code>. I did not run them as part of opening this PR.</p>
+      <div class="ann miss"><b>Missing.</b> No reason for any change: not the user's complaint about the link, not that the digest bugs were found while dogfooding. Nothing on the <code>SKILL.md</code> instruction change, which commands now count as creating a commit, or where a reviewer should start. Judges credited 3–6 of the 8 claims and 0 of the 5 context items.</div>
+    </div>
+  </article>
+
+  <article class="pr">
+    <div class="pr-head">
+      <div class="who m">Tracetoon, original workflow</div>
+      <div class="ttl">Fix preview links and keep unrelated work out of PR digests</div>
+      <div class="score"><span class="chip">composite 65.3</span><span class="chip bad">2 contradicted claims</span><span class="chip">context 2 of 5</span><span class="chip">$1.24</span></div>
+    </div>
+    <div class="pr-body">
+      <h5>Summary</h5>
+      <p>Three dogfooding fixes to Tracetoon, bumping it to 1.0.0-rc.8. One makes the preview link usable; two stop the digest from attributing unrelated work to a PR.</p>
+      <h5>Changes</h5>
+      <p><b>Clickable preview link.</b> <code>render</code> and <code>preview</code> printed a bare path to <code>preview.html</code>, which, per the commit message, agents passed on as a relative path the user couldn't open (found when testing in Codex, where the user called the link "not very helpful"). Both now print an absolute <code>file:///</code> URL and return it as <code>previewUrl</code> in <code>--json</code>. <code>SKILL.md</code> now tells agents to relay the link exactly as printed.</p>
+      <p><b>Earlier work no longer counts as part of the PR</b> (<code>src/correlate/correlate.ts</code>). Only edits inside the repo now date a turn. For the SHA-in-output match, only commit-making commands (<code>commit</code>, <code>merge</code>, <code>cherry-pick</code>, <code>revert</code>, <code>am</code>, <code>rebase</code>, <code>pull</code>) now count.</p>
+      <p><b><code>cd</code>-prefixed commands use the directory they move to</b> (<code>leadingCd</code> in <code>src/trace/pathMatch.ts</code>). […]</p>
+      <p><mark class="over"><code>scripts/eval-summaries.ts</code> pins two cases whose branches have since merged or been committed, so they stop drifting.</mark></p>
+      <div class="ann miss"><b>Vague.</b> Doesn't say which commits the cases are pinned to; three of four judgments did not credit this claim.</div>
+      <h5>Testing</h5>
+      <p>Historical results from the development session, not rerun for this PR: a full <code>bun test</code> run reported 71 pass, 0 fail. <mark class="err">Historically, a <code>bun x tsc --noEmit</code> run (R29) failed before later edits, and no later passing run is recorded, so type-check status for the final content is unknown.</mark></p>
+      <div class="ann err"><b>Contradicted.</b> A later command in the session chained <code>bun x tsc --noEmit &amp;&amp; bun test</code> and the tests ran, so the type-check passed after the earlier failures.</div>
+      <h5>Notes for reviewers</h5>
+      <p>Start with <code>leadingCd</code> and its use in <code>belongs</code>. <mark class="err">Drafted inline by the coordinating agent and reviewed by separate reviewer agents</mark>; no comic is included.</p>
+      <div class="ann err"><b>Contradicted.</b> The run records show no separate reviewer had completed a current review; publish reported the independent review as missing or stale.</div>
+    </div>
+  </article>
+
+  <article class="pr">
+    <div class="pr-head">
+      <div class="who g">Tracetoon with the graph</div>
+      <div class="ttl">Fix digest attribution of commands and earlier work; print preview as a file:/// link</div>
+      <div class="score"><span class="chip">composite 80.4</span><span class="chip good">0 errors</span><span class="chip">context 2 of 5</span><span class="chip">$0.53</span></div>
+    </div>
+    <div class="pr-body">
+      <p>Dogfooding Tracetoon on its own PRs turned up wrong attributions in the digest, and a Codex test showed the preview link wasn't followable. This PR fixes both.</p>
+      <h5>Digest attribution</h5>
+      <ul>
+        <li>A command that starts with <code>cd</code>, <code>pushd</code> or <code>Set-Location</code> is now judged by the directory it moves to (<code>leadingCd</code> in <code>src/trace/pathMatch.ts</code>, used by <code>belongs</code> in <code>src/correlate/correlate.ts</code>). Agents log a command with the shell's directory from before it ran, so <code>cd ../other-repo &amp;&amp; bun test</code> was filed under this repo and its test failures showed up in this PR.</li>
+        <li>A commit's SHA in command output now counts as the session having made it only when the command creates commits (<code>commit</code>, <code>merge</code>, <code>cherry-pick</code>, <code>revert</code>, <code>am</code>, <code>rebase</code>, <code>pull</code>, chained or not). Before, a SHA in any command's output counted, so <code>git log</code> in another repo claimed authorship.</li>
+        <li><code>dropEarlierWork</code> now judges where an earlier turn ends by its in-repo edits <mark class="add">(it falls back to all of the turn's records when it has none)</mark>.</li>
+        <li><mark class="add"><code>scripts/eval-summaries.ts</code> pins two cases to fixed commits (PR #1 to its merge commit <code>c62818f</code>'s parents, and the <code>vexaim-cli</code> case to <code>0723dbf^..0723dbf</code>)</mark> so they stop drifting.</li>
+        <li><code>tests/units.test.ts</code> covers commit detection and <code>leadingCd</code>, and <code>tests/summary-fixes.test.ts</code> adds an outside-repo edit to the earlier-work case.</li>
+      </ul>
+      <div class="ann add"><b>Added.</b> The exact pinned commits come straight from a brief row that links the commit sentence to its hunk. Every judgment credited all 8 claims.</div>
+      <h5>Preview link</h5>
+      <p><code>render</code> and <code>preview</code> printed a bare path, which agents passed on as a relative path the user couldn't open. Both now print an absolute <code>file:///</code> URL, return it as <code>previewUrl</code> in <code>--json</code>; <code>preview</code> also shows the comic image as such a URL. <mark class="add"><code>tests/flow.test.ts</code> checks the <code>previewUrl</code> value and the printed line.</mark></p>
+      <h5>Validation</h5>
+      <p style="font-size:12px;color:var(--muted)">Written by Tracetoon from the checks recorded in the session logs.</p>
+      <ul>
+        <li><mark class="add"><code>bun run typecheck</code>: passed, run by <code>tracetoon check</code> on the submitted content.</mark></li>
+        <li><mark class="add"><code>bun test</code>: passed (71 pass; 0 fail), run by <code>tracetoon check</code> on the submitted content.</mark></li>
+      </ul>
+      <div class="ann add"><b>Added.</b> Validation is generated from receipts of runs on the final content, so there is no stale or guessed type-check claim.</div>
+      <p><mark class="add">Start with <code>src/correlate/correlate.ts</code>; the <code>leadingCd</code> rule (a <code>cd</code> target outside the repo still counts if the command mentions a root) is the part most worth a second look.</mark></p>
+    </div>
+  </article>
+</div>
+<p style="margin-top:16px">The no-Tracetoon cost is an estimate, because the agent that opens its own PR carries the whole session's context (173K tokens for this PR) into every call. It uses the method in <a href="#cost">Token cost</a>. The no-Tracetoon draft makes no mistakes, mostly because it says almost nothing. The original Tracetoon workflow brings back the why ("found while dogfooding", the user's "not very helpful"), but this run cost $1.24 and made two confident statements the evidence contradicts. The graph version keeps the context, adds the precise details (pinned commits, what the new tests check, fallback behavior), generates validation from receipts, and points the reviewer at the riskiest rule. In round 15 it cost less than half as much as the original workflow. For space, some lines are trimmed (marked […]) or merged, and the generated footers are left out. Highlighted text is verbatim.</p>
+</section>
+
+<section>
+<h2 id="judging">How quality is judged</h2>
+<p>Each PR in the benchmark is a real change from Tracetoon's own development, with the original agent session logs. Every description is judged against a hand-checked fact sheet, by two judges, in both orders.</p>
+
+<h3>The fact sheet</h3>
+<p>For each case, a person read the diff and the original work sessions and wrote down four lists. Judges cite these items by ID when they score a draft.</p>
+<div class="tbl"><table>
+<thead><tr><th>List</th><th>What it holds</th><th class="n">Items per case</th><th>Scored as</th></tr></thead>
+<tbody>
+<tr><td><b>Claims</b> (C1…)</td><td>Facts about the change that a good description should convey: new behaviors, changed defaults, tests added.</td><td class="n">7–10</td><td>Claim coverage: share of claims conveyed accurately</td></tr>
+<tr><td><b>Context</b> (X1…)</td><td>What a reviewer would want to know beyond the code: why the work started, what the user asked for, what was found along the way.</td><td class="n">4–5</td><td>Context coverage</td></tr>
+<tr><td><b>Uncertainties</b> (U1…)</td><td>What the evidence does <i>not</i> establish, such as a path never run live. A good description doesn't overclaim these.</td><td class="n">4–5</td><td>Uncertainties respected</td></tr>
+<tr><td><b>Traps</b> (T1…)</td><td>Plausible but wrong statements a writer might make, such as calling an existing function new.</td><td class="n">6</td><td>Traps hit (penalty)</td></tr>
+</tbody></table></div>
+<p>For the pr8 example above, a trap is "saying the preview now opens automatically in the browser" (it only prints a clickable URL). Context X2 is "the commit messages say the two digest fixes were found while dogfooding".</p>
+
+<h3>Pairwise judging, both orders, two judges</h3>
+<p>A judge sees the fact sheet, the commits, the diff, the original session evidence, any fresh validation runs, and two descriptions labeled A and B. It audits every checkable clause in each and marks it <i>supported</i>, <i>contradicted</i>, <i>unsupported</i> (broader than the evidence) or <i>unverifiable</i>. It scores ten reviewer-usefulness items, then says which description a maintainer would rather receive. The prompt states the priority order outright: <i>accuracy first, then usefulness to the reviewer, then the reader's effort. Do not prefer a description for being longer, more formatted or more confident.</i></p>
+<pre class="mermaid">
+flowchart LR
+  A["Draft A<br/>(no-graph workflow)"] --> J1
+  B["Draft B<br/>(graph workflow)"] --> J1
+  F["Fact sheet<br/>diff · commits · sessions"] --> J1
+  J1["Judge 1<br/>order A,B and B,A"] --> V{"Consensus?"}
+  J2["Judge 2<br/>order A,B and B,A"] --> V
+  A --> J2
+  B --> J2
+  F --> J2
+  V -->|"all 4 judgments agree"| W["Win for one side"]
+  V -->|"any disagreement"| T["Tie"]
+</pre>
+<p>Each pair of drafts gets four judgments: two judges, each reading both orders. Claude runs use Opus 5.5 and Sonnet 5.5 as judges; Codex runs use Sol 6.1 and Terra 6.1. A <b>consensus win</b> needs all four to pick the same draft, so position bias and judge noise turn into ties rather than wins. That strict rule is why most pairs are ties. An 18–1 record means eighteen pairs where every judgment, in both orders, preferred the graph draft, and one pair where they all preferred the other one.</p>
+
+<h3>The ten rubric items</h3>
+<div class="tbl"><table>
+<thead><tr><th>Item</th><th>What the judge checks</th></tr></thead>
+<tbody>
+<tr><td>problem</td><td>The trigger, the old behavior and the new behavior are clear, and the old behavior matches the base code.</td></tr>
+<tr><td>rationale</td><td>Reasons for the approach are explicit and correctly attributed.</td></tr>
+<tr><td>validation</td><td>What was checked, and how, is stated; claims are bound to evidence and limits are honest.</td></tr>
+<tr><td>consequences</td><td>Concrete effects on users, callers or operations are stated.</td></tr>
+<tr><td>orientation</td><td>Changes are grouped by idea in a sensible reading order, not narrated file by file.</td></tr>
+<tr><td>entry</td><td>A reviewer knows where to start.</td></tr>
+<tr><td>economy</td><td>Easy to find what matters; inventories and padding count against.</td></tr>
+<tr><td>feedback</td><td>Says what kind of review or feedback is wanted, if any.</td></tr>
+<tr><td>links</td><td>Links to related issues, PRs or docs where they exist.</td></tr>
+<tr><td>scope</td><td>What the text says the PR covers matches the files and behavior actually changed.</td></tr>
+</tbody></table></div>
+<p>Each item is scored 0 (missing or misleading), 1 (partial) or 2 (sufficient and accurate), or left null when it doesn't apply. The first seven come from Tracetoon's own description rubric; the last three come from PR-description research (Xiao et al., FSE 2024; Pirouzkhah et al., MSR 2026).</p>
+
+<h3>The composite score</h3>
+<p>The composite rolls the judgment into one 0–100 number per draft, averaged over its four judgments:</p>
+<p class="mono" style="display:block;padding:10px 14px;line-height:1.8">composite = 35·claims + 15·context + 15·uncertainties + 35·rubric − 15·errors − 7·unsupported − 10·traps</p>
+<p>Coverage terms are fractions of the fact sheet (0–1). Rubric is the mean item score divided by 2. Errors, unsupported claims and traps are counts per judgment. A single contradicted claim costs 15 points, as much as missing all of the context. The head-to-head consensus result and the composite are reported separately because they can disagree: the composite rewards coverage, while the head-to-head reflects which draft a maintainer would rather get.</p>
+<p>The judges have an answer key, and the win counts are deliberately hard to earn. Two different judges each read the pair twice, once in each order, and only a unanimous verdict counts as a win.</p>
+</section>
+
+<section>
+<h2 id="quality">Where the quality gain comes from</h2>
+<p>The composite gain splits cleanly into its terms. On Claude, almost all of the gain is better-written descriptions (rubric), plus smaller gains from context and fewer unsupported claims. Fewer stated uncertainties take part of it back. On Codex, it's mostly coverage and accuracy: the graph surfaces facts the no-graph workflow leaves out, and its drafts had no factual errors.</p>
+<figure>
+  <div class="fig-title">What each term adds to the composite difference (graph minus no-graph)</div>
+  <div class="chart" id="c-waterfall"></div>
+  <div class="legend"><span style="--c:var(--graph)">adds points</span><span style="--c:var(--warn)">costs points</span></div>
+  <figcaption>Each bar is the term's weight times the change in its mean (e.g. claims on Codex: 35 × (0.947 − 0.872) = +2.6). Terms add up to the total difference: +5.2 on Claude, +3.5 on Codex.</figcaption>
+</figure>
+
+<h3>Accuracy: what the graph is particularly good at</h3>
+<p>On Codex, the judges found no factual errors in any of the 25 graph drafts, against 0.07 per judgment for the no-graph workflow. On Claude, factual errors are level with the no-graph workflow (0.08 against 0.09 per judgment), and unsupported claims fell by about three quarters (0.03 against 0.11). Neither arm hit a trap on either provider. These are the measures a maintainer cares about most: a confident sentence that's wrong costs more trust than a missing one.</p>
+<figure>
+  <div class="fig-title">Accuracy measures, per judgment (lower is better)</div>
+  <div class="chart" id="c-accuracy"></div>
+  <div class="legend"><span style="--c:var(--main)">No graph</span><span style="--c:var(--graph)">Graph</span></div>
+  <figcaption>Mean over 100 judgments per arm. Error rate is the share of judgments that found at least one contradicted claim.</figcaption>
+</figure>
+<p>Most writer errors in this benchmark are <b>misattribution</b>: the behavior is right, but the place or the scope is wrong. Examples are crediting a change to a nearby helper, calling a pre-existing function "new", or writing "always" for code with a fallback branch. The graph answers those questions before the writer starts:</p>
+<ul>
+  <li><b>Sentence-to-code links.</b> Each commit-message sentence is linked to the hunks that implement it (<code>implementedBy</code>, <code>→ H#</code>). Where structure leaves a gap, search links from Relate's fulltext index fill it. The writer doesn't have to guess which file owns a behavior.</li>
+  <li><b>Code lines with a direction.</b> Under each commit sentence the brief prints the code lines it refers to, marked as removed or added, with the change spelled out as was → now. The writer can't describe a change backwards.</li>
+  <li><b>Owners rows.</b> For each behavior, the brief names the function that implements it, so the writer doesn't credit a nearby helper.</li>
+  <li><b>Commit-vs-code conflicts.</b> When a commit message says something the code does not show, the brief lists it as a conflict row, and the writer follows the code.</li>
+  <li><b>New versus changed.</b> A symbol is "new" only if the patch defines it on added lines and on no removed line. Everything else is "changed", and the brief says which is which.</li>
+  <li><b>Branch conditions.</b> Hunks that add conditionals are marked, so the brief tells the writer where "always" or "only" would be wrong.</li>
+  <li><b>A do-not-say list.</b> Existing names, conditional code, results only a commit message asserts, and the exact file list are put in front of the writer before it writes.</li>
+  <li><b>Validation from receipts.</b> The Validation section is written by the tool from recorded runs: the broadest run of each check on the final code, plus any earlier failure. The writer never types test results. In the pr8 example, this is exactly what removed the wrong type-check claim.</li>
+</ul>
+<div class="callout">
+  <p><b>The accuracy gain looks different on each provider.</b> In round 15 the graph cut Claude's errors by more than half, while Codex's got slightly worse. In the shipped build Codex errors fell to zero. Claude's are level with a no-graph baseline whose drafts were regenerated after a Claude Code update and make fewer errors than before (0.09 per judgment, against 0.19 in round 15). The share of Claude judgments with at least one error is 0.08 with the graph and 0.07 without it, which is within noise. Claude's accuracy gain in this build is in unsupported claims.</p>
+</div>
+
+<h3>The reviewer-usefulness items</h3>
+<figure>
+  <div class="fig-title">Rubric items, mean score 0–2</div>
+  <div class="chart" id="c-rubric"></div>
+  <div class="legend"><span style="--c:var(--main)">No graph</span><span style="--c:var(--graph)">Graph</span></div>
+  <figcaption>Each row compares the two arms on one item. Mean over 100 judgments per arm (null scores excluded).</figcaption>
+</figure>
+<p>Read the chart from the biggest gaps:</p>
+<ul>
+  <li><b>Feedback request</b> (+1.27 Claude, +0.75 Codex) and <b>entry point</b> (+1.11, +0.47). The brief's entry row names where to start and what is tied to it, and the drafting rules keep a closing ask for the kind of review wanted.</li>
+  <li><b>Validation</b> (+0.60 on Claude). Tracetoon writes this section from receipts, so it is bound to evidence and honest about limits.</li>
+  <li><b>Economy</b> (+0.27 on Claude). The drafting rules ask for 250–400 words, and Claude's graph drafts now read tighter than its no-graph ones.</li>
+  <li><b>Economy</b> (−0.83) and <b>problem framing</b> (−0.27) on Codex are where the graph workflow still loses. Terra's no-graph descriptions are very tight (economy 2.00), which makes this the clearest next target.</li>
+</ul>
+
+<h3>Coverage: more of what a reviewer needs</h3>
+<div class="tbl"><table>
+<thead><tr><th>Measure</th><th class="n">Claude no graph</th><th class="n">Claude graph</th><th class="n">Codex no graph</th><th class="n">Codex graph</th></tr></thead>
+<tbody>
+<tr><td>Claims covered</td><td class="n">0.958</td><td class="n">0.965</td><td class="n">0.872</td><td class="n better">0.947</td></tr>
+<tr><td>Context covered</td><td class="n">0.377</td><td class="n better">0.446</td><td class="n">0.388</td><td class="n better">0.441</td></tr>
+<tr><td>Uncertainties respected</td><td class="n">0.730</td><td class="n worse">0.601</td><td class="n">1.000</td><td class="n">1.000</td></tr>
+</tbody></table></div>
+<p>Context coverage rose by five to seven points on both providers, and this is the result that depends most on the graph. Context lives in the session logs, not the diff: the user's goal, an earlier failed attempt, a plan that was approved. The graph links each surviving code change back to the prompt, plan or decision that produced it. It then hands the writer those facts as rows: "why this work started", process history, and requests scoped to this PR's own turns.</p>
+<p>The graph helps in three ways:</p>
+<ul>
+  <li><b>Accuracy:</b> it has already worked out which code implements each claim, what's new versus changed, and where conditionals make "always" wrong.</li>
+  <li><b>Context:</b> it links code back to the conversation that produced it, which the diff alone can't tell you.</li>
+  <li><b>Structure:</b> a ranked set of change units gives the reader an entry point.</li>
+</ul>
+<p>It doesn't fix everything yet. On Claude, the graph drafts state fewer open questions (uncertainties respected fell from 0.73 to 0.60). On Codex, they are wordier than the strong baseline.</p>
+</section>
+
+<section>
+<h2 id="cost">Token cost</h2>
+<figure>
+  <div class="fig-title">Cost per PR draft, by model</div>
+  <div class="chart" id="c-cost"></div>
+  <div class="legend"><span style="--c:var(--main)">Writer model (Sonnet / Terra)</span><span style="--c:var(--cheap)">Reviewer model (Haiku / Luna)</span></div>
+  <figcaption>Claude costs are Claude Code's reported totals; the Sonnet/Haiku split is estimated from token counts at list prices and scaled to the reported total. Codex costs are computed from token counts at list prices (Terra $1/M input, $0.05/M cached, $5/M output; Luna $0.10, $0.01, $0.50).</figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>Per PR draft</th><th class="n">Claude no graph</th><th class="n">Claude graph</th><th class="n">Codex no graph</th><th class="n">Codex graph</th></tr></thead>
+<tbody>
+<tr><td>Writer-model input tokens (mostly cached)</td><td class="n">1.56M</td><td class="n better">0.95M</td><td class="n">3.10M</td><td class="n better">2.15M</td></tr>
+<tr><td>Writer-model output tokens</td><td class="n">22K</td><td class="n better">7K</td><td class="n">10K</td><td class="n better">5K</td></tr>
+<tr><td>Cheap-model input / output tokens</td><td class="n">—</td><td class="n">291K / 58K</td><td class="n">—</td><td class="n">51K / 8K</td></tr>
+<tr><td>Cost per draft</td><td class="n">$0.690</td><td class="n better">$0.407</td><td class="n">$0.320</td><td class="n better">$0.207</td></tr>
+<tr><td>Cost ratio (graph / no graph)</td><td class="n" colspan="2" style="text-align:center">0.59×</td><td class="n" colspan="2" style="text-align:center">0.65×</td></tr>
+</tbody></table></div>
+<p style="font-size:14px;color:var(--muted)">The Claude no-graph drafts were regenerated from round 20 on, after a Claude Code update, with the same Claude Code release (2.1.319) as the graph drafts. They cost $0.690 per draft, against $0.781 for the no-graph drafts in earlier rounds, so the Claude ratio here is measured against the cheaper baseline.</p>
+<p>The cost story is about where the expensive model spends its tokens. Without the graph, the expensive model reads source code to check its own claims, two or three times per PR. With the graph, that work is done once, deterministically, before any model runs, and building the brief costs no tokens. What's left for the models is writing, plus a cheap model checking a short packet:</p>
+<ul>
+  <li><b>Review moves to a cheap model, on a small packet.</b> In the no-graph workflow, Sonnet reviewers spend about $0.35 of the $0.69 per PR re-reading roughly 100K characters of source to check each claim. In the graph workflow, two Haiku (or Luna) reviewers get a compact packet: line-numbered body, brief rows, the hunk-to-symbol map and the relevant diff. Haiku's two reviews on Claude cost about four cents per PR, and Luna's on Codex under one cent.</li>
+  <li><b>No forked subagents.</b> On Codex, the no-graph workflow forks a researcher, a drafter and a reviewer, and each fork carries the parent's whole history. The graph workflow forks nothing: Tracetoon runs the two reviews itself as separate small sessions.</li>
+  <li><b>One merged list, one edit pass, no re-review.</b> Findings from both reviewers are deduplicated into one list of at most 12 items, and the writer applies them in a single edit. When this arrived in round 15, it alone cut the Codex writer's input from 3.1M to 1.6M tokens per PR, compared with the earlier review loop.</li>
+  <li><b>Less writer output.</b> Sonnet writes 7K tokens per PR instead of 22K, and Terra 5K instead of 10K, because the brief has already done the analysis the writer would otherwise narrate to itself.</li>
+</ul>
+
+<h3>Versus drafting the PR in the main session</h3>
+<p>Why not have the agent that did the work write the PR before it stops? The catch is that it carries the whole session's context, so every model call re-reads hundreds of thousands of tokens. Prompt caching makes those re-reads cheaper but not free, and a PR still adds new tokens: the diff and git output it reads, and the description it writes. We estimate this case rather than measure it:</p>
+<ul>
+  <li><b>5 model calls</b> to write a PR in the session: look at the diff and log, draft, open it.</li>
+  <li><b>Context per call:</b> the average end-of-session size across the five cases, about 494K tokens (range 173K–860K).</li>
+  <li><b>New tokens:</b> about 10K of new input (diff and command output) and about 2K of output (commands and the PR body).</li>
+  <li><b>Cached:</b> all 5 calls read the context from cache.</li>
+  <li><b>Not cached:</b> the cache has expired, so the first call writes the whole context to cache and the next 4 read it.</li>
+  <li><b>List prices:</b> Sonnet $3/M input, $3.75/M cache write, $0.30/M cache read, $15/M output; Terra $1/M input, $0.05/M cached input, $5/M output. Any long-context surcharge is not included.</li>
+</ul>
+<div class="tbl"><table>
+<thead><tr><th>Per PR</th><th class="n">Main session, cached</th><th class="n">Main session, not cached</th><th class="n">Graph workflow (measured)</th><th class="n">Graph vs main session</th></tr></thead>
+<tbody>
+<tr><td>Sonnet</td><td class="n">≈ $0.81</td><td class="n">≈ $2.51</td><td class="n better">$0.407</td><td class="n better">50% cheaper cached, 84% cheaper not cached</td></tr>
+<tr><td>Terra</td><td class="n">≈ $0.14</td><td class="n">≈ $0.61</td><td class="n">$0.207</td><td class="n">48% more expensive cached, 66% cheaper not cached</td></tr>
+</tbody></table></div>
+<p>Worked through for Sonnet with the cache warm, 5 × 494K × $0.30/M = $0.74 of cached reads, plus about $0.07 of new input and output. With the cache expired, the first call costs 494K × $3.75/M = $1.85 on its own. The graph workflow avoids both: it starts a fresh session whose context is a compact brief of about 2–3K tokens instead of the whole history.</p>
+<p>On Sonnet the graph workflow is cheaper either way. On Terra, where cached input is very cheap, in-session drafting with a warm cache comes out cheaper. Once the cache has expired, it costs about three times more. These are estimates; the quality of in-session drafting hasn't been measured. A fresh agent opening the PR without Tracetoon, the first column of the example above, scores far lower, because it never reads the logs.</p>
+</section>
+
+<section>
+<h2 id="nograph">Tracetoon without a graph</h2>
+<p>The original workflow was already a careful multi-agent design. It reads the session logs through a digest, and coordinates three separate roles so that no agent checks its own work.</p>
+<div class="two">
+  <div class="card m">
+    <h4>Roles</h4>
+    <ul>
+      <li><b>Coordinator</b>: the host agent. Runs the CLI steps and usually drafts.</li>
+      <li><b>Researcher</b> (subagent): collects repository guidance, contributing rules and AI policy into <code>guidance.json</code>.</li>
+      <li><b>Drafter</b> (subagent, or the coordinator): writes the description from <code>digest.json</code>, <code>changes.patch</code> and <code>tracetoon expand</code> lookups.</li>
+      <li><b>Independent reviewer</b> (fresh subagent): checks every factual clause against the diff and source, looks for counter-evidence, lists omissions.</li>
+    </ul>
+  </div>
+  <div class="card m">
+    <h4>Steps</h4>
+    <ol>
+      <li>status, doctor</li>
+      <li>digest the sessions, choose the matching ones</li>
+      <li>context and researcher phase</li>
+      <li>draft from the digest</li>
+      <li>comic (optional)</li>
+      <li>render, then a fresh independent review</li>
+      <li>up to <b>two correction rounds</b>, each with a re-render and a fresh review</li>
+      <li>preview and publish</li>
+    </ol>
+  </div>
+</div>
+<pre class="mermaid">
+flowchart LR
+  L["Session logs<br/>+ git"] --> D["digest.json"]
+  D --> R["Researcher<br/>(subagent)"]
+  D --> W["Drafter<br/>(reads digest, patch,<br/>expands refs)"]
+  R --> W
+  W --> RV["Fresh reviewer<br/>(re-reads source,<br/>checks every clause)"]
+  RV -->|"findings"| W
+  RV -->|"up to 2 rounds"| RV
+  RV --> P["Render + publish"]
+</pre>
+<p>Where its tokens go (Sonnet, the 25 no-graph drafts used in the shipped-build comparison): the coordinator about $0.29, reviewers about $0.35 over 1.4 review sessions per PR, and the researcher about $0.05. On Codex the split is coordinator $0.11, drafter fork $0.09, reviewer fork $0.08 and researcher fork $0.04, because each forked role re-reads the parent's history.</p>
+<p>The design is sound, and it produces accurate descriptions. Its cost comes from asking an expensive model to rediscover structure from text. It has to work out which commit sentence maps to which hunk, which symbols are new, and why a change was made. Then a second instance does all of it again to check the first, at full price.</p>
+</section>
+
+<section>
+<h2 id="graph">What the graph does</h2>
+<p>The graph moves that rediscovery out of the model and into a deterministic build step. One command, <code>tracetoon prepare</code>, reads the session logs and git, builds an embedded graph in Relate, adds search links from Relate's fulltext index, runs a fixed set of Cypher queries, and prints a compact evidence brief. No model is involved, so this step costs no tokens.</p>
+
+<h3>The graph</h3>
+<div class="two">
+  <div class="card g">
+    <h4>13 node types</h4>
+    <p style="font-size:15px;margin:0">Session · Prompt · Decision · Plan · Run · Receipt · Edit · File · Hunk · Commit · CommitClaim · Change · HeadRef</p>
+  </div>
+  <div class="card g">
+    <h4>16 relationship types, including</h4>
+    <p style="font-size:15px;margin:0"><code>TIED_TO</code> (a search link from a commit sentence, request or plan to a hunk, with a score) · <code>EDITS</code> · <code>SURVIVES_IN</code> (an agent edit still present in the final diff) · <code>INTRODUCED</code> · <code>SAYS</code> (commit → sentence) · <code>EXPLAINED_BY</code> · <code>ASKED_BY</code> · <code>LATER_EDIT</code> · <code>NEXT</code> · <code>IN_TURN</code></p>
+  </div>
+</div>
+<pre class="mermaid">
+flowchart LR
+  P["Prompt<br/>(user request)"] -->|"IN_TURN"| E["Edit"]
+  PL["Plan / Decision"] -->|"EXPLAINED_BY"| CH["Change unit"]
+  E -->|"SURVIVES_IN"| H["Hunk"]
+  H -->|"OF"| F["File"]
+  C["Commit"] -->|"SAYS"| S["Commit sentence"]
+  S -.->|"implementedBy / TIED_TO"| H
+  P -.->|"TIED_TO (search)"| H
+  H -->|"part of"| CH
+  R["Run (test/build)"] -->|"after edits?"| F
+</pre>
+<p>The graph is small: thirteen node types and sixteen relationship types. The edge that does the most work is <code>SURVIVES_IN</code>, which connects an agent's edit in the logs to a hunk that's still in the final diff. From a hunk you can walk back to the prompt that asked for it and forward to the commit sentence that describes it.</p>
+
+<h3>The evidence brief</h3>
+<p>The queries turn the graph into short tables the writer can cite by reference (CH1, S2, H4…):</p>
+<div class="tbl"><table>
+<thead><tr><th>Brief section</th><th>What it gives the writer</th><th>Rubric / measure it helps</th></tr></thead>
+<tbody>
+<tr><td>changes</td><td>Change units ranked by weight and split by file role (code, tests, docs, scripts): where (file and owning symbol), new symbols, old → new values, behavior conditions</td><td>claims, entry, orientation, problem</td></tr>
+<tr><td>entry</td><td>Where to start and what is tied to it, and nothing else</td><td>entry, orientation</td></tr>
+<tr><td>owners</td><td>Which function implements each behavior</td><td>accuracy (placement), problem</td></tr>
+<tr><td>commitMessages + implementedBy</td><td>Each commit sentence linked to the hunks that implement it, by structure or by a search link (<code>TIED_TO</code>), with the code lines under it marked removed or added and the direction spelled out (was → now)</td><td>accuracy (placement, direction), claims</td></tr>
+<tr><td>conflicts</td><td>Places where a commit message says something the code does not show</td><td>accuracy, traps</td></tr>
+<tr><td>requests, background, process</td><td>The user's goal, plans and decisions, scoped to the turns that produced surviving code</td><td>context, rationale</td></tr>
+<tr><td>limits</td><td>Open points: files edited after the last passing run, changes with no request, results only a commit message states. A limit retires once a fresh passing check exists.</td><td>uncertainties, validation</td></tr>
+<tr><td>tests, housekeeping</td><td>New test titles per file; version bumps and generated files in one row</td><td>claims, economy, scope</td></tr>
+<tr><td>validation</td><td>Recorded runs and fail → pass history; Tracetoon writes the Validation section from these</td><td>validation, accuracy</td></tr>
+<tr><td>doNotSay</td><td>Existing names, conditional code, commit-only results, the exact file list</td><td>accuracy, traps</td></tr>
+<tr><td>headScan</td><td>Docs that still mention a removed name; callers of changed symbols</td><td>consequences, entry</td></tr>
+</tbody></table></div>
+
+<h3>Fewer roles, fewer steps</h3>
+<div class="two">
+  <div class="card m">
+    <h4>Without the graph</h4>
+    <ol>
+      <li>digest, then a researcher subagent</li>
+      <li>drafter reads the digest and patch, expands refs</li>
+      <li>fresh reviewer re-reads the source</li>
+      <li>up to two correction rounds, each with a fresh review</li>
+      <li>render, publish</li>
+    </ol>
+    <p style="font-size:14px;color:var(--muted)">4 roles, all on the expensive model. On Codex, 3 forked subagents per PR.</p>
+  </div>
+  <div class="card g">
+    <h4>With the graph</h4>
+    <ol>
+      <li><code>prepare</code>: digest, context, graph, search links and brief in one deterministic step</li>
+      <li>writer drafts from the brief in 250–400 words, tagging every factual sentence with brief refs</li>
+      <li><code>render --check</code>: deterministic coverage and claim checks</li>
+      <li>two cheap reviewers in parallel (general + completeness), merged into one list</li>
+      <li>one edit pass, render, publish</li>
+    </ol>
+    <p style="font-size:14px;color:var(--muted)">1 expensive role (the writer) plus 2 cheap reviewers. No researcher, no separate drafter, no re-review rounds, no forks.</p>
+  </div>
+</div>
+<pre class="mermaid">
+flowchart LR
+  L["Session logs<br/>+ git"] --> G["prepare<br/>(graph + search links<br/>+ queries, 0 tokens)"]
+  G --> B["Evidence brief"]
+  B --> W["Writer<br/>(Sonnet / Terra)"]
+  W --> CK["render --check<br/>(deterministic)"]
+  CK --> R1["Reviewer: general<br/>(Haiku / Luna, xhigh)"]
+  CK --> R2["Reviewer: completeness<br/>(Haiku / Luna, xhigh)"]
+  R1 --> M["Merged findings<br/>(≤12 items)"]
+  R2 --> M
+  M --> W2["One edit pass"]
+  W2 --> P["Render + publish"]
+</pre>
+<p>Once the map exists, fewer agents are needed. The researcher and the separate drafter go away. The reviewer becomes a cheap model with a checklist and a short packet, and one edit pass replaces several review rounds. On Claude the graph workflow runs two subagent sessions per PR, against 1.6 without the graph, but they run on Haiku and read a short packet instead of the source.</p>
+
+<h3>Deterministic checks at render</h3>
+<p>Because every sentence carries brief refs, Tracetoon can check the draft without a model. It flags:</p>
+<ul>
+  <li>change units, commit sentences and tests no sentence covers;</li>
+  <li>a sentence that names a file outside the cited change;</li>
+  <li>"new" next to a name that already existed;</li>
+  <li>"always" or "only" on code with a branch;</li>
+  <li>results that only a commit message claims;</li>
+  <li>a "housekeeping only" line when logic changed.</li>
+</ul>
+<p>Brief refs (CH1, S2, H4…) that leak into the text are stripped before the body is published.</p>
+<p>Fixing these costs nothing in model review.</p>
+
+<h3>Why a strong writer and cheap reviewers, not the reverse</h3>
+<p>We first tried using the graph to let a small model write: Haiku as the writer, with strong or high-effort reviewers. In direct head-to-head judging, Haiku with the graph still lost to Sonnet's no-graph workflow, 1–16–8 and 2–14–9 (wins–ties–losses). Coverage and errors on the hardest PRs were the gap. The graph doesn't turn a small model into a mid-size one. It lets the mid-size model skip the expensive rediscovery and hand checking to a small model that only needs to compare a draft with a short packet. Two settings mattered:</p>
+<ul>
+  <li><b>xhigh reasoning effort on the reviewer</b>, which is cheap on Haiku or Luna;</li>
+  <li><b>a completeness lens</b>: one reviewer checks only whether every change unit, test file, doc change and old → new value is covered.</li>
+</ul>
+<p>The shipped build makes this setup the default: reviewer model <code>cheap</code> (Haiku 5.5 on Claude Code, Luna 6 on Codex) at xhigh effort, two reviewers (general and completeness), one merged list of findings, no re-review, the compact toon brief layout and fulltext search links.</p>
+</section>
+
+<section>
+<h2 id="relate">Why Relate: an embedded graph database for agent systems</h2>
+<p>Relate is an embedded graph database written in Rust, and it is the engine the shipped Tracetoon build runs on (relatedb/relate, pinned at v0.1.2-5, commit aa0f79e). Embedded means it runs inside the application process, with no server to install, start or connect to. Tracetoon ships Relate compiled to WebAssembly inside its CLI. The same build runs on Linux, macOS and Windows, works offline, and builds a fresh graph for every PR. Tracetoon queries it with Cypher.</p>
+<p>That matters for agent tooling, which usually runs on a developer's machine, inside a sandbox, or in CI, where a database server is a non-starter. Relate gives those tools a real graph model and query language with the deployment footprint of a library.</p>
+
+<h3>Graph algorithms in a few lines of Cypher</h3>
+<p>The questions Tracetoon has to answer are relationship questions. Which request led to this code? Did any passing test run come after the last edit to this file? Which commit sentence describes this hunk? In a graph these are short path queries. Here is the core of the query that finds which user request produced a surviving piece of code, and which plans or decisions came with it:</p>
+<pre class="cypher">MATCH (h:Hunk {id: $hunk})&lt;-[:SURVIVES_IN]-(e:Edit)-[:IN_SESSION]-&gt;(:Session {band: 'included'})
+OPTIONAL MATCH (e)-[:IN_TURN]-&gt;(p:Prompt)
+OPTIONAL MATCH (x)-[:IN_TURN]-&gt;(p) WHERE x:Decision OR x:Plan
+RETURN p.id AS prompt, p.text AS request, collect(DISTINCT x.id) AS plansAndDecisions</pre>
+<p>The same pattern carries the rest of the brief:</p>
+<ul>
+  <li><b>Traversal:</b> from a hunk back to the prompt that asked for it, and forward to the commit sentence that describes it.</li>
+  <li><b>Reachability and ordering:</b> whether a passing run follows the last edit of each file, which yields the open "not checked after the last edit" limits.</li>
+  <li><b>Set difference:</b> symbols defined on added lines and on no removed line are new; everything else the patch touches is changed.</li>
+  <li><b>Neighborhoods and ranking:</b> each change unit with its requests, commits, tests and runs, ranked by weight to pick an entry point.</li>
+</ul>
+<p>Each of these would take an LLM thousands of tokens to reconstruct from raw text, and the result would vary from run to run. In Relate, each is a deterministic query that costs no tokens.</p>
+
+<h3>Search inside the graph</h3>
+<p>Some links have no structure to follow. A commit sentence about a docs or script change may share no symbol with the code it describes. For those, Tracetoon uses Relate's built-in fulltext index, which ranks hunks with BM25. It indexes each hunk's path, symbol names and changed lines, then searches it from each commit sentence, commit subject, request and plan paragraph:</p>
+<pre class="cypher">CREATE FULLTEXT INDEX hunk_text FOR (h:Hunk) ON EACH [h.text]
+
+MATCH (h:Hunk)
+SEARCH h IN (FULLTEXT INDEX hunk_text FOR $text LIMIT 256) SCORE AS s
+RETURN h.id AS hunk, s</pre>
+<p>A hit becomes a link only when it agrees with an exact name or path mention, or when BM25 alone is clearly ahead of the next hit. A commit's sentences only see that commit's own hunks. Accepted hits are stored as <code>TIED_TO</code> edges with a score, so the brief queries read them like any other relationship.</p>
+
+<h3>GraphRAG: retrieval by relationship, not just similarity</h3>
+<p>Most retrieval-augmented generation pulls text chunks that look similar to a query. That finds relevant passages, but not the links between them: which plan explains which change, or which test covers which behavior. The evidence brief is GraphRAG, built from fulltext search and graph structure together. Search links from Relate's BM25 index find the hunks a sentence or request talks about. Retrieval then starts from each change unit and follows edges to the facts connected to it, and packs those neighborhoods into a compact context for the writer. The writer gets the request, the commit sentence, the hunk, the test and the run that belong together, already joined. It doesn't have to work out those joins itself, which is where writers make most of their mistakes.</p>
+
+<h3>Higher accuracy and explainability</h3>
+<p>Because the brief comes from queries, every fact has a lineage. A sentence in the PR cites a brief row (CH1, S2, H4). The row comes from a query over specific nodes, and the nodes point to specific hunks in the diff and specific lines in the session logs. That chain makes three things possible:</p>
+<ul>
+  <li><b>Checking without a model.</b> Tracetoon checks cited sentences against the graph at render time: coverage of every change and commit sentence, new versus changed names, scope words on branching code, and results only a commit message asserts.</li>
+  <li><b>Cheaper, more focused review.</b> Reviewers check a draft against the same refs instead of re-reading the source, which is why a small model at high effort can do the job.</li>
+  <li><b>Audit trails.</b> A reader, or another agent, can ask why a sentence is in the PR and follow it back to the evidence. The same graph gives the same brief every time.</li>
+</ul>
+<p>The results on this page show the payoff. On Codex, the judges found no factual errors in the graph drafts. On Claude, unsupported claims fell by about three quarters. Context coverage rose by five to seven points on both providers, because the graph links code to the conversation that produced it.</p>
+<p>The pattern generalizes beyond PR descriptions. Agent systems produce large, messy traces: logs, tool calls, edits, tests. Turning those into a small embedded graph lets deterministic queries do the structural reasoning. Models are left with what they're good at, writing and judgment, on a context that is smaller, cheaper and traceable. Relate makes that practical anywhere an agent runs, because the graph travels with the tool.</p>
+</section>
+
+<section>
+<h2 id="journey">How we got here</h2>
+<p>The shipped build came out of twenty-three benchmark rounds. Each point below is the graph workflow against the same model's no-graph workflow, on the same harness. Round 15 is the earlier published result. Rounds 18 to 23 refined the brief and moved the graph onto Relate, and round 23 is the build that ships.</p>
+<figure>
+  <div class="fig-title">Composite difference vs the no-graph workflow, by round</div>
+  <div class="chart" id="c-journey"></div>
+  <div class="legend"><span style="--c:var(--graph)">Claude · Sonnet</span><span style="--c:var(--cheap)">Codex · Terra</span></div>
+  <figcaption>Run-to-run noise is about ±3 composite points, so single points between −3 and +3 are not distinguishable from parity. Each label shows the cost ratio at that point. The dev12 points stand for the −11 to −15 range of the lean, review-free graph path (dev12–14), which ran on an earlier harness. The Claude line resumes at r20, when its no-graph drafts were regenerated after a Claude Code update; from there its cost ratios are against $0.690 instead of $0.781. The open circle at r23 is a second Codex run of the same build.</figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>Round</th><th>What changed</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>dev12–14</td><td>Lean graph path: brief, a single writer, no review</td><td>2–5× cheaper, but −11 to −15 composite: drafts covered too little</td></tr>
+<tr><td>r10–r11</td><td>Fresh independent reviewer; sentence-to-code map; background and request rows</td><td>About parity (−3.3 to −0.7) at 0.53–0.59× cost</td></tr>
+<tr><td>r12</td><td>Brief fixes: validation rows only from runs on the final code, fail → pass history, do-not-say list</td><td>Context coverage up from 0.26 to 0.42 on cheap writers</td></tr>
+<tr><td>r13</td><td>Tracetoon runs the Codex reviewer itself, pinning the model; completeness lens</td><td>Reviewer model used in 25/25 drafts (was 12–17/25); Codex +1.7, 10–2</td></tr>
+<tr><td>r14</td><td>Flexible structure instead of a 7-section template; Validation picks the broadest run; reviewer fixes checked before applying</td><td>Claude rubric 0.78 → 0.87; Claude +4.5, 7–0</td></tr>
+<tr><td>r15 (earlier published result)</td><td>All reviews in one call, one merged list, one edit pass, no re-review</td><td>Codex cost 0.83× → 0.54×; Claude +5.4, 10–0; Codex +2.5, 7–2</td></tr>
+<tr><td>r18</td><td>Search links between commit sentences, requests and hunks; code lines under each commit sentence; commit-vs-code conflict rows; open points in limits; change units split by file role; an entry row</td><td>Codex +2.9 at 0.66×</td></tr>
+<tr><td>r19</td><td>Entry row says which function owns each change; live runs close limits on remote paths</td><td>Codex +3.6 at 0.58×</td></tr>
+<tr><td>r20</td><td>Entry row names only where to start and what is tied to it. Claude no-graph drafts regenerated after a Claude Code update</td><td>Claude +2.5 at 0.61×; Codex +3.3 at 0.59×</td></tr>
+<tr><td>r21</td><td>Stale-limit fix: a limit retires once a fresh passing check exists; test claims credited to the wrong file are flagged</td><td>Claude +1.2; Codex +4.4, no factual errors</td></tr>
+<tr><td>r22</td><td>Owners rows say which function implements each behavior; code lines spell out removed or added and was → now</td><td>Claude +2.0; Codex +4.8</td></tr>
+<tr><td>r23 (shipped)</td><td>The graph runs on Relate, with search links from its fulltext index; the winning setup ships as Tracetoon's defaults</td><td>Claude +5.2, 18–1 at 0.59×; Codex +3.5, 12–1 at 0.65× (rerun +5.2, 13–2)</td></tr>
+</tbody></table></div>
+<p>The early graph version was cheap and bad: it covered too little. Adding back independent review got it to parity. Rounds 13 to 15 turned parity into a win, mostly through unglamorous fixes: enforcing which model reviews, dropping a template, and collapsing the review loop into one pass. Rounds 18 to 23 made the brief more exact about where code lives and which way it changed, and moved the graph onto Relate. On Codex the gain stayed between +3 and +5 throughout. On Claude it sat inside the noise band from r20 to r22 and cleared it with the shipped build.</p>
+
+<h3>Lessons</h3>
+<ul>
+  <li><b>Measure head-to-head, not with composites from separate runs.</b> Composites from separate runs put Haiku with the graph level with Sonnet's no-graph workflow. Direct judging showed it losing 2–14–9.</li>
+  <li><b>Instructions don't enforce model choice; code does.</b> Codex's own tool description says "inherited parent model is preferred", so the cheap drafter skipped the reviewer model a third of the time, then reported it anyway. Having Tracetoon run the reviewer, and verify the model from the session log, fixed it.</li>
+  <li><b>Templates cost economy points.</b> A fixed seven-section layout read as "inventory-like" to judges. Flexible structure raised the writing score more than any prompt tweak.</li>
+  <li><b>Rerun before you trust a gap.</b> Two runs of the shipped build on Codex came out at +3.5 and +5.2. One run can move as much as most single-round changes, so we read trends across rounds and the consensus records before any single composite.</li>
+  <li><b>Review loops are where the money goes.</b> On Codex the reviews themselves cost 3% of the total. Most of the remaining cost was the writer re-reading its context between reviews.</li>
+</ul>
+</section>
+
+<section>
+<h2 id="cases">Per-case results</h2>
+<figure>
+  <div class="fig-title">Composite difference per PR (graph minus no-graph, mean of 5 paired replicates)</div>
+  <div class="chart" id="c-cases"></div>
+  <div class="legend"><span style="--c:var(--graph)">Claude · Sonnet</span><span style="--c:var(--cheap)">Codex · Terra</span></div>
+  <figcaption>All ten case-by-provider results are positive. Leaving out any one case, the Claude difference stays between +4.0 and +6.1, and the Codex difference between +2.9 and +4.0.</figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>Case</th><th>What the PR does</th><th class="n">Claude Δ</th><th class="n">Codex Δ</th></tr></thead>
+<tbody>
+<tr><td>pr5</td><td>Session matching: drop earlier work, commit window 30 → 5 min, test-failure detection from output</td><td class="n">+1.8</td><td class="n">+1.6</td></tr>
+<tr><td>pr8</td><td>Preview link fixes found while dogfooding; shell handling (the example above)</td><td class="n">+5.4</td><td class="n">+5.6</td></tr>
+<tr><td>pr9</td><td>Comic image routes, new default image models, character sheets</td><td class="n">+1.4</td><td class="n">+5.3</td></tr>
+<tr><td>pr11</td><td>Installer picks the newest release by date; page-prompt test</td><td class="n">+9.9</td><td class="n">+3.6</td></tr>
+<tr><td>pr12</td><td>Quote- and heredoc-aware command splitting for commit detection</td><td class="n">+7.4</td><td class="n">+1.2</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2 id="caveats">Method and caveats</h2>
+<div class="two">
+  <div class="card">
+    <h4>Setup</h4>
+    <ul>
+      <li>5 real PRs from Tracetoon's own development (the dev split), with their original agent session logs.</li>
+      <li>25 drafts per arm: 5 cases × 5 replicates. Each provider's graph drafts are paired with 25 cached no-graph drafts: for Claude, the set regenerated in round 20; for Codex, the round 11 set.</li>
+      <li>Writers: Sonnet 5.5 at medium effort; Terra 6.1 at medium. Reviewers: Haiku 5.5 / Luna 6 at xhigh (Tracetoon's <code>cheap</code> reviewer default).</li>
+      <li>Judges: Opus 5.5 and Sonnet 5.5 (Claude); Sol 6.1 and Terra 6.1 (Codex). 100 judgments per arm.</li>
+      <li>Harness prbench-score 4e276b7 (scoring, cross-judging and the paired-delta comparison across runs); Tracetoon bd55f75 on branch <code>closeout</code>; Relate aa0f79e (v0.1.2-5); rubric v6.</li>
+      <li>Claude Code pinned at 2.1.319 for the Claude drafts.</li>
+      <li>The example's no-Tracetoon draft comes from an earlier run of the same benchmark (dev12, same rubric version), where the agent opens the PR its own way in a fresh session.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Caveats</h4>
+    <ul>
+      <li><b>Small set.</b> Five PRs from one repository. The intervals are case-clustered, but a held-out test split (2 more PRs) is still unrun.</li>
+      <li><b>Noise.</b> About ±3 composite points between runs. A same-build Codex rerun gave +5.2 (13–2) against the headline run's +3.5 (12–1). The consensus records (18–1, 12–1) carry more weight than small composite gaps.</li>
+      <li><b>Claude baseline.</b> The Claude no-graph drafts were regenerated after a Claude Code update and are cheaper ($0.690) than the set used through round 15 ($0.781). Claude cost ratios before and after r20 are against different baselines.</li>
+      <li><b>Same-family judges.</b> Claude judges grade Claude writers, Codex judges grade Codex writers. Providers are never mixed.</li>
+      <li><b>Cost.</b> Token-based. Claude's split by model is estimated. Graph build time is not counted.</li>
+      <li><b>A known gap in the data.</b> One case (pr11) is missing the user's typed prompt in its exported logs. Both arms are affected equally.</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<section>
+<h2 id="appendix">Appendix: the numbers</h2>
+<div class="tbl"><table>
+<thead><tr><th>Measure (mean per draft)</th><th class="n">Claude no graph</th><th class="n">Claude graph</th><th class="n">Codex no graph</th><th class="n">Codex graph</th></tr></thead>
+<tbody id="t-appendix"></tbody>
+</table></div>
+<p style="font-size:14px;color:var(--muted)">Sources: <code>results/r23/claude/sonnet-close</code> and <code>results/r23/codex/terra-close</code> (both arms in each run; the Claude no-graph drafts are cached from <code>r20/claude/sonnet-g4b</code>, the Codex ones from r11), plus the same-build rerun <code>r23/codex/terra-close2</code>. Claude token splits come from the writer traces (the no-graph ones from <code>r20/claude/sonnet-g4b</code>); Codex token splits come from each draft's per-model usage, and the Codex no-graph role split from <code>r11/codex/terra-c25</code> traces. The round history comes from r10–r23 summaries. The example drafts are <code>r15/claude/sonnet-h1</code> replicate 5 (pr8) and <code>evgraph-dev12/claude</code> replicate 2 (pr8, native).</p>
+</section>
+</main>
+</div>
+
+<script>
+const D = {
+  headline:{
+    claude:{label:"Claude · Sonnet 5.5", main:73.7, graph:78.9, costMain:0.690, costGraph:0.407},
+    codex:{label:"Codex · Terra 6.1", main:83.2, graph:86.6, costMain:0.320, costGraph:0.207}
+  },
+  waterfall:{
+    claude:[["Claims",0.23],["Context",1.04],["Uncertainties",-1.94],["Rubric",5.13],["Errors",0.15],["Unsupported",0.56],["Traps",0]],
+    codex:[["Claims",2.65],["Context",0.79],["Uncertainties",0],["Rubric",-1.01],["Errors",1.05],["Unsupported",0],["Traps",0]]
+  },
+  accuracy:[
+    {m:"Factual errors", claude:[0.09,0.08], codex:[0.07,0.00]},
+    {m:"Unsupported claims", claude:[0.11,0.03], codex:[0.00,0.00]},
+    {m:"Traps hit", claude:[0.00,0.00], codex:[0.00,0.00]},
+    {m:"Error rate", claude:[0.07,0.08], codex:[0.07,0.00]}
+  ],
+  rubric:[
+    ["feedback",[0.40,1.67],[1.25,2.00]],["entry",[0.78,1.89],[1.52,1.99]],["validation",[1.39,1.99],[1.96,2.00]],
+    ["links",[1.48,1.44],[1.80,1.96]],["rationale",[1.40,1.39],[1.69,1.74]],["orientation",[1.97,1.96],[2.00,1.95]],
+    ["consequences",[1.50,1.44],[1.97,1.96]],["problem",[1.93,1.88],[1.99,1.72]],["scope",[1.96,1.96],[1.94,1.98]],
+    ["economy",[1.49,1.76],[2.00,1.17]]
+  ],
+  cost:{
+    claude:{main:[0.690,0], graph:[0.371,0.036]},
+    codex:{main:[0.320,0], graph:[0.199,0.008]}
+  },
+  journey:{
+    claude:[["dev12",-13,"2–5×"],["r10",-3.3,"0.55×"],["r11",-1.6,"0.59×"],["r14",4.5,"0.56×"],["r15",5.4,"0.56×"],["r20",2.5,"0.61×"],["r21",1.2,"0.62×"],["r22",2.0,"0.62×"],["r23",5.2,"0.59×"]],
+    codex:[["dev12",-11,"2–5×"],["r10",-2.4,"0.53×"],["r11",-0.7,"0.58×"],["r13",1.7,"0.83×"],["r15",2.5,"0.54×"],["r18",2.9,"0.66×"],["r19",3.6,"0.58×"],["r20",3.3,"0.59×"],["r21",4.4,"0.59×"],["r22",4.8,"0.60×"],["r23",3.5,"0.65×"]],
+    codexRerun:["r23",5.2,"0.62×"]
+  },
+  cases:[["pr5",1.8,1.6],["pr8",5.4,5.6],["pr9",1.4,5.3],["pr11",9.9,3.6],["pr12",7.4,1.2]],
+  appendix:[
+    ["Composite (0–100)","73.7","78.9","83.2","86.6"],
+    ["Consensus wins–ties–losses (graph)","—","18–6–1","—","12–12–1"],
+    ["Judgments preferring this arm (of 100; 2 Codex ties)","12","88","26","72"],
+    ["Claims covered","0.958","0.965","0.872","0.947"],
+    ["Context covered","0.377","0.446","0.388","0.441"],
+    ["Uncertainties respected","0.730","0.601","1.000","1.000"],
+    ["Rubric (mean / 2)","0.735","0.882","0.940","0.911"],
+    ["Factual errors per judgment","0.09","0.08","0.07","0.00"],
+    ["Unsupported claims per judgment","0.11","0.03","0.00","0.00"],
+    ["Traps hit per judgment","0.00","0.00","0.00","0.00"],
+    ["Error rate (judgments with an error)","0.07","0.08","0.07","0.00"],
+    ["Cost per draft (USD)","0.690","0.407","0.320","0.207"],
+    ["Writer-model input tokens","1.56M","0.95M","3.10M","2.15M"],
+    ["Writer-model output tokens","22K","7K","10K","5K"],
+    ["Reviewer-model tokens in / out","—","291K / 58K","—","51K / 8K"],
+    ["Subagent or forked threads per draft","1.6 (Sonnet)","2.0 (Haiku)","3 forks (Terra)","0 forks; 2 Luna sessions"],
+    ["Composite Δ [95% CI over cases]","","+5.2 [2.5, 8.0]","","+3.5 [1.8, 5.1]"],
+    ["Same-build rerun: composite Δ, wins–losses","","","","+5.2 [2.9, 6.8], 13–2"]
+  ]
+};
+
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;if(parent)parent.appendChild(e);return e}
+function svg(w,h,label){const s=el("svg",{viewBox:`0 0 ${w} ${h}`,width:w,role:"img","aria-label":label});return s}
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function headline(){
+  const w=880,h=300,s=svg(w,h,"Composite and cost per draft for each provider, with and without the graph");
+  const panels=[{x:40,title:"Composite (0–100)",key:"q",max:100,ticks:[0,25,50,75,100],fmt:v=>v.toFixed(1)},{x:480,title:"Cost per draft (USD)",key:"c",max:0.8,ticks:[0,0.2,0.4,0.6,0.8],fmt:v=>"$"+v.toFixed(3)}];
+  const provs=["claude","codex"];
+  panels.forEach(p=>{
+    const pw=360,top=40,ph=200,x0=p.x+40;
+    el("text",{x:p.x,y:20,"font-size":13,"font-weight":600},s,p.title);
+    p.ticks.forEach(t=>{const y=top+ph-(t/p.max)*ph;el("line",{x1:x0,x2:x0+pw-40,y1:y,y2:y,class:"axis"},s);el("text",{x:x0-8,y:y+4,"font-size":11,"text-anchor":"end",class:"muted mono"},s,p.key==="q"?t:"$"+t.toFixed(1))});
+    provs.forEach((pr,i)=>{
+      const d=D.headline[pr];const gx=x0+20+i*160;
+      const vals=p.key==="q"?[d.main,d.graph]:[d.costMain,d.costGraph];
+      vals.forEach((v,j)=>{const bh=(v/p.max)*ph;const bx=gx+j*58;
+        el("rect",{x:bx,y:top+ph-bh,width:50,height:bh,fill:j?css("--graph"):css("--main"),rx:3,class:"bar"},s);
+        el("text",{x:bx+25,y:top+ph-bh-6,"font-size":12,"text-anchor":"middle","font-weight":600},s,p.fmt(v))});
+      el("text",{x:gx+54,y:top+ph+20,"font-size":12,"text-anchor":"middle",class:"muted"},s,d.label)});
+  });
+  document.getElementById("c-headline").appendChild(s);
+}
+
+function waterfall(){
+  const w=880,h=330,s=svg(w,h,"Contribution of each composite term to the graph minus no-graph difference");
+  const panels=[["claude","Claude · Sonnet (total +5.2)",30],["codex","Codex · Terra (total +3.5)",470]];
+  const min=-2.5,max=6,top=40,ph=230;
+  panels.forEach(([k,title,x])=>{
+    const pw=390,x0=x+30;const yOf=v=>top+ph-((v-min)/(max-min))*ph;
+    el("text",{x:x,y:20,"font-size":13,"font-weight":600},s,title);
+    [-2,0,2,4,6].forEach(t=>{el("line",{x1:x0,x2:x0+pw-20,y1:yOf(t),y2:yOf(t),class:"axis","stroke-width":t===0?1.5:1},s);el("text",{x:x0-6,y:yOf(t)+4,"font-size":11,"text-anchor":"end",class:"muted mono"},s,(t>0?"+":"")+t)});
+    const items=D.waterfall[k];const bw=(pw-20)/items.length;
+    items.forEach(([name,v],i)=>{const bx=x0+i*bw+6;const y=v>=0?yOf(v):yOf(0);const bh=Math.max(Math.abs(yOf(v)-yOf(0)),v===0?0:1);
+      el("rect",{x:bx,y:y,width:bw-12,height:bh,fill:v>=0?css("--graph"):css("--warn"),rx:2},s);
+      el("text",{x:bx+(bw-12)/2,y:v>=0?y-5:y+bh+13,"font-size":11,"text-anchor":"middle","font-weight":600},s,(v>0?"+":"")+v.toFixed(1));
+      el("text",{x:bx+(bw-12)/2,y:top+ph+18,"font-size":10.5,"text-anchor":"middle",class:"muted"},s,name)});
+  });
+  document.getElementById("c-waterfall").appendChild(s);
+}
+
+function accuracy(){
+  const w=880,h=280,s=svg(w,h,"Factual errors, unsupported claims, traps and error rate with and without the graph");
+  const panels=[["claude","Claude · Sonnet",30],["codex","Codex · Terra",470]];
+  const max=0.2,top=40,ph=180;
+  panels.forEach(([k,title,x])=>{
+    const pw=390,x0=x+36;const yOf=v=>top+ph-(v/max)*ph;
+    el("text",{x:x,y:20,"font-size":13,"font-weight":600},s,title);
+    [0,0.05,0.10,0.15,0.20].forEach(t=>{el("line",{x1:x0,x2:x0+pw-30,y1:yOf(t),y2:yOf(t),class:"axis"},s);el("text",{x:x0-6,y:yOf(t)+4,"font-size":11,"text-anchor":"end",class:"muted mono"},s,t.toFixed(2))});
+    const gw=(pw-30)/D.accuracy.length;
+    D.accuracy.forEach((r,i)=>{const [a,b]=r[k];[a,b].forEach((v,j)=>{const bx=x0+i*gw+10+j*30;const bh=Math.max((v/max)*ph,v?1:0);
+      el("rect",{x:bx,y:yOf(v),width:26,height:bh,fill:j?css("--graph"):css("--main"),rx:2},s);
+      el("text",{x:bx+13,y:yOf(v)-5,"font-size":10.5,"text-anchor":"middle"},s,v.toFixed(2))});
+      el("text",{x:x0+i*gw+38,y:top+ph+18,"font-size":10.5,"text-anchor":"middle",class:"muted"},s,r.m)});
+  });
+  document.getElementById("c-accuracy").appendChild(s);
+}
+
+function rubric(){
+  const rows=D.rubric,rh=26,top=46,w=880,h=top+rows.length*rh+20,s=svg(w,h,"Rubric item scores with and without the graph");
+  const panels=[[1,"Claude · Sonnet",150],[2,"Codex · Terra",530]];
+  rows.forEach((r,i)=>el("text",{x:10,y:top+i*rh+5,"font-size":12.5},s,r[0]));
+  panels.forEach(([idx,title,x0])=>{
+    const pw=300;const xOf=v=>x0+(v/2)*pw;
+    el("text",{x:x0,y:18,"font-size":13,"font-weight":600},s,title);
+    [0,1,2].forEach(t=>{el("line",{x1:xOf(t),x2:xOf(t),y1:top-14,y2:top+rows.length*rh-10,class:"axis"},s);el("text",{x:xOf(t),y:top-20,"font-size":11,"text-anchor":"middle",class:"muted mono"},s,t)});
+    rows.forEach((r,i)=>{const [a,b]=r[idx];const y=top+i*rh;
+      el("line",{x1:xOf(Math.min(a,b)),x2:xOf(Math.max(a,b)),y1:y,y2:y,stroke:b>=a?css("--graph"):css("--warn"),"stroke-width":3,"stroke-opacity":0.45},s);
+      el("circle",{cx:xOf(a),cy:y,r:5.5,fill:css("--main")},s);
+      el("circle",{cx:xOf(b),cy:y,r:5.5,fill:css("--graph")},s);
+      const d=b-a;el("text",{x:x0+pw+12,y:y+4,"font-size":11,class:"mono",fill:Math.abs(d)<0.1?css("--muted"):(d>0?css("--graph"):css("--warn"))},s,(d>0?"+":"")+d.toFixed(2))});
+  });
+  document.getElementById("c-rubric").appendChild(s);
+}
+
+function cost(){
+  const w=880,h=240,s=svg(w,h,"Cost per draft split by writer and reviewer model");
+  const rows=[["Claude · no graph",D.cost.claude.main],["Claude · graph",D.cost.claude.graph],["Codex · no graph",D.cost.codex.main],["Codex · graph",D.cost.codex.graph]];
+  const x0=170,pw=620,max=0.8,top=30,rh=44;const xOf=v=>x0+(v/max)*pw;
+  [0,0.2,0.4,0.6,0.8].forEach(t=>{el("line",{x1:xOf(t),x2:xOf(t),y1:top-10,y2:top+rows.length*rh,class:"axis"},s);el("text",{x:xOf(t),y:top+rows.length*rh+16,"font-size":11,"text-anchor":"middle",class:"muted mono"},s,"$"+t.toFixed(1))});
+  rows.forEach(([lab,[a,b]],i)=>{const y=top+i*rh;
+    el("text",{x:x0-10,y:y+18,"font-size":12.5,"text-anchor":"end"},s,lab);
+    el("rect",{x:x0,y:y+4,width:xOf(a)-x0,height:24,fill:css("--main"),rx:2},s);
+    if(b>0)el("rect",{x:xOf(a),y:y+4,width:Math.max(xOf(a+b)-xOf(a),2),height:24,fill:css("--cheap"),rx:2},s);
+    el("text",{x:xOf(a+b)+8,y:y+21,"font-size":12,"font-weight":600},s,"$"+(a+b).toFixed(3)+(b>0?`  (reviewers $${b.toFixed(3)})`:""))});
+  document.getElementById("c-cost").appendChild(s);
+}
+
+function journey(){
+  const w=880,h=320,s=svg(w,h,"Composite difference versus the no-graph skill by round");
+  const x0=60,pw=700,top=24,ph=240,min=-15,max=8;const cats=["dev12","r10","r11","r13","r14","r15","r18","r19","r20","r21","r22","r23"];
+  const xOf=c=>x0+cats.indexOf(c)*(pw/(cats.length-1));const yOf=v=>top+ph-((v-min)/(max-min))*ph;
+  el("rect",{x:x0,y:yOf(3),width:pw,height:yOf(-3)-yOf(3),fill:css("--note")},s);
+  [-15,-10,-5,0,5].forEach(t=>{el("line",{x1:x0,x2:x0+pw,y1:yOf(t),y2:yOf(t),class:"axis","stroke-width":t===0?1.6:1},s);el("text",{x:x0-8,y:yOf(t)+4,"font-size":11,"text-anchor":"end",class:"muted mono"},s,(t>0?"+":"")+t)});
+  el("text",{x:x0+pw-4,y:yOf(3)-6,"font-size":10.5,"text-anchor":"end",class:"muted"},s,"noise band ±3");
+  cats.forEach(c=>el("text",{x:xOf(c),y:top+ph+20,"font-size":12,"text-anchor":"middle",class:"muted mono"},s,c));
+  [["claude",css("--graph"),-1],["codex",css("--cheap"),1]].forEach(([k,col,side])=>{
+    const pts=D.journey[k];el("polyline",{points:pts.map(([c,v])=>`${xOf(c)},${yOf(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":2.5},s);
+    pts.forEach(([c,v,cr])=>{el("circle",{cx:xOf(c),cy:yOf(v),r:5,fill:col},s);el("text",{x:xOf(c)+(side*6),y:yOf(v)+(side>0?16:-9),"font-size":9.5,"text-anchor":side>0?"start":"end",fill:col},s,`${v>0?"+":""}${v} · ${cr}`)});
+  });
+  const [rc,rv,rcr]=D.journey.codexRerun;const rx=xOf(rc)+12,col=css("--cheap");
+  el("circle",{cx:rx,cy:yOf(rv),r:5,fill:"none",stroke:col,"stroke-width":2},s);
+  el("text",{x:rx+8,y:yOf(rv)-8,"font-size":9.5,fill:col},s,`rerun +${rv} · ${rcr}`);
+  document.getElementById("c-journey").appendChild(s);
+}
+
+function cases(){
+  const w=880,h=260,s=svg(w,h,"Composite difference per case for each provider");
+  const x0=50,pw=780,top=24,ph=180,max=10;const yOf=v=>top+ph-(v/max)*ph;const gw=pw/D.cases.length;
+  [0,2,4,6,8,10].forEach(t=>{el("line",{x1:x0,x2:x0+pw,y1:yOf(t),y2:yOf(t),class:"axis"},s);el("text",{x:x0-8,y:yOf(t)+4,"font-size":11,"text-anchor":"end",class:"muted mono"},s,"+"+t)});
+  D.cases.forEach(([c,a,b],i)=>{[a,b].forEach((v,j)=>{const bx=x0+i*gw+gw/2-46+j*48;
+    el("rect",{x:bx,y:yOf(v),width:42,height:yOf(0)-yOf(v),fill:j?css("--cheap"):css("--graph"),rx:2},s);
+    el("text",{x:bx+21,y:yOf(v)-5,"font-size":11,"text-anchor":"middle","font-weight":600},s,"+"+v.toFixed(1))});
+    el("text",{x:x0+i*gw+gw/2,y:top+ph+20,"font-size":12,"text-anchor":"middle",class:"muted mono"},s,c)});
+  document.getElementById("c-cases").appendChild(s);
+}
+
+function appendix(){const tb=document.getElementById("t-appendix");D.appendix.forEach(r=>{const tr=document.createElement("tr");r.forEach((v,i)=>{const td=document.createElement("td");td.textContent=v;if(i)td.className="n";tr.appendChild(td)});tb.appendChild(tr)})}
+
+function drawAll(){["c-headline","c-waterfall","c-accuracy","c-rubric","c-cost","c-journey","c-cases"].forEach(id=>{document.getElementById(id).innerHTML=""});headline();waterfall();accuracy();rubric();cost();journey();cases()}
+drawAll();appendix();
+try{window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",drawAll)}catch(e){}
+try{new MutationObserver(drawAll).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]})}catch(e){}
+</script>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>
