@@ -550,3 +550,10 @@ try {
     }
   }
 }
+
+// Leave explicitly once output is flushed. On Windows a finished command's process has been
+// seen to keep running after it printed its whole result (CI tests waited the full timeout
+// for `review import`), so a natural exit cannot be relied on.
+await new Promise<void>((done) => process.stdout.write('', () => done()));
+await new Promise<void>((done) => process.stderr.write('', () => done()));
+process.exit(process.exitCode ?? 0);
