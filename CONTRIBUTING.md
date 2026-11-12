@@ -12,7 +12,10 @@ bun run test
 The dependency command prepares the exact Showtail revision in
 `build-dependencies.json` under `.tracetoon-deps/Showtail`. It can use an
 existing repository with `--source <path>`; it never builds from its moving
-branch. `build.config.json` records the required Bun version and build recipe.
+branch. In a linked Git worktree it clones from the main checkout's
+`.tracetoon-deps/Showtail` when that exists, so a new worktree gets its own
+verified copy without network access. Don't symlink `.tracetoon-deps` into a
+worktree: agent sandboxes refuse paths that resolve outside the worktree. `build.config.json` records the required Bun version and build recipe.
 
 The evidence graph engine is [Relate](https://github.com/relatedb/relate)
 compiled to WebAssembly, vendored as `plugin/skills/tracetoon/assets/relate.wasm`
