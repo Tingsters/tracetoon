@@ -186,6 +186,12 @@ try {
     Write-Host 'Command: tracetoon'
   }
 
+  # Records how this copy was installed, for `tracetoon update`.
+  try {
+    [ordered]@{ method = 'installer'; version = $ver; tag = $tag; path = $stable } |
+      ConvertTo-Json | Set-Content -LiteralPath (Join-Path $homeRoot 'install.json') -Encoding UTF8
+  } catch { }
+
   # Comics need an image route: say what's there and what to do next.
   & $exe images --brief
   Write-Host 'Done. Restart your agent, then ask it to open a PR.'

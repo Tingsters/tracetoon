@@ -85,8 +85,17 @@ _"Open a PR for this branch with Tracetoon."_
 | Gemini CLI                | runs the skill (its own logs aren't read yet) |
 | Copilot CLI               | planned                                       |
 
-Re-run the command to update. To remove, set `TRACETOON_UNINSTALL=1` and run it
-again. Downloads are checked against the release's SHA-256 checksums.
+To update, run `tracetoon update` (`tracetoon update --check` only reports; add
+`--exit-code` to exit 10 when a newer release exists). It downloads the latest
+release, checks it against the release's SHA-256 checksums, confirms the skill and
+runtime are one build, and replaces the binary, comic assets, every installed
+skill copy and the hooks together, restoring the old files if any step fails.
+`--channel stable` ignores release candidates; `--to <version>` installs a
+specific release, which is also how to roll back. Re-running the installer
+works too. `TRACETOON_DISABLE_UPDATES=1` blocks `update`. A Claude Code plugin
+or a source checkout is not replaced in place: update the plugin with
+`/plugin marketplace update`. To remove, set `TRACETOON_UNINSTALL=1` and run the
+installer again. Downloads are checked against the release's SHA-256 checksums.
 After an update, reload your host; Codex may require trusting the new entries
 in `/hooks`. `tracetoon doctor --json` distinguishes configured hooks, observed
 handler invocations, and mismatched runtimes.

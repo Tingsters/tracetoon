@@ -48,6 +48,7 @@ import { assertRunOwner, findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
 import { recordTiming } from './workflow/publication.ts';
 import { saveProfile } from './util/profile.ts';
+import { updateCmd } from './commands/update.ts';
 
 const list = (v: string) =>
   v
@@ -132,6 +133,17 @@ program
   .option('--consent', 'with --test: the user agreed to this route')
   .option('--brief', 'one line, for the installers')
   .action((o) => imagesCmd({ ...g(), ...o }));
+
+program
+  .command('update')
+  .description(
+    'check for a newer release and install it in place (skill, runtime, hooks)',
+  )
+  .option('--check', 'only report whether a newer release exists')
+  .option('--exit-code', `with --check: exit 10 when an update is available`)
+  .option('--to <version>', 'install this release (also how to roll back)')
+  .option('--channel <channel>', 'stable (releases only) or latest (includes candidates)')
+  .action((o) => updateCmd({ ...g(), ...o }));
 
 program
   .command('doctor')
