@@ -208,6 +208,38 @@ describe.skipIf(!canRun)('update against a fake release server', () => {
     expect(readFileSync(join(m.layout.assets, 'font.txt'), 'utf8')).toBe('font old');
   });
 
+  for (const part of ['binary', 'assets', 'skill'] as const) {
+    test(`a failure after the ${part} swap puts every part back`, async () => {
+      fakeRelease('v9.0.0-rc.4');
+      const m = machine();
+      const boom = () => {
+        throw new Error(`simulated failure after ${part}`);
+      };
+      await expect(
+        applyRelease(release('v9.0.0-rc.4'), m.layout, m.home, m.env, (p) => {
+          if (p === part) boom();
+        }),
+      ).rejects.toThrow(/simulated failure/);
+      expect(readFileSync(m.layout.stable, 'utf8')).toContain('echo old');
+      expect(readFileSync(join(m.layout.assets, 'font.txt'), 'utf8')).toBe('font old');
+      expect(readFileSync(join(m.skill, 'VERSION'), 'utf8').trim()).toBe('0.0.1');
+      expect(readFileSync(join(m.skill, 'SKILL.md'), 'utf8')).toBe('old skill');
+      expect(existsSync(m.layout.receipt)).toBe(false);
+      expect(strays(join(m.layout.stable, '..'))).toEqual([]);
+      expect(strays(m.layout.homeRoot)).toEqual([]);
+      expect(strays(join(m.skill, '..'))).toEqual([]);
+    });
+  }
+
+  test('an unwritable receipt does not undo a finished update', async () => {
+    fakeRelease('v9.0.0-rc.5');
+    const m = machine();
+    mkdirSync(m.layout.receipt); // a directory where the file goes: writing fails
+    await applyRelease(release('v9.0.0-rc.5'), m.layout, m.home, m.env);
+    expect(readFileSync(m.layout.stable, 'utf8')).toContain('echo 9.0.0-rc.5');
+    expect(readFileSync(join(m.skill, 'VERSION'), 'utf8').trim()).toBe('9.0.0-rc.5');
+  });
+
   test('--check reports without touching anything', async () => {
     releases = [
       {

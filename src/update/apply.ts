@@ -78,6 +78,8 @@ export async function applyRelease(
   layout: Layout,
   home: string,
   env: NodeJS.ProcessEnv,
+  /** Called after each part is swapped in; tests throw from it to exercise the undo. */
+  afterSwap?: (part: 'binary' | 'assets' | 'skill') => void,
 ): Promise<Applied> {
   const src = sources(env);
   const tmp = mkdtempSync(join(tmpdir(), 'tracetoon-update-'));
@@ -165,8 +167,13 @@ export async function applyRelease(
       }
     });
 
+    afterSwap?.('binary');
     undo.push(swapDir(assetsStage, layout.assets, id));
-    for (const [i, t] of targets.entries()) undo.push(swapDir(staged[i]!, t.dir, id));
+    afterSwap?.('assets');
+    for (const [i, t] of targets.entries()) {
+      undo.push(swapDir(staged[i]!, t.dir, id));
+      afterSwap?.('skill');
+    }
 
     // 5. Everything is in place: discard the old copies and register the hooks again.
     for (const t of targets)
@@ -174,20 +181,25 @@ export async function applyRelease(
     rmSync(`${layout.assets}.old-${id}`, { recursive: true, force: true });
     rmSync(aside, { force: true }); // may fail on Windows while in use; the next update clears it
     const hooks = run(layout.stable, ['hook', 'install'], { env }).ok;
-    writeFileSync(
-      layout.receipt,
-      JSON.stringify(
-        {
-          method: 'installer',
-          version: release.version,
-          tag: release.tag,
-          updatedAt: new Date().toISOString(),
-          path: layout.stable,
-        },
-        null,
-        2,
-      ) + '\n',
-    );
+    // Everything is installed by now: a receipt that cannot be written must not undo that.
+    try {
+      writeFileSync(
+        layout.receipt,
+        JSON.stringify(
+          {
+            method: 'installer',
+            version: release.version,
+            tag: release.tag,
+            updatedAt: new Date().toISOString(),
+            path: layout.stable,
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+    } catch {
+      /* informational only */
+    }
     return { tag: release.tag, binary: layout.stable, skills: targets, hooks };
   } catch (e) {
     for (const u of undo.reverse())
