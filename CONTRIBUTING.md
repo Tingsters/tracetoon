@@ -1,5 +1,18 @@
 # Contributing
 
+## AI contributions are welcome
+
+**AI-assisted and agent-written contributions are welcome here.** Use Claude
+Code, Codex, Antigravity or any other agent you like.
+
+**We strongly encourage opening your PR with Tracetoon**, comic included. Ask
+your agent: _"Open a PR for this branch with Tracetoon."_ The description then
+shows what you asked for, what ran and what changed, and the comic is the
+part we read first.
+
+You remain responsible for what you submit: read the diff before you send it,
+and let the recorded runs speak for the tests.
+
 ## Setup
 
 ```sh
