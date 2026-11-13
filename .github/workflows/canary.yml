@@ -1,8 +1,16 @@
 name: drift canary
 
 # Agents change their log formats without notice. Once a week, run the real
-# agents on a toy repo and check Tracetoon still recognizes every record type.
-# Each agent runs only if its API key is configured as a repository secret.
+# agents on a toy repo and check Tracetoon still finds each session, reads the
+# file it created, and recognizes every record type.
+# Each agent runs only if its secret is configured:
+#   Claude Code   ANTHROPIC_API_KEY
+#   Codex         OPENAI_API_KEY
+#   Factory Droid FACTORY_API_KEY
+#   Copilot CLI   COPILOT_GITHUB_TOKEN (fine-grained PAT with the "Copilot Requests" permission)
+#   Cursor CLI    CURSOR_API_KEY
+#   OpenCode      ANTHROPIC_API_KEY (optional variable OPENCODE_MODEL, as provider/model)
+#   Kilo CLI      ANTHROPIC_API_KEY (optional variable KILO_MODEL, as provider/model)
 on:
   schedule:
     - cron: '17 6 * * 1'
@@ -14,6 +22,11 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      OPENCODE_MODEL: ${{ vars.OPENCODE_MODEL }}
+      KILO_MODEL: ${{ vars.KILO_MODEL }}
     steps:
       - uses: actions/checkout@v4
       - name: Check out Showtail next to this repo
@@ -30,18 +43,65 @@ jobs:
           mkdir -p "$RUNNER_TEMP/toy" && cd "$RUNNER_TEMP/toy"
           git init -q -b main && git config user.email ci@example.com && git config user.name CI
           echo "# toy" > README.md && git add . && git commit -qm base && git checkout -qb feature
+          : > "$RUNNER_TEMP/expect.txt"
+      # Each agent creates its own file. A failing agent fails the job, but the
+      # others still run (`!cancelled()`), so one broken CLI doesn't hide the rest.
       - name: Claude Code session
-        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        if: ${{ !cancelled() && env.ANTHROPIC_API_KEY != '' }}
         working-directory: ${{ runner.temp }}/toy
         run: |
           npm install -g @anthropic-ai/claude-code
           claude -p "Create hello.py that prints hello, then run it." --allowedTools "Write,Bash(python3 *)"
+          echo "claude-code:hello.py" >> "$RUNNER_TEMP/expect.txt"
       - name: Codex session
-        if: ${{ env.OPENAI_API_KEY != '' }}
+        if: ${{ !cancelled() && env.OPENAI_API_KEY != '' }}
         working-directory: ${{ runner.temp }}/toy
         run: |
           npm install -g @openai/codex
           codex exec --full-auto "Create goodbye.py that prints goodbye, then run it."
+          echo "codex:goodbye.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Factory Droid session
+        if: ${{ !cancelled() && env.FACTORY_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g droid
+          droid exec --auto low "Create droid.py that prints droid."
+          echo "factory-droid:droid.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Copilot CLI session
+        if: ${{ !cancelled() && env.COPILOT_GITHUB_TOKEN != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g @github/copilot
+          copilot -p "Create copilot.py that prints copilot." --allow-all-tools
+          echo "copilot-cli:copilot.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Cursor CLI session
+        if: ${{ !cancelled() && env.CURSOR_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          curl -fsS https://cursor.com/install | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          cursor-agent -p --trust --force "Create cursor.py that prints cursor."
+          echo "cursor:cursor.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: OpenCode session
+        if: ${{ !cancelled() && env.ANTHROPIC_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g opencode-ai
+          opencode run ${OPENCODE_MODEL:+--model "$OPENCODE_MODEL"} "Create opencode.py that prints opencode."
+          echo "opencode:opencode.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Kilo CLI session
+        if: ${{ !cancelled() && env.ANTHROPIC_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g @kilocode/cli
+          kilo run --auto ${KILO_MODEL:+--model "$KILO_MODEL"} "Create kilo.py that prints kilo."
+          echo "kilo:kilo.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Find each session and its edit
+        if: ${{ !cancelled() }}
+        run: |
+          if [ ! -s "$RUNNER_TEMP/expect.txt" ]; then echo "No agent ran: configure at least one secret."; exit 0; fi
+          bun scripts/canary-check.ts "$RUNNER_TEMP/toy" $(cat "$RUNNER_TEMP/expect.txt")
       - name: Probe log formats
+        if: ${{ !cancelled() }}
         working-directory: ${{ runner.temp }}/toy
         run: bun "$GITHUB_WORKSPACE/src/cli.ts" doctor --probe --strict
