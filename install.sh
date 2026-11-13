@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Gemini CLI), caches the matching prebuilt binary so nothing
+# Codex, Antigravity, Factory Droid, Gemini CLI), caches the matching prebuilt binary so nothing
 # else (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -59,6 +59,9 @@ targets() {
   if [ -d "$gemini_home/antigravity-cli" ] || [ -d "$gemini_home/antigravity-ide" ] || command -v agy >/dev/null 2>&1; then
     printf 'Antigravity|%s\n' "$gemini_home/config/skills/tracetoon"
   fi
+  if [ -d "${FACTORY_HOME:-$HOME/.factory}" ] || command -v droid >/dev/null 2>&1; then
+    printf 'Factory Droid|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
   if command -v gemini >/dev/null 2>&1; then
     printf 'Gemini CLI|%s\n' "$gemini_home/skills/tracetoon"
   fi
@@ -112,7 +115,7 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   exit 0
 fi
 
-[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Gemini CLI)"
+[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Gemini CLI)"
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)
@@ -154,7 +157,8 @@ chmod +x "$tmp/$bin"
 info=$("$tmp/$bin" build-info --json | tr -d ' \r\n') || die "downloaded runtime does not run"
 [ "$skill_version" = "$ver" ] && [ -n "$build" ] || die "skill version does not match the release"
 case "$info" in *"\"buildId\":\"$build\""*) ;; *) die "skill and runtime builds differ; nothing activated" ;; esac
-binary_targets "$tmp/$bin" > "$tmp/targets" || targets > "$tmp/targets"
+# Hosts can share a folder (Codex and Factory Droid read ~/.agents/skills).
+binary_targets "$tmp/$bin" > "$tmp/targets" || targets | awk -F'|' '!seen[$2]++' > "$tmp/targets"
 while IFS='|' read -r name dir; do
   [ "$(basename "$dir")" = tracetoon ] || die "unexpected skill install target: $dir"
   stage="$dir.new-$$"

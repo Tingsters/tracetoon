@@ -45,7 +45,7 @@ $bundle = Join-Path (Join-Path $skill 'dist') 'tracetoon.mjs'
 if (Test-Path $bundle) {
   if ((Get-Command bun -ErrorAction SilentlyContinue) -and (Test-MatchingRuntime 'bun' @($bundle))) { & bun $bundle @args; exit $LASTEXITCODE }
   if (Get-Command node -ErrorAction SilentlyContinue) {
-    $major = [int](& node -p 'process.versions.node.split(".")[0]')
+    $major = [int](& node -p "process.versions.node.split('.')[0]")
     if ($major -ge 22 -and (Test-MatchingRuntime 'node' @($bundle))) { & node $bundle @args; exit $LASTEXITCODE }
   }
 }

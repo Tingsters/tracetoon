@@ -17,7 +17,11 @@ export function applyClaudeStyle(
   data: Json,
   commands: HookCommands | undefined,
   matcher: string,
+  /** `top`: the file is only the event map (Factory's hooks.json), not `{ hooks: {...} }`. */
+  layout: 'nested' | 'top' = 'nested',
 ): Json {
+  if (layout === 'top')
+    return applyClaudeStyle({ hooks: data }, commands, matcher).hooks ?? {};
   const handler = (event: string) => ({
     type: 'command',
     command: commands!.lifecycle(event),
@@ -49,7 +53,8 @@ export function applyClaudeStyle(
   return out;
 }
 
-export const installedClaudeStyle = (data: Json) => prePrIn(data.hooks?.PreToolUse);
+export const installedClaudeStyle = (data: Json, layout: 'nested' | 'top' = 'nested') =>
+  prePrIn((layout === 'top' ? data : data.hooks)?.PreToolUse);
 
 const str = (v: unknown) => (typeof v === 'string' && v.length ? v : undefined);
 

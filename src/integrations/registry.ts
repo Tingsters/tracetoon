@@ -9,12 +9,14 @@ import { integration as claude } from './claude-code/index.ts';
 import { integration as codex } from './codex/index.ts';
 import { integration as antigravity } from './antigravity/index.ts';
 import { integration as geminiCli } from './gemini-cli/index.ts';
+import { integration as factory } from './factory/index.ts';
 
 /** In display order. Hook targets, skill installs and doctor follow it. */
 export const INTEGRATIONS: readonly Integration[] = [
   claude,
   codex,
   antigravity,
+  factory,
   geminiCli,
 ];
 
@@ -23,7 +25,7 @@ export const INTEGRATIONS: readonly Integration[] = [
  * inside another one (Codex run from Claude Code) inherits the outer variables,
  * so the hosts most often nested come first.
  */
-const SESSION_ORDER = ['codex', 'claude'];
+const SESSION_ORDER = ['codex', 'factory', 'claude'];
 
 export const ADAPTERS: TraceAdapter[] = INTEGRATIONS.flatMap((i) => i.traces);
 
