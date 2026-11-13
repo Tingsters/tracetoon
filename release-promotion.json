@@ -1,43 +1,28 @@
 {
-  "schema": "tracetoon.release-promotion/v2",
-  "version": "1.0.0-rc.24",
-  "buildId": "dbdff58866721e9b52186d9ff1637a419d1212538c018244c3b6da8477699193",
+  "schema": "tracetoon.release-promotion/v3",
+  "version": "1.0.0-rc.25",
+  "buildId": "5f8dee49a409f798a10219934531aee56b6733915323606477c3dd48267a68e9",
   "artifact": {
-    "runId": 41772612043,
-    "id": 13295193643,
-    "name": "tracetoon-candidate-872a37dc4d260ff186f79292ea4e6884fbcd2c11-attempt-1",
-    "digest": "sha256:439935c9ad5da03d9730c9fcd44054ded7def2861e2c3b26409a724ea64cec3d"
+    "runId": 43311029737,
+    "id": 13987455880,
+    "name": "tracetoon-candidate-56cc97bce0b372ca167b94732425b05638dabff2-attempt-1",
+    "digest": "sha256:85a046be74b01a76c5105c01e8ddf4f452c158531547ac0958b46be4ea3bf9fb"
   },
   "expected": {
-    "manifestSha256": "eac21ca7bea498649ba44a4da06603e0f1eb8351eb809b9d6463683c5a3730a2",
-    "checksumsSha256": "49fce5801a951a6ec58ae6147226ce14aceaee298bebb6cd1555677870e2b573",
-    "windowsSha256": "549e5e8dda749d54f75d6a07918fd9c7bc5a97ca4a5095b8562b396963ab104e",
-    "bundleSha256": "8db4f9ad6251494b72cca57ce67b037b87c225584b9cb0b026e609d4dd71b3f8"
+    "manifestSha256": "6db005c82c8543ad16a594b3205b0b577ba6bec2aa0efaa3acd8853605cf8c8c",
+    "checksumsSha256": "459b8cf612d76e68e8891d1e15884d0e135ceffbc7d49c35acf855c5022a883f",
+    "windowsSha256": "4e56b5cbee6ce97864e71fb00e2934072f045e1c4c34dcc2a82b9e73c86ba53f",
+    "bundleSha256": "ec37af75195ed7c7f405b4f1de564f82ede10511dad64ddadadf609ec3c116eb"
   },
   "decision": {
     "kind": "explicit-user-request",
-    "recordedAt": "2026-11-04T06:24:25.624Z",
-    "reason": "The user explicitly requested a release through a PR to main and local installation after reviewing the inconclusive admission. Ship the CI-tested improvements while retaining that outcome; no confirmation or performance gain is claimed."
+    "recordedAt": "2026-11-12T23:26:14.000Z",
+    "reason": "The user explicitly requested the rc.25 release. The retained prbench inputs needed for calibration and admission are not available on the release machine, so the user chose to release the CI-tested candidate without a benchmark round. No evaluation result or performance gain is claimed."
   },
   "evaluations": {
-    "calibration": {
-      "status": "passed",
-      "experiment": "d4fb1a66404a8ad44036b79a67f913efbdb6dd8cd9f4c37d5a42c0481b6e3062",
-      "reportSha256": "5c8e69d9612754aa2f7c807e95dc605ef9bacd4cd5a8a83d5a2ac9a3f6b97413",
-      "orders": 28
-    },
-    "admission": {
-      "status": "inconclusive",
-      "experiment": "8ec7ebd53a0845a5afe4fd18593d77fd4f87209012df2103f2aa452816a0114c",
-      "reportSha256": "59a903d752f3883f652e0e26b01af72fd834d5694d9c53114e7bd8f3fd92ae05",
-      "writers": 4,
-      "orders": 16
-    },
-    "development": {
-      "status": "not-run"
-    },
-    "heldout": {
-      "status": "not-run"
-    }
+    "calibration": { "status": "not-run" },
+    "admission": { "status": "not-run" },
+    "development": { "status": "not-run" },
+    "heldout": { "status": "not-run" }
   }
 }
