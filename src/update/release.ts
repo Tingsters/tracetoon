@@ -11,7 +11,7 @@ export interface Release {
 
 export type Channel = 'stable' | 'latest';
 
-const REPO = 'Tingsters/tracetoon';
+const REPO = 'Tracetoon/tracetoon';
 
 export function sources(env: NodeJS.ProcessEnv = process.env) {
   const base = env.TRACETOON_UPDATE_URL?.replace(/\/+$/, '');

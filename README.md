@@ -4,8 +4,8 @@
 
 <p align="center">
   <a href="https://tracetoon.com"><img alt="Website: tracetoon.com" src="https://img.shields.io/badge/web-tracetoon.com-c2410c?style=for-the-badge"></a>
-  <a href="https://github.com/Tingsters/tracetoon/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Tingsters/tracetoon?include_prereleases&style=for-the-badge&color=ffd84a&labelColor=1b1913"></a>
-  <a href="https://github.com/Tingsters/tracetoon/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Tingsters/tracetoon/ci.yml?branch=main&style=for-the-badge&label=CI"></a>
+  <a href="https://github.com/Tracetoon/tracetoon/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Tracetoon/tracetoon?include_prereleases&style=for-the-badge&color=ffd84a&labelColor=1b1913"></a>
+  <a href="https://github.com/Tracetoon/tracetoon/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Tracetoon/tracetoon/ci.yml?branch=main&style=for-the-badge&label=CI"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0f8f80?style=for-the-badge"></a>
   <a href="#-contributing-ai-welcome-comics-wanted"><img alt="AI contributions welcome" src="https://img.shields.io/badge/AI_PRs-welcome-15803d?style=for-the-badge"></a>
 </p>
@@ -53,12 +53,12 @@ prebuilt binary, and needs nothing else:
 
 ```sh
 # macOS, Linux, Git Bash
-curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 ```
 
 ```powershell
 # Windows PowerShell
-irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 ```
 
 **2. Restart your agent.** Then, on any branch with your work, ask:
@@ -260,7 +260,7 @@ _writer_ still lost. The win comes from a strong writer plus cheap checkers.
 
 ## 🎨 Comics: a comic nobody asked for. Everyone reads it.
 
-<p align="center"><a href="https://github.com/Tingsters/tracetoon/pull/17"><img src="docs/img/comic-pr17.webp" alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign." width="640"></a><br><sub>The comic Tracetoon made for <a href="https://github.com/Tingsters/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</sub></p>
+<p align="center"><a href="https://github.com/Tracetoon/tracetoon/pull/17"><img src="docs/img/comic-pr17.webp" alt="A three-panel comic in 1950s Broadway playbill style: an empty stage under a NOW CASTING sign, a casting director watching a teapot, a knight and a cactus audition, and the teapot taking a bow under a STARRING: WHOEVER FITS sign." width="640"></a><br><sub>The comic Tracetoon made for <a href="https://github.com/Tracetoon/tracetoon/pull/17">PR #17</a>, which removed the old recurring cast.</sub></p>
 
 Each PR can get a one-off comic: a joke about how the work really went, with
 characters, a format and an art style made up for that PR. There are no
@@ -561,7 +561,7 @@ trust the new hook entries in `/hooks`.
 <details>
 <summary><b>Other ways to install</b></summary>
 
-- **Claude Code plugin:** `/plugin marketplace add Tingsters/tracetoon`, then
+- **Claude Code plugin:** `/plugin marketplace add Tracetoon/tracetoon`, then
   `/plugin install tracetoon@tracetoon`. The plugin comes from the `release`
   branch, which carries each published release with its built bundle; `main` has
   only source. Update it with `/plugin marketplace update tracetoon`, or turn on
@@ -572,7 +572,7 @@ trust the new hook entries in `/hooks`.
   `tracetoon doctor` flags any copy that falls out of step.
 - **By hand:** unzip `tracetoon-skill.zip`, or a per-platform
   `tracetoon-skill-<os>-<arch>.zip` that includes the binary, from a
-  [release](https://github.com/Tingsters/tracetoon/releases) into your agent's
+  [release](https://github.com/Tracetoon/tracetoon/releases) into your agent's
   skills folder:
 
   | Agent       | Folder                                                               |
@@ -694,7 +694,7 @@ You stay responsible for what you submit: read the diff, and let the evidence
 speak for the tests.
 
 ```sh
-git clone https://github.com/Tingsters/tracetoon && cd tracetoon
+git clone https://github.com/Tracetoon/tracetoon && cd tracetoon
 bun run dependencies:prepare   # locked Showtail source from build-dependencies.json
 bun install --frozen-lockfile
 bun run typecheck && bun run test

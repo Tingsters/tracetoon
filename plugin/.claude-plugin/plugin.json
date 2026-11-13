@@ -3,10 +3,10 @@
   "version": "1.0.0-rc.25",
   "description": "Creates your PR with a description written from the agent session logs already on your machine, and an optional one-off comic.",
   "author": {
-    "name": "Tingsters"
+    "name": "Tracetoon"
   },
-  "homepage": "https://github.com/Tingsters/tracetoon",
-  "repository": "https://github.com/Tingsters/tracetoon",
+  "homepage": "https://github.com/Tracetoon/tracetoon",
+  "repository": "https://github.com/Tracetoon/tracetoon",
   "license": "Apache-2.0",
   "keywords": [
     "pull-request",

@@ -16,7 +16,7 @@ describe('Claude Code marketplace route', () => {
     // main has no bundle; `release` adds it to each tagged source tree.
     expect(entry.source).toEqual({
       source: 'git-subdir',
-      url: 'https://github.com/Tingsters/tracetoon.git',
+      url: 'https://github.com/Tracetoon/tracetoon.git',
       path: 'plugin',
       ref: 'release',
     });
