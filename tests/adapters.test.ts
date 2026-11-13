@@ -6,6 +6,7 @@ import {
   unwrapArg,
 } from '../src/integrations/antigravity/trace.ts';
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
+import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
 import { foldSubagents } from '../src/pipeline.ts';
 import type { TraceSession } from '../src/trace/types.ts';
 
@@ -358,5 +359,130 @@ describe('Antigravity adapter', () => {
     expect(unwrapArg('"\\"C:\\\\\\\\x\\""')).toBe('"C:\\\\x"');
     expect(unwrapArg('"plain"')).toBe('plain');
     expect(unwrapArg('not wrapped')).toBe('not wrapped');
+  });
+});
+
+describe('Factory Droid adapter', () => {
+  // Shapes from a real `droid exec` session: a Script tool runs nested calls, each
+  // logged as its own tool_use/tool_result pair with JSON-encoded inputs/results.
+  const msg = (id: string, n: number, role: string, content: unknown[], extra = {}) => ({
+    type: 'message',
+    id,
+    timestamp: T(n),
+    message: { role, content, ...extra },
+  });
+  const lines = jsonl([
+    { type: 'session_start', id: 'f1', title: 'Fix add', version: 2, cwd: '/repo' },
+    msg('context-1', 1, 'user', [
+      { type: 'text', text: '<system-reminder>\ntools</system-reminder>' },
+    ]),
+    msg('u1', 2, 'user', [{ type: 'text', text: 'Fix add() and run the test.' }]),
+    msg(
+      'a1',
+      3,
+      'assistant',
+      [
+        { type: 'thinking', thinking: '...', signature: 'x' },
+        {
+          type: 'tool_use',
+          id: 'call_1',
+          name: 'Script',
+          input: { script: 'tools.ApplyPatch(...)' },
+        },
+      ],
+      { modelId: 'gpt-6-sol' },
+    ),
+    msg('repl-tool-call:p-1', 4, 'assistant', [
+      {
+        type: 'tool_use',
+        id: 'p-1',
+        name: 'ApplyPatch',
+        input: JSON.stringify({
+          input:
+            '*** Begin Patch\n*** Update File: calc.py\n@@\n def add(a, b):\n-    return a - b\n+    return a + b\n*** Add File: test_calc.py\n+assert add(1, 2) == 3\n*** End Patch',
+        }),
+      },
+    ]),
+    msg('repl-tool-result:p-1', 5, 'user', [
+      { type: 'tool_result', tool_use_id: 'p-1', content: '"{\\"success\\":true}"' },
+    ]),
+    msg('repl-tool-call:e-1', 6, 'assistant', [
+      {
+        type: 'tool_use',
+        id: 'e-1',
+        name: 'Execute',
+        input: JSON.stringify({ command: 'python test_calc.py', riskLevel: 'low' }),
+      },
+    ]),
+    msg('repl-tool-result:e-1', 7, 'user', [
+      {
+        type: 'tool_result',
+        tool_use_id: 'e-1',
+        content: '"Traceback ...\n\n[Process exited with code 1]"',
+      },
+    ]),
+    msg('repl-tool-call:e-2', 8, 'assistant', [
+      {
+        type: 'tool_use',
+        id: 'e-2',
+        name: 'Execute',
+        input: JSON.stringify({ command: 'git status --short' }),
+      },
+    ]),
+    msg('repl-tool-result:e-2', 9, 'user', [
+      {
+        type: 'tool_result',
+        tool_use_id: 'e-2',
+        content: '" M calc.py\n\n[Process exited with code 0]"',
+      },
+    ]),
+    msg('r1', 10, 'user', [
+      {
+        type: 'tool_result',
+        tool_use_id: 'call_1',
+        content: [{ type: 'text', text: 'done' }],
+        is_error: false,
+      },
+    ]),
+    msg('repl-tool-call:e-3', 11, 'assistant', [
+      { type: 'tool_use', id: 'e-3', name: 'Execute', input: { command: 'bun test' } },
+    ]),
+    msg('a2', 12, 'assistant', [{ type: 'text', text: 'Fixed add().' }], {
+      modelId: 'gpt-6-sol',
+    }),
+    { type: 'agent_turn_outcome', turnId: 'u1', reason: 'completed' },
+    { type: 'brand_new_record' },
+  ]);
+
+  test('reads prompts, nested patch edits and commands with exit codes', () => {
+    const s = session('f1');
+    parseFactoryLines(lines, s);
+    expect(s.title).toBe('Fix add');
+    const prompts = s.records.filter((r) => r.kind === 'prompt');
+    expect(prompts.map((r) => r.kind === 'prompt' && r.text)).toEqual([
+      'Fix add() and run the test.',
+    ]);
+    const edits = s.records.filter((r) => r.kind === 'edit');
+    expect(edits).toHaveLength(2);
+    expect(edits[0]).toMatchObject({
+      added: ['    return a + b'],
+      removed: ['    return a - b'],
+    });
+    expect(edits[1]).toMatchObject({ added: ['assert add(1, 2) == 3'], created: true });
+    const commands = s.records.filter((r) => r.kind === 'command');
+    expect(
+      commands.map(
+        (c) => c.kind === 'command' && [c.cmd, c.isError ?? null, !!c.pending],
+      ),
+    ).toEqual([
+      ['python test_calc.py', true, false],
+      ['git status --short', false, false],
+      ['bun test', null, true],
+    ]);
+    expect(s.records.find((r) => r.kind === 'assistant')).toMatchObject({
+      text: 'Fixed add().',
+      model: 'gpt-6-sol',
+    });
+    expect(s.unknownTypes).toEqual({ brand_new_record: 1 });
   });
 });

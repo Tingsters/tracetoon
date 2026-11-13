@@ -9,6 +9,7 @@ import {
   type HookChange,
 } from '../hook/install.ts';
 import { repoRoot, switchState } from '../hook/switches.ts';
+import { INTEGRATIONS } from '../integrations/registry.ts';
 import { git } from '../util/exec.ts';
 import { selfProgram, userCommand } from '../util/userCommand.ts';
 export { userCommand } from '../util/userCommand.ts';
@@ -95,8 +96,8 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
           .filter((h) => h.present)
           .map(
             (h) =>
-              `  ${h.label.padEnd(12)} ${h.installed ? (h.problem ? 'installed, NOT ACTIVE' : 'configured') : 'not installed'}${
-                h.problem ? `\n               ${h.problem}` : ''
+              `  ${h.label.padEnd(LABEL_WIDTH)} ${h.installed ? (h.problem ? 'installed, NOT ACTIVE' : 'configured') : 'not installed'}${
+                h.problem ? `\n${NOTE_INDENT}${h.problem}` : ''
               }`,
           ),
         state.enabled
@@ -112,6 +113,10 @@ export function statusCmd(cwd: string, opts: OutOpts): void {
   );
 }
 
+/** Wide enough for every host's label, so the columns line up. */
+const LABEL_WIDTH = Math.max(12, ...INTEGRATIONS.map((i) => i.label.length));
+const NOTE_INDENT = ' '.repeat(LABEL_WIDTH + 3);
+
 function report(opts: OutOpts, changes: HookChange[]): void {
   emit(
     opts,
@@ -121,7 +126,7 @@ function report(opts: OutOpts, changes: HookChange[]): void {
         .filter((c) => c.result !== 'skipped' || c.note !== 'not installed')
         .map(
           (c) =>
-            `  ${c.label.padEnd(12)} ${c.result}: ${c.file}${c.note ? `\n               ${c.note}` : ''}`,
+            `  ${c.label.padEnd(LABEL_WIDTH)} ${c.result}: ${c.file}${c.note ? `\n${NOTE_INDENT}${c.note}` : ''}`,
         )
         .join('\n') || '  no agents found',
   );

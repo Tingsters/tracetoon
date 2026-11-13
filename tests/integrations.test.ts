@@ -4,7 +4,7 @@
  * uninstall, a parseable deny, and its own payloads recognized.
  */
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import {
   ADAPTERS,
@@ -52,6 +52,15 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     session_id: 's1',
     tool_name: 'Bash',
     tool_input: { command, workdir: cwd },
+  }),
+  factory: (command, cwd) => ({
+    session_id: 's1',
+    transcript_path: '/t.jsonl',
+    cwd,
+    permission_mode: 'auto-medium',
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Execute',
+    tool_input: { command, summary: 'run it', riskLevel: 'low' },
   }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
@@ -193,5 +202,44 @@ describe('environment', () => {
     const targets = skillTargets(home, { PATH: '' });
     const dirs = targets.map((t) => t.dir);
     expect(new Set(dirs).size).toBe(dirs.length);
+  });
+});
+
+describe('Factory Droid', () => {
+  const factory = INTEGRATIONS.find((i) => i.id === 'factory')!;
+
+  test("adds to settings.json when the user's hooks are there, so hooks.json never hides them", () => {
+    const home = tempDir();
+    const dir = join(home, '.factory');
+    mkdirSync(dir, { recursive: true });
+    expect(factory.hook!.file(home, {})).toBe(join(dir, 'hooks.json'));
+    writeFileSync(
+      join(dir, 'settings.json'),
+      JSON.stringify({
+        model: 'x',
+        hooks: { Stop: [{ hooks: [{ type: 'command', command: 'mine' }] }] },
+      }),
+    );
+    expect(factory.hook!.file(home, {})).toBe(join(dir, 'settings.json'));
+    const data = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
+    const next = factory.hook!.apply(data, {
+      prePr: 'tracetoon hook pre-pr --agent factory',
+      lifecycle: (e) => `tracetoon hook lifecycle --agent factory --event ${e}`,
+    });
+    expect(next.model).toBe('x');
+    expect(next.hooks.Stop).toEqual(data.hooks.Stop);
+    expect(next.hooks.PreToolUse[0].matcher).toBe('Execute');
+    expect(next.PreToolUse).toBeUndefined();
+  });
+
+  test('spec mode counts as plan mode, and FACTORY_SESSION_ID wins over an outer Claude Code', () => {
+    const p = factory.hook!.parse({
+      ...(PAYLOADS.factory!('ls', '/r') as object),
+      permission_mode: 'spec',
+    });
+    expect(p?.planMode).toBe(true);
+    expect(
+      currentSessionId({ CLAUDE_CODE_SESSION_ID: 'outer', FACTORY_SESSION_ID: 'droid' }),
+    ).toBe('droid');
   });
 });
