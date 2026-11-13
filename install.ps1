@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Copilot, Cursor, Gemini CLI), caches the prebuilt binary so nothing else
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI), caches the prebuilt binary so nothing else
 # (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -33,8 +33,12 @@ function Get-Targets {
   if ((Test-Path $copilot) -or (Has 'copilot')) { $t += [pscustomobject]@{ Name = 'Copilot'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
   $cursor = if ($env:CURSOR_HOME) { $env:CURSOR_HOME } else { Join-Path $HOME '.cursor' }
   if ((Test-Path $cursor) -or (Has 'cursor-agent')) { $t += [pscustomobject]@{ Name = 'Cursor'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  $xdg = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME '.config' }
+  foreach ($oc in @(@('OpenCode', 'opencode'), @('Kilo', 'kilo'))) {
+    if ((Test-Path (Join-Path $xdg $oc[1])) -or (Has $oc[1])) { $t += [pscustomobject]@{ Name = $oc[0]; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  }
   if (Has 'gemini') { $t += [pscustomobject]@{ Name = 'Gemini CLI'; Dir = Join-Path $gemini 'skills\tracetoon' } }
-  # Hosts can share a folder (Codex, Factory Droid, Copilot and Cursor read ~/.agents/skills).
+  # Hosts can share a folder (Codex, Factory Droid, Copilot, Cursor, OpenCode and Kilo read ~/.agents/skills).
   $seen = @{}
   return @($t | Where-Object { if ($seen.ContainsKey($_.Dir)) { $false } else { $seen[$_.Dir] = $true; $true } })
 }
@@ -75,7 +79,7 @@ if ($env:TRACETOON_UNINSTALL -eq '1') {
   return
 }
 
-if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, Gemini CLI).' }
+if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI).' }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 $bin = "tracetoon-windows-$arch.exe"

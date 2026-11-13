@@ -17,6 +17,7 @@ import {
 } from '../src/integrations/registry.ts';
 import type { HookCommands } from '../src/integrations/types.ts';
 import { decide, DENY_REASON } from '../src/hook/prHook.ts';
+import { hookTargets, installHooks, uninstallHooks } from '../src/hook/install.ts';
 import { tempDir } from './helpers.ts';
 
 const SRC = resolve(import.meta.dir, '../src');
@@ -82,6 +83,25 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     command,
     cwd,
     sandbox: false,
+  }),
+  // What Tracetoon's OpenCode plugin sends (Kilo's is the same with host: 'kilo').
+  opencode: (command, cwd) => ({
+    source: 'tracetoon-plugin',
+    host: 'opencode',
+    sessionID: 'ses_1',
+    tool: 'bash',
+    callID: 'call_1',
+    args: { command },
+    directory: cwd,
+  }),
+  kilo: (command, cwd) => ({
+    source: 'tracetoon-plugin',
+    host: 'kilo',
+    sessionID: 'ses_1',
+    tool: 'bash',
+    callID: 'call_1',
+    args: { command },
+    directory: cwd,
   }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
@@ -158,6 +178,14 @@ describe('hook contract', () => {
   for (const i of INTEGRATIONS.filter((i) => i.hook)) {
     const hook = i.hook!;
     test(`${i.label}: install is idempotent and uninstall restores the config`, () => {
+      if (hook.text) {
+        // A file Tracetoon owns: rendering is stable and names the pre-pr command.
+        const text = hook.text.render(commands);
+        expect(hook.text.render(commands)).toBe(text);
+        expect(hook.text.command(text)).toBe(commands.prePr);
+        expect(hook.text.command('// another plugin')).toBeUndefined();
+        return;
+      }
       const once = hook.apply(foreign, commands);
       expect(hook.apply(once, commands)).toEqual(once);
       expect(hook.installedCommand(once)).toBe(commands.prePr);
@@ -331,5 +359,20 @@ describe('Cursor', () => {
     expect(resolveHookHost('cursor', raw)?.payload.workspaceRoots).toEqual([
       '/work/repo',
     ]);
+  });
+});
+
+describe('plugin hooks', () => {
+  test("install leaves a tracetoon.js that Tracetoon didn't write alone", () => {
+    const home = tempDir();
+    const dir = join(home, '.config', 'opencode', 'plugins');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'tracetoon.js'), '// my own plugin\n');
+    const targets = hookTargets(home, {}).filter((t) => t.agent === 'opencode');
+    expect(installHooks('/opt/tracetoon/bin/tracetoon', targets)[0]).toMatchObject({
+      result: 'skipped',
+    });
+    expect(readFileSync(join(dir, 'tracetoon.js'), 'utf8')).toBe('// my own plugin\n');
+    expect(uninstallHooks(targets)[0]!.result).toBe('unchanged');
   });
 });

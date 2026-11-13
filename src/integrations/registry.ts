@@ -12,6 +12,8 @@ import { integration as geminiCli } from './gemini-cli/index.ts';
 import { integration as factory } from './factory/index.ts';
 import { integration as copilot } from './copilot/index.ts';
 import { integration as cursor } from './cursor/index.ts';
+import { integration as opencode } from './opencode/index.ts';
+import { integration as kilo } from './kilo/index.ts';
 
 /** In display order. Hook targets, skill installs and doctor follow it. */
 export const INTEGRATIONS: readonly Integration[] = [
@@ -21,6 +23,8 @@ export const INTEGRATIONS: readonly Integration[] = [
   factory,
   copilot,
   cursor,
+  opencode,
+  kilo,
   geminiCli,
 ];
 
