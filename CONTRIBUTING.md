@@ -148,6 +148,14 @@ development and held-out confirmation as not run. This does not turn the
 benchmark into a pass or establish a score/performance gain. The release notes
 publish that limitation; artifact identity and byte verification still apply.
 
+An explicit user request may also authorize releasing a CI-tested candidate with
+no benchmark round at all, for example when the retained calibration inputs and
+private cases aren't available. Record it with `tracetoon.release-promotion/v3`:
+the request's reason and recording time, and every stage (calibration,
+admission, development, held-out) recorded as not run, with no experiment IDs.
+The release notes say no evaluation was run and that no score or performance
+gain is established; artifact identity and byte verification still apply.
+
 The marketplace serves the plugin from the `release` branch
 (`.claude-plugin/marketplace.json` names it), so plugin users receive only
 published releases. main has no bundle; for each tag the release workflow

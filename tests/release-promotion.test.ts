@@ -13,6 +13,7 @@ import {
   validatePromotion,
   type Promotion,
   type RequestedPromotion,
+  type UnevaluatedPromotion,
 } from '../.github/scripts/release-assets.ts';
 import { tempDir } from './helpers.ts';
 function fixture() {
@@ -190,6 +191,52 @@ test('requested promotion rejects missing artifact hashes and invented confirmat
   const noReason = structuredClone(promotion);
   noReason.decision.reason = ' ';
   expect(() => validatePromotion(noReason)).toThrow('explicit release request');
+});
+function unevaluatedFixture() {
+  const f = fixture();
+  const promotion: UnevaluatedPromotion = {
+    ...f.promotion,
+    schema: 'tracetoon.release-promotion/v3',
+    decision: {
+      kind: 'explicit-user-request',
+      recordedAt: '2026-11-12T22:00:00.000Z',
+      reason: 'Ship the CI-tested candidate; no benchmark round was run.',
+    },
+    evaluations: {
+      calibration: { status: 'not-run' },
+      admission: { status: 'not-run' },
+      development: { status: 'not-run' },
+      heldout: { status: 'not-run' },
+    },
+  };
+  return { ...f, promotion };
+}
+test('an unevaluated requested release keeps the asset guards and claims no benchmark result', () => {
+  const { out, manifest, promotion } = unevaluatedFixture();
+  expect(verifyPromotion(out, promotion, manifest, `v${manifest.version}`).buildId).toBe(
+    manifest.buildId,
+  );
+  const notes = promotionNotes(promotion);
+  expect(notes).toContain('without a benchmark round');
+  expect(notes).toContain('No calibration, admission, development or held-out evaluation');
+  expect(notes).toContain('has not been established');
+  expect(notes).toContain(promotion.decision.reason);
+  const noDecision = structuredClone(promotion);
+  delete (noDecision as any).decision;
+  expect(() => validatePromotion(noDecision)).toThrow('explicit release request');
+  // Any recorded result, or a missing stage, is refused: v3 means nothing was run.
+  for (const stage of ['calibration', 'admission', 'development', 'heldout'] as const) {
+    const ran = structuredClone(promotion);
+    (ran.evaluations as any)[stage] = { status: 'passed', experiment: '7'.repeat(64) };
+    expect(() => validatePromotion(ran)).toThrow('not run');
+    const missing = structuredClone(promotion);
+    delete (missing.evaluations as any)[stage];
+    expect(() => validatePromotion(missing)).toThrow('not run');
+  }
+  writeFileSync(join(out, 'tracetoon-windows-x64.exe'), 'changed bytes');
+  expect(() => verifyPromotion(out, promotion, manifest, `v${manifest.version}`)).toThrow(
+    'checksum mismatch',
+  );
 });
 test('artifact API identity, inventory paths and receipt identities cannot drift at publication', () => {
   const { out, promotion } = fixture();
