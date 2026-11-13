@@ -51,11 +51,26 @@ export function hookCommand(agent: string, program: string | string[]): string {
 
 function commandsFor(agent: string, program: string | string[]): HookCommands {
   const prePr = hookCommand(agent, program);
+  const base = (Array.isArray(program) ? program : [program]).map((p) =>
+    p.replace(/\\/g, '/'),
+  );
   return {
     prePr,
     lifecycle: (event) =>
       prePr.replace(/hook pre-pr --agent/, 'hook lifecycle --agent') +
       ` --event ${event}`,
+    argv: {
+      prePr: [...base, 'hook', 'pre-pr', '--agent', agent],
+      lifecycle: (event) => [
+        ...base,
+        'hook',
+        'lifecycle',
+        '--agent',
+        agent,
+        '--event',
+        event,
+      ],
+    },
   };
 }
 
@@ -136,9 +151,11 @@ export function hookStatus(targets = hookTargets()): HookState[] {
       unreadable = true;
     }
     const text = JSON.stringify(data);
-    const installed =
-      !unreadable && text.includes('hook pre-pr') && /tracetoon/i.test(text);
     const hook = hookOf(t);
+    const installed =
+      !unreadable &&
+      ((text.includes('hook pre-pr') && /tracetoon/i.test(text)) ||
+        !!hook.installedCommand(data));
     const state: HookState = {
       agent: t.agent,
       label: t.label,

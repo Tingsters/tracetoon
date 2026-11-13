@@ -79,6 +79,10 @@ export function parseFactoryLines(content: string, into: TraceSession): void {
       into.warnings.push('Skipped a line that is not JSON.');
       continue;
     }
+    if (!isObj(o)) {
+      into.warnings.push('Skipped a line that is not a JSON object.');
+      continue;
+    }
     const type = str(o.type) ?? '?';
     if (!KNOWN_TYPES.has(type)) {
       into.unknownTypes[type] = (into.unknownTypes[type] ?? 0) + 1;

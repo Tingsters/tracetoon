@@ -81,9 +81,9 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 | Codex (CLI and app)       | ✅ supported                                                                 |
 | Antigravity (CLI and IDE) | ✅ supported                                                                 |
 | Factory Droid             | ✅ supported                                                                 |
+| Copilot (CLI and VS Code) | ✅ supported                                                                 |
 | Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
 | Cursor, Windsurf          | 🗓️ planned                                                                   |
-| Copilot CLI               | 🗓️ planned                                                                   |
 
 > [!TIP]
 > Already installed? Ask your agent: _"Update Tracetoon."_ It works for the
@@ -97,7 +97,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 <p align="center"><a href="https://tracetoon.com/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
 
 AI-written PRs are usually vague and padded, and they sound sure about tests
-nobody saw pass. Claude Code, Codex, Antigravity and Factory Droid already keep session logs on
+nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid and Copilot already keep session logs on
 your machine. Tracetoon finds the sessions that produced this branch and turns
 them into a redacted evidence brief your agent writes from.
 
@@ -582,6 +582,7 @@ trust the new hook entries in `/hooks`.
   | Codex         | `~/.agents/skills/tracetoon` (or `.agents/skills/` in a repo)        |
   | Antigravity   | `~/.gemini/config/skills/tracetoon` (or `.agents/skills/` in a repo) |
   | Factory Droid | `~/.agents/skills/tracetoon` (shared with Codex)                     |
+  | Copilot       | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Gemini CLI    | `~/.gemini/skills/tracetoon`                                         |
 
 - **From source:** see [Contributing](#-contributing-ai-welcome-comics-wanted).

@@ -62,6 +62,15 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     tool_name: 'Execute',
     tool_input: { command, summary: 'run it', riskLevel: 'low' },
   }),
+  // Copilot CLI's camelCase payload; toolArgs is an object for shell tools.
+  copilot: (command, cwd) => ({
+    sessionId: 's1',
+    timestamp: 1794569002608,
+    cwd,
+    toolCallId: 'call_1',
+    toolName: 'powershell',
+    toolArgs: { command, description: 'run it' },
+  }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
     transcriptPath: '/t.jsonl',
@@ -119,6 +128,18 @@ describe('hook contract', () => {
     prePr: '/opt/tracetoon/bin/tracetoon hook pre-pr --agent X',
     lifecycle: (e) =>
       `/opt/tracetoon/bin/tracetoon hook lifecycle --agent X --event ${e}`,
+    argv: {
+      prePr: ['/opt/tracetoon/bin/tracetoon', 'hook', 'pre-pr', '--agent', 'X'],
+      lifecycle: (e) => [
+        '/opt/tracetoon/bin/tracetoon',
+        'hook',
+        'lifecycle',
+        '--agent',
+        'X',
+        '--event',
+        e,
+      ],
+    },
   };
   const foreign = { other: { hooks: [{ command: 'not-ours' }] }, hooks: {} };
 
@@ -241,5 +262,39 @@ describe('Factory Droid', () => {
     expect(
       currentSessionId({ CLAUDE_CODE_SESSION_ID: 'outer', FACTORY_SESSION_ID: 'droid' }),
     ).toBe('droid');
+  });
+});
+
+describe('Copilot', () => {
+  test('the blocking lifecycle observer only matches shell and GitHub tools', () => {
+    const copilot = INTEGRATIONS.find((i) => i.id === 'copilot')!;
+    const data = copilot.hook!.apply(
+      {},
+      {
+        prePr: 'tracetoon hook pre-pr --agent copilot',
+        lifecycle: (e) => `tracetoon hook lifecycle --agent copilot --event ${e}`,
+        argv: {
+          prePr: ['tracetoon', 'hook', 'pre-pr', '--agent', 'copilot'],
+          lifecycle: (e) => [
+            'tracetoon',
+            'hook',
+            'lifecycle',
+            '--agent',
+            'copilot',
+            '--event',
+            e,
+          ],
+        },
+      },
+    );
+    const matchers: string[] = data.hooks.preToolUse.map(
+      (g: { matcher?: string }) => g.matcher,
+    );
+    expect(matchers.every(Boolean)).toBe(true);
+    const lifecycle = new RegExp(`^(?:${matchers[1]})$`);
+    for (const tool of ['powershell', 'bash', 'github-mcp-server-create_pull_request'])
+      expect(lifecycle.test(tool)).toBe(true);
+    for (const tool of ['view', 'apply_patch', 'grep'])
+      expect(lifecycle.test(tool)).toBe(false);
   });
 });

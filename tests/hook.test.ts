@@ -434,6 +434,7 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.codex'), { recursive: true });
     mkdirSync(join(h, '.gemini', 'antigravity-cli'), { recursive: true });
     mkdirSync(join(h, '.factory'), { recursive: true });
+    mkdirSync(join(h, '.copilot'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -466,9 +467,11 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -499,9 +502,30 @@ describe('installing the hook', () => {
       matcher: 'Execute',
       hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent factory' }],
     });
-    expect(hookStatus(targets).map((s) => s.installed)).toEqual([true, true, true, true]);
+    // Copilot gets its own file, with exec + args so no shell parses the path.
+    const copilot = JSON.parse(
+      readFileSync(join(h, '.copilot', 'hooks', 'tracetoon.json'), 'utf8'),
+    );
+    expect(copilot.version).toBe(1);
+    expect(copilot.hooks.preToolUse[0]).toMatchObject({
+      matcher: 'bash|powershell',
+      hooks: [
+        {
+          exec: '/opt/tracetoon/bin',
+          args: ['hook', 'pre-pr', '--agent', 'copilot'],
+        },
+      ],
+    });
+    expect(hookStatus(targets).map((s) => s.installed)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -512,6 +536,7 @@ describe('installing the hook', () => {
     );
     expect(existsSync(join(h, '.codex', 'hooks.json'))).toBe(false); // created by us, now empty
     expect(existsSync(join(h, '.factory', 'hooks.json'))).toBe(false);
+    expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
     expect(
       JSON.parse(readFileSync(join(h, '.gemini', 'config', 'hooks.json'), 'utf8')),
     ).toEqual({ 'showtail-cli': { enabled: true } });
@@ -580,6 +605,7 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
       'not installed',
       'not installed',
       'not installed',

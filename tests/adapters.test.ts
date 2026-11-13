@@ -7,6 +7,11 @@ import {
 } from '../src/integrations/antigravity/trace.ts';
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
 import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
+import {
+  parseCopilotCliLines,
+  parseVscodeChat,
+  replayChatSession,
+} from '../src/integrations/copilot/trace.ts';
 import { foldSubagents } from '../src/pipeline.ts';
 import type { TraceSession } from '../src/trace/types.ts';
 
@@ -484,5 +489,175 @@ describe('Factory Droid adapter', () => {
       model: 'gpt-6-sol',
     });
     expect(s.unknownTypes).toEqual({ brand_new_record: 1 });
+  });
+});
+
+describe('Copilot adapters', () => {
+  test('CLI: pairs tool starts and completions, reads exit codes and apply_patch', () => {
+    const ev = (type: string, n: number, data: object) => ({
+      type,
+      id: `e${n}`,
+      timestamp: T(n),
+      data,
+    });
+    const s = session('c1');
+    parseCopilotCliLines(
+      jsonl([
+        ev('session.start', 0, {
+          sessionId: 'c1',
+          context: { cwd: '/repo', branch: 'fix-add' },
+        }),
+        ev('user.message', 1, { content: 'Fix add() and test it.' }),
+        ev('assistant.message', 2, {
+          content: '',
+          model: 'gpt-6-luna',
+          toolRequests: [{}],
+        }),
+        ev('tool.execution_start', 3, {
+          toolCallId: 'p1',
+          toolName: 'apply_patch',
+          arguments:
+            '*** Begin Patch\n*** Update File: calc.py\n@@\n-    return a - b\n+    return a + b\n*** End Patch',
+          model: 'gpt-6-luna',
+        }),
+        ev('hook.start', 4, { hookType: 'preToolUse' }),
+        ev('tool.execution_complete', 5, {
+          toolCallId: 'p1',
+          success: true,
+          fileEdits: [],
+        }),
+        ev('tool.execution_start', 6, {
+          toolCallId: 'x1',
+          toolName: 'powershell',
+          arguments: { command: 'python test_calc.py', description: 'test' },
+        }),
+        ev('tool.execution_complete', 7, {
+          toolCallId: 'x1',
+          success: true,
+          shellExecution: { exitCode: 1 },
+          result: { content: 'AssertionError' },
+        }),
+        ev('tool.execution_start', 8, {
+          toolCallId: 'v1',
+          toolName: 'view',
+          arguments: { path: 'calc.py' },
+        }),
+        ev('tool.execution_complete', 9, { toolCallId: 'v1', success: true }),
+        ev('tool.execution_start', 10, {
+          toolCallId: 'x2',
+          toolName: 'bash',
+          arguments: { command: 'bun test' },
+        }),
+        ev('assistant.message', 11, { content: 'Fixed.', model: 'gpt-6-luna' }),
+        ev('brand.new', 12, {}),
+      ]),
+      s,
+    );
+    expect(s.records.find((r) => r.kind === 'prompt')).toMatchObject({
+      text: 'Fix add() and test it.',
+      cwd: '/repo',
+      branch: 'fix-add',
+    });
+    expect(s.records.filter((r) => r.kind === 'edit')).toMatchObject([
+      { added: ['    return a + b'], removed: ['    return a - b'] },
+    ]);
+    expect(
+      s.records.flatMap((r) =>
+        r.kind === 'command' ? [[r.cmd, r.isError ?? null, !!r.pending]] : [],
+      ),
+    ).toEqual([
+      ['python test_calc.py', true, false],
+      ['bun test', null, true],
+    ]);
+    expect(s.records.filter((r) => r.kind === 'assistant')).toHaveLength(1);
+    expect(s.unknownTypes).toEqual({ 'brand.new': 1 });
+  });
+
+  test('VS Code: replays the chat operation log, then reads prompts, terminal commands and edits', () => {
+    const log = jsonl([
+      {
+        kind: 0,
+        v: { version: 3, customTitle: 'Fix add', sessionId: 'v1', requests: [] },
+      },
+      {
+        kind: 2,
+        k: ['requests'],
+        v: [
+          {
+            requestId: 'r1',
+            timestamp: Date.parse(T(1)),
+            modelId: 'copilot/auto',
+            message: { text: 'Fix add()' },
+            response: [],
+          },
+        ],
+      },
+      { kind: 2, k: ['requests', 0, 'response'], v: [{ value: 'Working on it. ' }] },
+      {
+        kind: 2,
+        k: ['requests', 0, 'response'],
+        v: [
+          {
+            kind: 'toolInvocationSerialized',
+            toolId: 'run_in_terminal',
+            toolSpecificData: {
+              kind: 'terminal',
+              commandLine: { original: 'cd /repo; pytest', toolEdited: 'pytest' },
+              cwd: { fsPath: '/repo' },
+              terminalCommandState: { exitCode: 0 },
+            },
+          },
+          {
+            kind: 'textEditGroup',
+            uri: { fsPath: '/repo/calc.py' },
+            edits: [[{ text: 'def add(a, b):\n    return a + b\n', range: {} }]],
+          },
+        ],
+      },
+      // A later rewrite of the last part: truncate to index 2, then append.
+      { kind: 2, k: ['requests', 0, 'response'], i: 3, v: [{ value: 'Done.' }] },
+      { kind: 1, k: ['customTitle'], v: 'Fix add()' },
+      { kind: 1, k: ['missing', 'path'], v: 1 },
+    ]);
+    expect(replayChatSession(log).skipped).toBe(1);
+    const s = session('v1');
+    parseVscodeChat(log, s, '/repo');
+    expect(s.title).toBe('Fix add()');
+    expect(s.warnings).toHaveLength(1);
+    expect(s.records.find((r) => r.kind === 'prompt')).toMatchObject({
+      text: 'Fix add()',
+      cwd: '/repo',
+    });
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'pytest',
+      isError: false,
+    });
+    expect(s.records.find((r) => r.kind === 'edit')).toMatchObject({
+      file: '/repo/calc.py',
+      added: ['def add(a, b):', '    return a + b'],
+      removed: [],
+    });
+    expect(s.records.find((r) => r.kind === 'assistant')).toMatchObject({
+      text: 'Working on it. Done.',
+    });
+  });
+});
+
+describe('session lines that are JSON but not objects', () => {
+  test('are skipped, and the rest of the session is still read', () => {
+    for (const parse of [parseCopilotCliLines, parseFactoryLines]) {
+      const s = session('n');
+      expect(() =>
+        parse(
+          [
+            'null',
+            '42',
+            JSON.stringify({ type: 'user.message', data: { content: 'hi' } }),
+          ].join('\n'),
+          s,
+        ),
+      ).not.toThrow();
+      expect(s.warnings.length).toBe(2);
+    }
   });
 });
