@@ -17,6 +17,7 @@ import {
 } from '../src/integrations/registry.ts';
 import type { HookCommands } from '../src/integrations/types.ts';
 import { decide, DENY_REASON } from '../src/hook/prHook.ts';
+import { hookTargets, installHooks, uninstallHooks } from '../src/hook/install.ts';
 import { tempDir } from './helpers.ts';
 
 const SRC = resolve(import.meta.dir, '../src');
@@ -358,5 +359,20 @@ describe('Cursor', () => {
     expect(resolveHookHost('cursor', raw)?.payload.workspaceRoots).toEqual([
       '/work/repo',
     ]);
+  });
+});
+
+describe('plugin hooks', () => {
+  test("install leaves a tracetoon.js that Tracetoon didn't write alone", () => {
+    const home = tempDir();
+    const dir = join(home, '.config', 'opencode', 'plugins');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'tracetoon.js'), '// my own plugin\n');
+    const targets = hookTargets(home, {}).filter((t) => t.agent === 'opencode');
+    expect(installHooks('/opt/tracetoon/bin/tracetoon', targets)[0]).toMatchObject({
+      result: 'skipped',
+    });
+    expect(readFileSync(join(dir, 'tracetoon.js'), 'utf8')).toBe('// my own plugin\n');
+    expect(uninstallHooks(targets)[0]!.result).toBe('unchanged');
   });
 });

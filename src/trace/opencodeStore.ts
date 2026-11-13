@@ -54,14 +54,15 @@ const splitRef = (path: string) => {
 
 function withDb<T>(path: string, fallback: T, use: (db: ReadOnlyDb) => T): T {
   if (!existsSync(path)) return fallback;
-  const db = openReadOnly(path);
-  if (!db) return fallback;
+  let db: ReadOnlyDb | undefined;
   try {
-    return use(db);
+    // A file that exists but isn't a readable database reads as empty too.
+    db = openReadOnly(path);
+    return db ? use(db) : fallback;
   } catch {
     return fallback;
   } finally {
-    db.close();
+    db?.close();
   }
 }
 

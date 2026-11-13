@@ -150,3 +150,13 @@ describe('OpenCode-format store', () => {
     expect(adapter.discover({ roots: ['/r'], sinceMs: 0 })).toEqual([]);
   });
 });
+
+describe('OpenCode-format store robustness', () => {
+  test('a file that is not a database reads as empty', () => {
+    const path = join(tempDir(), 'opencode.db');
+    require('node:fs').writeFileSync(path, 'not a database');
+    const adapter = opencodeStoreAdapter('opencode', 'OpenCode', () => path);
+    expect(adapter.count()).toBe(0);
+    expect(adapter.discover({ roots: ['/r'], sinceMs: 0 })).toEqual([]);
+  });
+});

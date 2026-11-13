@@ -94,7 +94,15 @@ export function installHooks(
     const owned = hookOf(t).text;
     if (owned) {
       const next = owned.render(commandsFor(t.agent, program));
-      if (readText(t.file) === next) return { ...base, result: 'unchanged' };
+      const current = readText(t.file);
+      if (current === next) return { ...base, result: 'unchanged' };
+      // Never replace a file of that name that Tracetoon didn't write.
+      if (current !== undefined && !owned.command(current))
+        return {
+          ...base,
+          result: 'skipped',
+          note: 'a file Tracetoon did not write is there; left untouched',
+        };
       mkdirSync(dirname(t.file), { recursive: true });
       writeFileSync(t.file, next, 'utf8');
       return { ...base, result: 'installed', note: hookOf(t).installNote?.(t.file, {}) };
