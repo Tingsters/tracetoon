@@ -9,8 +9,10 @@ import { switchState } from './switches.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
 import { splitCommands } from '../util/shell.ts';
 import { otherPrWrite, commandWords, ghCreatesPr } from './prCommands.ts';
+import { resolveHookHost } from '../integrations/registry.ts';
 
-export type HookAgent = 'claude' | 'codex' | 'antigravity';
+/** The id a host's hook passes as `--agent` (see src/integrations). */
+export type HookAgent = string;
 
 export const BYPASS_RE =
   /(^|[\s;&|(])TRACETOON=0\b|\$env:TRACETOON\s*=\s*['"]?0\b|\bset\s+"?TRACETOON=0\b/i;
@@ -29,54 +31,23 @@ export const DENY_REASON =
   'Only if the user explicitly asked for a plain PR without Tracetoon, re-run the command with TRACETOON=0 in front ' +
   "(PowerShell: $env:TRACETOON='0'; ...).";
 
-/** The command string from each agent's hook payload. */
-export function commandFrom(payload: unknown): { command?: string; cwd?: string } {
-  if (typeof payload !== 'object' || payload === null) return {};
-  const p = payload as Record<string, any>;
-  let command: unknown =
-    p.tool_input?.command ??
-    p.toolCall?.args?.CommandLine ??
-    p.tool_call?.args?.CommandLine;
-  if (typeof command === 'string' && /^\s*".*"\s*$/s.test(command)) {
-    try {
-      const unwrapped = JSON.parse(command); // Antigravity IDE double-encodes args
-      if (typeof unwrapped === 'string') command = unwrapped;
-    } catch {
-      /* keep as is */
-    }
-  }
-  const cwd =
-    p.tool_input?.workdir ??
-    p.tool_input?.cwd ??
-    p.toolCall?.args?.Cwd ??
-    p.cwd ??
-    p.workspace;
-  return {
-    command: typeof command === 'string' ? command : undefined,
-    cwd: typeof cwd === 'string' ? cwd : undefined,
-  };
-}
-
-/** The agent-specific answer that blocks the command, or undefined to allow it. */
+/**
+ * The answer that blocks the command, in the format of the host that sent the
+ * payload, or undefined to allow it.
+ */
 export function decide(
   agent: HookAgent,
   payload: unknown,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const { command, cwd } = commandFrom(payload);
+  const resolved = resolveHookHost(agent, payload);
+  if (!resolved) return undefined;
+  const { command, cwd } = resolved.payload;
   if (!command || BYPASS_RE.test(command)) return undefined;
   const effectiveCwd = leadingCd(command, cwd ?? process.cwd()) ?? cwd ?? process.cwd();
   if (!switchState(effectiveCwd, env).enabled) return undefined;
   if (!writesPr(command)) return undefined;
-  if (agent === 'antigravity')
-    return JSON.stringify({ decision: 'deny', reason: DENY_REASON });
-  return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: DENY_REASON,
-    },
-  });
+  return resolved.host.hook!.deny(DENY_REASON);
 }
 
 /** Read stdin with a time limit; an empty result means "allow". */

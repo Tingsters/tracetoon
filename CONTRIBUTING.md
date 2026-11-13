@@ -37,27 +37,44 @@ per budget, provenance lookup cost, and timings.
 
 | Path | What lives there |
 |---|---|
-| `src/trace/` | One adapter per agent (Claude Code, Codex, Antigravity). Each turns raw logs into normalized `TraceRecord`s and keeps each record's own cwd and branch. |
+| `src/integrations/` | One folder per agent host (`claude-code/`, `codex/`, `antigravity/`, ...). Each exports one `Integration`: its log adapters, hook config and payload format, skill folder and session variables. Host folders never import each other; `registry.ts` is the only module that imports them all. |
+| `src/trace/` | The agent-neutral record model (`types.ts`), discovery cache and diff helpers the log adapters share. Adapters turn raw logs into normalized `TraceRecord`s and keep each record's own cwd and branch. |
 | `src/git/` | What the PR is (base, commits, added lines), interop with Entire and git-ai |
 | `src/correlate/` | Which sessions and records belong to this PR, and line attribution |
 | `src/digest/` | The redacted, budgeted digest the agent writes from |
 | `src/graph/` | The evidence graph: built from the digest, trails and patch (`build.ts`), loaded into Relate WebAssembly (`engine.ts`), named queries for agents (`queries.ts`), and what Tracetoon derives from it for digests, notes and review (`derive.ts`). `vendor/` is pinned generated code; never edit it |
 | `src/comic/` | Script format, style ideas, bubbles, rasterizing, image providers |
 | `src/github/` | PR body region and metadata, assets branch, repo templates and policy |
-| `src/hook/` | The agent PR hook (`hook pre-pr`), its install/uninstall into each agent's config, and the on/off switches |
+| `src/hook/` | The host-neutral PR hook (`hook pre-pr`, `hook lifecycle`), install/uninstall, the shared Claude-style hook protocol (`claudeStyle.ts`), and the on/off switches |
 | `src/workflow/` | Worktree-local task lifecycle, exact-content validation receipts, host-session registry and publication recovery |
 | `src/commands/` | The CLI commands |
 | `plugin/skills/tracetoon/` | The Agent Skills folder that ships: SKILL.md, references, launchers, assets (the bundle and build.json are build outputs, not committed) |
 
 ## Adding an agent
 
-1. Look at real logs and write down the record shapes (names and types only).
-2. Add `src/trace/<agent>.ts` implementing `TraceAdapter`: `home`, `count`,
-   `discover` (cheap relevance check), `read` (full parse). Count unrecognized
-   record types in `unknownTypes`, so `doctor --probe` can spot format drift.
-3. Register it in `src/trace/registry.ts`, add parser tests in
-   `tests/adapters.test.ts` and an end-to-end test in `tests/flow.test.ts` with an
-   isolated home directory.
+Everything about one host lives in `src/integrations/<host>/`. It may import
+core modules (`src/trace`, `src/hook`, `src/util`), never another host's folder;
+`tests/integrations.test.ts` fails if it does.
+
+1. Run a real session headlessly in a scratch repo and look at the logs and the
+   hook payloads. Write down the record shapes (names and types only), and keep
+   scrubbed fixtures for tests.
+2. Add `trace.ts` implementing `TraceAdapter`: `home`, `count`, `discover`
+   (cheap relevance check), `read` (full parse). Count unrecognized record types
+   in `unknownTypes`, so `doctor --probe` can spot format drift.
+3. Add `index.ts` exporting `integration: Integration` (`src/integrations/types.ts`):
+   its trace adapters; `hook` (config file, `apply` to add and remove only
+   Tracetoon's entries, `parse` for its payloads, `deny` in its answer format);
+   `skill` (where it reads skills; hosts may share `~/.agents/skills`); and the
+   environment variables that carry its session id. A host that speaks Claude
+   Code's hook protocol builds its hook from `src/hook/claudeStyle.ts`.
+4. Register it in `src/integrations/registry.ts`, add a payload fixture to
+   `PAYLOADS` in `tests/integrations.test.ts` (the hook contract requires one),
+   parser tests in `tests/adapters.test.ts`, and an end-to-end test in
+   `tests/flow.test.ts` with an isolated home directory.
+5. Update the support table in `README.md`. The installers ask the binary
+   (`tracetoon integrations --skill-targets`) where the skill goes, so they need
+   no change.
 
 ## Before sending a change
 

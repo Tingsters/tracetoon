@@ -31,6 +31,18 @@ function Get-Targets {
   return $t
 }
 
+# The binary knows every agent it supports (tracetoon integrations). The list
+# above is only for binaries from releases before that command existed.
+function Get-BinaryTargets($exe) {
+  if (-not (Test-Path $exe)) { return @() }
+  try { $lines = @(& $exe integrations --skill-targets 2>$null) } catch { return @() }
+  if ($LASTEXITCODE -ne 0) { return @() }
+  return @($lines | Where-Object { $_ -match '\|' } | ForEach-Object {
+    $i = $_.LastIndexOf('|')
+    [pscustomobject]@{ Name = $_.Substring(0, $i); Dir = $_.Substring($i + 1) }
+  })
+}
+
 # The binary lives at a fixed path, so agent hooks keep working (and Codex keeps
 # its trust) across updates. The launchers check it first.
 $homeRoot = Join-Path $env:LOCALAPPDATA 'tracetoon'
@@ -40,7 +52,9 @@ $targets = @(Get-Targets)
 if ($env:TRACETOON_UNINSTALL -eq '1') {
   # Hooks first, while the binary is still around to remove them.
   if (Test-Path $stable) { & $stable hook uninstall }
-  foreach ($t in $targets) {
+  $known = @(Get-BinaryTargets $stable)
+  foreach ($t in $targets) { if (-not ($known | Where-Object { $_.Dir -eq $t.Dir })) { $known += $t } }
+  foreach ($t in $known) {
     if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir; Write-Host "removed from $($t.Name) ($($t.Dir))" }
   }
   if (Test-Path $homeRoot) { Remove-Item -Recurse -Force $homeRoot }
@@ -95,6 +109,8 @@ try {
   if ($LASTEXITCODE -ne 0 -or $manifest.version -ne $ver -or $binaryInfo.version -ne $ver -or $manifest.buildId -ne $binaryInfo.buildId) {
     throw 'Downloaded skill and runtime are different builds; nothing was activated.'
   }
+  $fromBinary = @(Get-BinaryTargets (Join-Path $tmp $bin))
+  if ($fromBinary.Count -gt 0) { $targets = $fromBinary }
   # Stage every skill before replacing any installed component. All moves stay
   # beside their explicitly selected tracetoon directory.
   foreach ($t in $targets) {

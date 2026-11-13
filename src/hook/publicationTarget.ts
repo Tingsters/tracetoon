@@ -1,12 +1,12 @@
 /** Resolve recognized publication commands without treating quoted examples as commands. */
 import { resolve } from 'node:path';
-import { commandFrom, writesPr } from './prHook.ts';
+import { writesPr } from './prHook.ts';
+import type { HookPayload } from '../integrations/types.ts';
 import { otherPrWrite, commandWords, createsPullRequest } from './prCommands.ts';
 import { repoRoot } from './switches.ts';
 import { splitCommands } from '../util/shell.ts';
 import { git } from '../util/exec.ts';
 
-type Payload = Record<string, any>;
 function remoteName(url: string): string | undefined {
   return /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/i.exec(url)?.[1]?.toLowerCase();
 }
@@ -22,11 +22,11 @@ function connectorRepo(input: Record<string, any>): string | undefined {
     : undefined;
 }
 export function publicationTargets(
-  p: Payload,
+  p: HookPayload,
   knownRoots: string[],
 ): { roots: string[]; kind: 'push' | 'pr' } | undefined {
-  const { command, cwd } = commandFrom(p);
-  const input = p.tool_input ?? p.toolCall?.args ?? p.tool_call?.args ?? {};
+  const { command, cwd } = p;
+  const input = p.toolInput;
   const known = [...new Set(knownRoots)];
   const forRepo = (name: string) =>
     known.filter(
@@ -39,7 +39,7 @@ export function publicationTargets(
     return root ? [root] : [];
   };
   if (!command) {
-    const tool = String(p.tool_name ?? p.toolCall?.name ?? p.tool_call?.name ?? '');
+    const tool = p.toolName ?? '';
     if (!/github/i.test(tool)) return;
     const operation = String(
       input.operation ?? input.action ?? input.method ?? '',

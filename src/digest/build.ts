@@ -2,6 +2,7 @@
  * The trace digest: a compact, redacted JSON summary of how the PR was made, sized
  * to fit an LLM's context. The host agent writes the PR description from this.
  */
+import { traceLabel } from '../integrations/registry.ts';
 import { createHash } from 'node:crypto';
 import {
   attribute,
@@ -474,13 +475,6 @@ export function hashId(salt: string, id: string): string {
   return 'h:' + createHash('sha256').update(`${salt}\0${id}`).digest('hex').slice(0, 12);
 }
 
-const AGENT_LABEL: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  'antigravity-cli': 'Antigravity CLI',
-  'antigravity-ide': 'Antigravity',
-};
-
 /**
  * What happened in a session, in order, keeping the turn each fact and edit
  * belongs to. Only the evidence graph reads it; it is never written out, and its
@@ -763,7 +757,7 @@ function sessionDigest(
     .sort();
   return {
     ref,
-    agent: AGENT_LABEL[m.session.agent] ?? m.session.agent,
+    agent: traceLabel(m.session.agent),
     title: m.session.title ? clip(scrub.text(m.session.title), 80) : undefined,
     models: [...models],
     span: { start: times[0], end: times[times.length - 1] },

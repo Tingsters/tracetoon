@@ -21,7 +21,7 @@ type Entry = {
 type Index = { v: 1; entries: Record<string, Entry> };
 const memory = new Map<string, Index>();
 
-export function discoveryIndex(query: DiscoverQuery, agent = 'codex') {
+export function discoveryIndex(query: DiscoverQuery, agent: string) {
   const key = createHash('sha256')
     .update(JSON.stringify([agent, query.roots, query.needles, query.all]))
     .digest('hex');

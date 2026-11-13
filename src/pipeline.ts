@@ -6,7 +6,7 @@ import {
   type SessionMatch,
 } from './correlate/correlate.ts';
 import { prTruth, type PrTruth, type TruthOptions } from './git/pr.ts';
-import { ADAPTERS } from './trace/registry.ts';
+import { ADAPTERS } from './integrations/registry.ts';
 import type { TraceSession } from './trace/types.ts';
 import { join } from 'node:path';
 import { tasks } from './workflow/state.ts';

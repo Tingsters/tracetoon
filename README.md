@@ -82,7 +82,7 @@ _"Open a PR for this branch with Tracetoon."_
 | Claude Code               | supported                                     |
 | Codex (CLI and app)       | supported                                     |
 | Antigravity (CLI and IDE) | supported                                     |
-| Gemini CLI                | runs the skill (its own logs aren't read yet) |
+| Gemini CLI                | legacy: runs the skill (replaced by Antigravity CLI for individual users) |
 | Copilot CLI               | planned                                       |
 
 To update, run `tracetoon update` (`tracetoon update --check` only reports; add

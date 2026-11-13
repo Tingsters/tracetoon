@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { hostHome } from '@showtail/agent-traces/paths/hostHome';
 import { hookStatus } from '../hook/install.ts';
 import { switchState } from '../hook/switches.ts';
-import { ADAPTERS, PLANNED } from '../trace/registry.ts';
+import { ADAPTERS, PLANNED, allSkillDirs } from '../integrations/registry.ts';
 import { gh, git, run } from '../util/exec.ts';
 import { TOOL_VERSION, BUILD_INFO, FROM_SOURCE } from '../version.ts';
 import { loadConfig, userConfigPath } from '../config.ts';
@@ -105,16 +105,7 @@ export function skillInstalls(
   buildId: string | null;
   matchesRuntime: boolean;
 }[] {
-  const gemini = env.GEMINI_HOME || join(home, '.gemini');
-  const places = [
-    {
-      agent: 'Claude Code',
-      dir: join(env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'skills', 'tracetoon'),
-    },
-    { agent: 'Codex', dir: join(home, '.agents', 'skills', 'tracetoon') },
-    { agent: 'Antigravity', dir: join(gemini, 'config', 'skills', 'tracetoon') },
-    { agent: 'Gemini CLI', dir: join(gemini, 'skills', 'tracetoon') },
-  ];
+  const places = allSkillDirs(home, env).map((p) => ({ agent: p.label, dir: p.dir }));
   return places
     .filter((p) => existsSync(join(p.dir, 'SKILL.md')))
     .map((p) => {

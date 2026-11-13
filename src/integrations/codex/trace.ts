@@ -17,10 +17,10 @@ import {
   linesFromUnifiedDiff,
   parseApplyPatch,
   splitLines,
-} from './diffLines.ts';
-import { mentionsAnyRoot } from './pathMatch.ts';
-import type { SessionRef, TraceAdapter, TraceSession } from './types.ts';
-import { discoveryIndex } from './discovery.ts';
+} from '../../trace/diffLines.ts';
+import { mentionsAnyRoot } from '../../trace/pathMatch.ts';
+import type { SessionRef, TraceAdapter, TraceSession } from '../../trace/types.ts';
+import { discoveryIndex } from '../../trace/discovery.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj =>
@@ -338,7 +338,7 @@ export const codexAdapter: TraceAdapter = {
   count: () => codex.findRollouts().length,
   discover(query) {
     const { sinceMs } = query;
-    const index = discoveryIndex(query);
+    const index = discoveryIndex(query, 'codex');
     const out: SessionRef[] = [];
     for (const r of codex.findRollouts()) {
       const info = index.inspect(r.path);

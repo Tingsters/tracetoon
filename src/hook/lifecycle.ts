@@ -10,7 +10,9 @@ import {
   workFingerprint,
 } from '../workflow/state.ts';
 import { readHost, rememberRepository } from '../workflow/hostSession.ts';
-import { commandFrom, readStdin, type HookAgent, BYPASS_RE } from './prHook.ts';
+import { readStdin, type HookAgent, BYPASS_RE } from './prHook.ts';
+import { resolveHookHost } from '../integrations/registry.ts';
+import type { HookPayload } from '../integrations/types.ts';
 import { switchState } from './switches.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
 import type { Approval } from '../commands/publish.ts';
@@ -19,32 +21,23 @@ import { userConfigPath } from '../config.ts';
 import { publicationTargets } from './publicationTarget.ts';
 import { updateNotice } from '../update/state.ts';
 
-type Payload = Record<string, any>;
 // Stop remains accepted for installed hooks from older releases, but is inert.
 export type LifecycleEvent = 'SessionStart' | 'PreToolUse' | 'PostToolUse' | 'Stop';
 
-export function sessionId(p: Payload): string | undefined {
-  return [p.session_id, p.sessionId, p.conversationId, p.conversation_id].find(
-    (v) => typeof v === 'string' && v.length,
-  );
-}
-
-function payloadRoots(p: Payload): string[] {
-  const raw = p.tool_input ?? p.toolCall?.args ?? p.tool_call?.args ?? {};
-  const input = typeof raw === 'string' ? { input: raw } : raw;
-  const { command, cwd } = commandFrom(p);
+function payloadRoots(p: HookPayload): string[] {
+  const input = p.toolInput;
+  const { command, cwd } = p;
   const base =
     input.workdir ??
     input.cwd ??
     input.Cwd ??
     cwd ??
-    p.workspacePaths?.[0] ??
+    p.workspaceRoots[0] ??
     process.cwd();
   const candidates: string[] = [base];
   const moved = command ? leadingCd(command, base) : undefined;
   if (moved) candidates.unshift(moved);
-  const gitAt =
-    command && /\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/.exec(command);
+  const gitAt = command && /git\s+-C\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/.exec(command);
   if (gitAt) candidates.unshift(resolve(base, gitAt[1] ?? gitAt[2] ?? gitAt[3]!));
   for (const field of [
     'file_path',
@@ -76,35 +69,23 @@ function payloadRoots(p: Payload): string[] {
   return roots;
 }
 
-function denyPublication(agent: HookAgent, reason: string): string {
-  return JSON.stringify(
-    agent === 'antigravity'
-      ? { decision: 'deny', reason }
-      : {
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            permissionDecision: 'deny',
-            permissionDecisionReason: reason,
-          },
-        },
-  );
-}
-
 export function lifecycle(
   agent: HookAgent,
   event: LifecycleEvent,
-  p: Payload,
+  raw: unknown,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   if (event === 'Stop') return;
-  const cwd = commandFrom(p).cwd ?? p.workspacePaths?.[0] ?? process.cwd();
+  const resolved = resolveHookHost(agent, raw);
+  if (!resolved) return;
+  const { host: sender, payload: p } = resolved;
+  const deny = (reason: string) => sender.hook!.deny(reason);
+  const cwd = p.cwd ?? p.workspaceRoots[0] ?? process.cwd();
   const state = switchState(cwd, env);
   if (
     (!state.enabled && !['repo', 'local'].includes(state.decidedBy)) ||
-    p.permission_mode === 'plan' ||
-    p.permissionMode === 'plan' ||
-    p.is_subagent ||
-    p.parent_session_id
+    p.planMode ||
+    p.subagent
   )
     return;
   const healthPath = join(dirname(userConfigPath()), 'hook-health.json');
@@ -123,11 +104,11 @@ export function lifecycle(
   }
   // Said at the end of the session start; reads only local files.
   const notice = event === 'SessionStart' ? updateNotice(agent, env) : undefined;
-  const id = sessionId(p);
-  const command = commandFrom(p).command;
+  const id = p.sessionId;
+  const command = p.command;
   if (command && BYPASS_RE.test(command)) return;
   if (!id) return notice; // No shared anonymous registry.
-  const transcript = p.transcript_path ?? p.transcriptPath;
+  const transcript = p.transcript;
   let host = readHost(id);
   const allRoots = payloadRoots(p);
   for (const root of allRoots.filter((r) => switchState(r, env).enabled)) {
@@ -145,8 +126,7 @@ export function lifecycle(
   const targets = publicationTargets(p, [...allRoots, ...host.repos.map((r) => r.root)]);
   if (targets?.kind !== 'pr') return;
   if (!targets.roots.length)
-    return denyPublication(
-      agent,
+    return deny(
       'Resolve the actual repository/worktree for this PR and create it with Tracetoon. No local target could be checked.',
     );
   for (const root of targets.roots.filter((r) => switchState(r, env).enabled)) {
@@ -164,8 +144,7 @@ export function lifecycle(
             fingerprint,
       );
       if (published)
-        return denyPublication(
-          agent,
+        return deny(
           `This snapshot already has a PR. Use tracetoon publish --run ${published.run.id} to retrieve or reconcile it, then continue the user's task.`,
         );
       const started = beginTask(root, {
@@ -185,8 +164,7 @@ export function lifecycle(
       task.reason = undefined;
     }
     saveTask(active.run, task);
-    return denyPublication(
-      agent,
+    return deny(
       `Task ${active.run.id}: make this PR with the tracetoon skill, using tracetoon publish --run ${active.run.id}; it writes the description and comic, then creates the PR without a routine approval step. Preserve the requested repository, branches, draft status and metadata. Report the result, then continue the user's task. Only PR creation is intercepted.`,
     );
   }
