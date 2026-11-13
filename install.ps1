@@ -1,6 +1,6 @@
 # Tracetoon installer for Windows (PowerShell 5.1 or 7+).
 #
-#   irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
 # Codex, Antigravity, Factory Droid, Copilot, Cursor, Gemini CLI), caches the prebuilt binary so nothing else
@@ -13,7 +13,7 @@
 #   $env:TRACETOON_UNINSTALL = '1'      remove the skill, the hooks and the cached binary
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$repo = 'Tingsters/tracetoon'
+$repo = 'Tracetoon/tracetoon'
 
 function Has($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
