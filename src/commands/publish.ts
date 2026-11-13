@@ -134,11 +134,11 @@ export function disclosureLine(
   if (form === 'tool-and-use') {
     // e.g. Django, Ghostty: name the tool and model, and say what it was used for.
     const models = digest.disclosure.models.join(', ');
-    return `<sub>AI use: ${tools}${models ? ` (${models})` : ''} assisted with the code; this description was drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon).</sub>`;
+    return `<sub>AI use: ${tools}${models ? ` (${models})` : ''} assisted with the code; this description was drafted from the session logs with [Tracetoon](https://github.com/Tracetoon/tracetoon).</sub>`;
   }
   const trailer =
     mode === 'assisted-by' ? trailers.join(' · ') : `AI-assisted with ${tools}`;
-  return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tingsters/tracetoon)</sub>`;
+  return `<sub>${trailer} · description drafted from the session logs with [Tracetoon](https://github.com/Tracetoon/tracetoon)</sub>`;
 }
 
 /** Whether the PR has a comic and, if not, why. */
@@ -449,7 +449,7 @@ export function renderCmd(cwd: string, opts: RenderOpts): Approval {
       ? ''
       : disclosureLine(digest, disclosureMode, ctx.aiPolicy.disclosure) ||
         (composition.disclosure === 'required'
-          ? '<sub>This description was drafted with [Tracetoon](https://github.com/Tingsters/tracetoon).</sub>'
+          ? '<sub>This description was drafted with [Tracetoon](https://github.com/Tracetoon/tracetoon).</sub>'
           : '');
   if (disclosure) content = `${content.trim()}\n\n${disclosure}`;
 

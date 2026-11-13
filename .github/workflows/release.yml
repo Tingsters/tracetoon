@@ -43,6 +43,9 @@ jobs:
         run: bun .github/scripts/release-assets.ts verify release release-promotion.json "$GITHUB_REF_NAME"
       - name: Write the recorded release basis
         run: bun .github/scripts/release-assets.ts notes release-promotion.json > release-notes.md
+      # Fails before anything is public if the release branch can't take this release.
+      - name: Check the plugin bundle can go on the release branch
+        run: bun .github/scripts/release-branch.ts release release-promotion.json "$GITHUB_REF_NAME"
       - name: Publish the verified assets
         env:
           GH_TOKEN: ${{ github.token }}
