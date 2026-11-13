@@ -11,7 +11,7 @@ When you ask your agent for a PR, Tracetoon writes it, checks it, and creates it
 ## Better PRs
 
 The sessions behind your branch are already on your machine: Claude Code, Codex,
-Antigravity and Factory Droid keep their logs. Tracetoon finds the ones that produced this
+Antigravity, Factory Droid and Copilot keep their logs. Tracetoon finds the ones that produced this
 branch and turns them into a redacted digest your agent writes from.
 
 - **Written from evidence.** What you asked for, the plan you approved, the
@@ -84,7 +84,7 @@ _"Open a PR for this branch with Tracetoon."_
 | Antigravity (CLI and IDE) | supported                                     |
 | Factory Droid             | supported                                     |
 | Gemini CLI                | legacy: runs the skill (replaced by Antigravity CLI for individual users) |
-| Copilot CLI               | planned                                       |
+| Copilot (CLI and VS Code) | supported                                     |
 
 To update, run `tracetoon update` (`tracetoon update --check` only reports; add
 `--exit-code` to exit 10 when a newer release exists). It downloads the latest
@@ -178,6 +178,7 @@ Turn it off at whichever level you need. Any "off" wins:
 | Codex       | `~/.agents/skills/tracetoon` (or `.agents/skills/` in a repo)        |
 | Antigravity | `~/.gemini/config/skills/tracetoon` (or `.agents/skills/` in a repo) |
 | Factory Droid | `~/.agents/skills/tracetoon` (shared with Codex)                   |
+| Copilot     | `~/.agents/skills/tracetoon` (shared with Codex)                     |
 | Gemini CLI  | `~/.gemini/skills/tracetoon`                                         |
 
 </details>

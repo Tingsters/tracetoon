@@ -62,6 +62,15 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     tool_name: 'Execute',
     tool_input: { command, summary: 'run it', riskLevel: 'low' },
   }),
+  // Copilot CLI's camelCase payload; toolArgs is an object for shell tools.
+  copilot: (command, cwd) => ({
+    sessionId: 's1',
+    timestamp: 1794569002608,
+    cwd,
+    toolCallId: 'call_1',
+    toolName: 'powershell',
+    toolArgs: { command, description: 'run it' },
+  }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
     transcriptPath: '/t.jsonl',
@@ -119,6 +128,18 @@ describe('hook contract', () => {
     prePr: '/opt/tracetoon/bin/tracetoon hook pre-pr --agent X',
     lifecycle: (e) =>
       `/opt/tracetoon/bin/tracetoon hook lifecycle --agent X --event ${e}`,
+    argv: {
+      prePr: ['/opt/tracetoon/bin/tracetoon', 'hook', 'pre-pr', '--agent', 'X'],
+      lifecycle: (e) => [
+        '/opt/tracetoon/bin/tracetoon',
+        'hook',
+        'lifecycle',
+        '--agent',
+        'X',
+        '--event',
+        e,
+      ],
+    },
   };
   const foreign = { other: { hooks: [{ command: 'not-ours' }] }, hooks: {} };
 

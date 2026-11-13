@@ -37,6 +37,12 @@ export interface HookCommands {
   prePr: string;
   /** `<program> hook lifecycle --agent <id> --event <event>` */
   lifecycle(event: string): string;
+  /**
+   * The same commands as argument lists (program first, forward slashes, no
+   * quoting), for hosts that start a program directly instead of through a
+   * shell (Copilot's `exec` and `args`).
+   */
+  argv?: { prePr: string[]; lifecycle(event: string): string[] };
 }
 
 export interface HookIntegration {

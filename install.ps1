@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Gemini CLI), caches the prebuilt binary so nothing else
+# Codex, Antigravity, Factory Droid, Copilot, Gemini CLI), caches the prebuilt binary so nothing else
 # (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -29,8 +29,10 @@ function Get-Targets {
   }
   $factory = if ($env:FACTORY_HOME) { $env:FACTORY_HOME } else { Join-Path $HOME '.factory' }
   if ((Test-Path $factory) -or (Has 'droid')) { $t += [pscustomobject]@{ Name = 'Factory Droid'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  $copilot = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Path $HOME '.copilot' }
+  if ((Test-Path $copilot) -or (Has 'copilot')) { $t += [pscustomobject]@{ Name = 'Copilot'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
   if (Has 'gemini') { $t += [pscustomobject]@{ Name = 'Gemini CLI'; Dir = Join-Path $gemini 'skills\tracetoon' } }
-  # Hosts can share a folder (Codex and Factory Droid read ~/.agents/skills).
+  # Hosts can share a folder (Codex, Factory Droid and Copilot read ~/.agents/skills).
   $seen = @{}
   return @($t | Where-Object { if ($seen.ContainsKey($_.Dir)) { $false } else { $seen[$_.Dir] = $true; $true } })
 }
@@ -71,7 +73,7 @@ if ($env:TRACETOON_UNINSTALL -eq '1') {
   return
 }
 
-if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Gemini CLI).' }
+if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Gemini CLI).' }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 $bin = "tracetoon-windows-$arch.exe"
