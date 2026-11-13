@@ -436,6 +436,8 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.factory'), { recursive: true });
     mkdirSync(join(h, '.copilot'), { recursive: true });
     mkdirSync(join(h, '.cursor'), { recursive: true });
+    mkdirSync(join(h, '.config', 'opencode'), { recursive: true });
+    mkdirSync(join(h, '.config', 'kilo'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -470,9 +472,13 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -510,6 +516,13 @@ describe('installing the hook', () => {
       readFileSync(join(h, '.copilot', 'hooks', 'tracetoon.json'), 'utf8'),
     );
     // Cursor's hooks.json: entries sit directly under each event, PR route on beforeShellExecution.
+    // OpenCode and Kilo get a plugin file that names the command it runs.
+    const plugin = readFileSync(
+      join(h, '.config', 'kilo', 'plugins', 'tracetoon.js'),
+      'utf8',
+    );
+    expect(plugin).toContain('hook pre-pr --agent kilo');
+    expect(plugin).toContain("'tool.execute.before'");
     const cursor = JSON.parse(readFileSync(join(h, '.cursor', 'hooks.json'), 'utf8'));
     expect(cursor.version).toBe(1);
     expect(cursor.hooks.beforeShellExecution[0].command).toContain(
@@ -532,9 +545,13 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -549,13 +566,17 @@ describe('installing the hook', () => {
     expect(existsSync(join(h, '.factory', 'hooks.json'))).toBe(false);
     expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
     expect(existsSync(join(h, '.cursor', 'hooks.json'))).toBe(false);
+    expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
+      false,
+    );
     expect(
       JSON.parse(readFileSync(join(h, '.gemini', 'config', 'hooks.json'), 'utf8')),
     ).toEqual({ 'showtail-cli': { enabled: true } });
   });
 
   test('upgrades remove only Tracetoon Stop hooks and preserve other settings', () => {
-    const targets = hookTargets(home(), {});
+    // Plugin files (OpenCode, Kilo) are Tracetoon's own and hold no JSON settings.
+    const targets = hookTargets(home(), {}).filter((t) => !t.file.endsWith('.js'));
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
       const old = {
@@ -617,6 +638,8 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
+      'not installed',
       'not installed',
       'not installed',
       'not installed',

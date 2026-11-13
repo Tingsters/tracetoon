@@ -64,6 +64,16 @@ export interface HookIntegration {
   parse(raw: unknown): HookPayload | undefined;
   /** The answer that blocks the tool call, in this host's format. */
   deny(reason: string): string;
+  /**
+   * For a host whose hook is a source file Tracetoon owns outright (OpenCode's
+   * plugins) rather than a JSON config: the whole file, and the pre-pr command a
+   * written file runs. With `text`, the engine writes and removes the file
+   * itself and `apply` / `installedCommand` are not used.
+   */
+  text?: {
+    render(commands: HookCommands): string;
+    command(text: string): string | undefined;
+  };
   /** Something to tell the user after installing (a trust or restart step). */
   installNote?(file: string, data: Json): string | undefined;
   /** Something that stops an installed hook from running. */

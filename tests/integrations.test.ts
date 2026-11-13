@@ -83,6 +83,25 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     cwd,
     sandbox: false,
   }),
+  // What Tracetoon's OpenCode plugin sends (Kilo's is the same with host: 'kilo').
+  opencode: (command, cwd) => ({
+    source: 'tracetoon-plugin',
+    host: 'opencode',
+    sessionID: 'ses_1',
+    tool: 'bash',
+    callID: 'call_1',
+    args: { command },
+    directory: cwd,
+  }),
+  kilo: (command, cwd) => ({
+    source: 'tracetoon-plugin',
+    host: 'kilo',
+    sessionID: 'ses_1',
+    tool: 'bash',
+    callID: 'call_1',
+    args: { command },
+    directory: cwd,
+  }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
     transcriptPath: '/t.jsonl',
@@ -158,6 +177,14 @@ describe('hook contract', () => {
   for (const i of INTEGRATIONS.filter((i) => i.hook)) {
     const hook = i.hook!;
     test(`${i.label}: install is idempotent and uninstall restores the config`, () => {
+      if (hook.text) {
+        // A file Tracetoon owns: rendering is stable and names the pre-pr command.
+        const text = hook.text.render(commands);
+        expect(hook.text.render(commands)).toBe(text);
+        expect(hook.text.command(text)).toBe(commands.prePr);
+        expect(hook.text.command('// another plugin')).toBeUndefined();
+        return;
+      }
       const once = hook.apply(foreign, commands);
       expect(hook.apply(once, commands)).toEqual(once);
       expect(hook.installedCommand(once)).toBe(commands.prePr);

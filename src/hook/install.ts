@@ -8,7 +8,9 @@
  * file that isn't valid JSON is left alone, and each file is backed up once
  * (<file>.tracetoon.bak) before the first change.
  */
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 import { INTEGRATIONS, integration } from '../integrations/registry.ts';
 import type { HookCommands, HookIntegration, Json } from '../integrations/types.ts';
 import { readStrict, writeConfig } from './config.ts';
@@ -89,6 +91,14 @@ export function installHooks(
   return targets.map((t) => {
     const base = { agent: t.agent, label: t.label, file: t.file };
     if (!t.present) return { ...base, result: 'skipped', note: 'not installed' };
+    const owned = hookOf(t).text;
+    if (owned) {
+      const next = owned.render(commandsFor(t.agent, program));
+      if (readText(t.file) === next) return { ...base, result: 'unchanged' };
+      mkdirSync(dirname(t.file), { recursive: true });
+      writeFileSync(t.file, next, 'utf8');
+      return { ...base, result: 'installed', note: hookOf(t).installNote?.(t.file, {}) };
+    }
     let data: Json;
     try {
       data = readStrict(t.file);
@@ -111,6 +121,15 @@ export function installHooks(
 export function uninstallHooks(targets = hookTargets()): HookChange[] {
   return targets.map((t) => {
     const base = { agent: t.agent, label: t.label, file: t.file };
+    const owned = hookOf(t).text;
+    if (owned) {
+      // Only a file Tracetoon wrote is removed.
+      const text = readText(t.file);
+      if (text === undefined || !owned.command(text))
+        return { ...base, result: 'unchanged' };
+      rmSync(t.file, { force: true });
+      return { ...base, result: 'removed' };
+    }
     let data: Json;
     try {
       data = readStrict(t.file);
@@ -123,6 +142,17 @@ export function uninstallHooks(targets = hookTargets()): HookChange[] {
     writeConfig(t.file, next);
     return { ...base, result: 'removed' };
   });
+}
+
+const COVERAGE =
+  'PR creation through recognized shell commands and GitHub connectors; existing PR operations, pushes and read-only commands are left alone. Arbitrary network scripts are not intercepted.';
+
+function readText(file: string): string | undefined {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return undefined;
+  }
 }
 
 export interface HookState {
@@ -143,6 +173,23 @@ export interface HookState {
 /** Whether each agent currently has the Tracetoon hook, and whether it will actually run. */
 export function hookStatus(targets = hookTargets()): HookState[] {
   return targets.map((t) => {
+    const owned = hookOf(t).text;
+    if (owned) {
+      const command = (() => {
+        const text = readText(t.file);
+        return text === undefined ? undefined : owned.command(text);
+      })();
+      return {
+        agent: t.agent,
+        label: t.label,
+        present: t.present,
+        installed: !!command,
+        file: t.file,
+        completionInstalled: false,
+        command,
+        coverage: COVERAGE,
+      };
+    }
     let data: Json = {};
     let unreadable = false;
     try {
@@ -165,8 +212,7 @@ export function hookStatus(targets = hookTargets()): HookState[] {
       completionInstalled:
         text.includes('hook lifecycle') && text.includes('--event Stop'),
       command: hook.installedCommand(data),
-      coverage:
-        'PR creation through recognized shell commands and GitHub connectors; existing PR operations, pushes and read-only commands are left alone. Arbitrary network scripts are not intercepted.',
+      coverage: COVERAGE,
     };
     if (unreadable) state.problem = `${t.file} is not valid JSON`;
     else if (installed) state.problem = hook.problem?.(t.file, data);
