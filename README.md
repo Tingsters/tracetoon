@@ -3,14 +3,14 @@
 <p align="center"><b>PRs with receipts. And comics.</b></p>
 
 <p align="center">
-  <a href="https://tracetoon.com"><img alt="Website: tracetoon.com" src="https://img.shields.io/badge/web-tracetoon.com-c2410c?style=for-the-badge"></a>
+  <a href="https://tracetoon.ai"><img alt="Website: tracetoon.ai" src="https://img.shields.io/badge/web-tracetoon.ai-c2410c?style=for-the-badge"></a>
   <a href="https://github.com/Tracetoon/tracetoon/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Tracetoon/tracetoon?include_prereleases&style=for-the-badge&color=ffd84a&labelColor=1b1913"></a>
   <a href="https://github.com/Tracetoon/tracetoon/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Tracetoon/tracetoon/ci.yml?branch=main&style=for-the-badge&label=CI"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0f8f80?style=for-the-badge"></a>
   <a href="#-contributing-ai-welcome-comics-wanted"><img alt="AI contributions welcome" src="https://img.shields.io/badge/AI_PRs-welcome-15803d?style=for-the-badge"></a>
 </p>
 
-<p align="center"><a href="https://tracetoon.com"><img src="docs/img/hero.webp" alt="Comic titled NO MORE PR SLOP. Before: a developer recoils from a pull request reading 'Improves robustness and code quality. All tests pass (probably)'. After: the same developer grins and points at a pull request reading 'What you asked. What ran. What changed.' with a comic pinned to it." width="760"></a></p>
+<p align="center"><a href="https://tracetoon.ai"><img src="docs/img/hero.webp" alt="Comic titled NO MORE PR SLOP. Before: a developer recoils from a pull request reading 'Improves robustness and code quality. All tests pass (probably)'. After: the same developer grins and points at a pull request reading 'What you asked. What ran. What changed.' with a comic pinned to it." width="760"></a></p>
 
 Your coding agent already kept the receipts: what you asked for, what it
 changed, what actually ran. **Tracetoon turns them into a pull request reviewers
@@ -26,7 +26,7 @@ write, and there's a comic on top.
 <sub>From prbench: 5 real PRs from Tracetoon's own development, 5 drafts per PR
 per setup, scored by AI judges. The sample is small and scores vary by about ±3
 points between runs, so read these as development numbers. See the
-<a href="https://tracetoon.com/evidence-graph.html">full results</a>, methods
+<a href="https://tracetoon.ai/evidence-graph.html">full results</a>, methods
 and caveats.</sub>
 
 </div>
@@ -97,7 +97,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 
 ## 🧾 Better PRs: judged blind, picked almost every time
 
-<p align="center"><a href="https://tracetoon.com/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
+<p align="center"><a href="https://tracetoon.ai/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
 
 AI-written PRs are usually vague and padded, and they sound sure about tests
 nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode and Kilo already keep session logs on
@@ -140,7 +140,7 @@ read both orders and all four readings agree.
 
 ## 🕵️ Evidence graph: every sentence has a receipt
 
-<p align="center"><a href="https://tracetoon.com/#graph"><img src="docs/img/comic-graph.webp" alt="Two-panel comic. Where did this come from: a baffled developer surrounded by log printouts stares at a pull request under a giant ??? . Follow the string: the developer, now in a detective hat with a magnifying glass, points at a cork board where red string links cards labeled Your request, The edit, Test run and PR sentence." width="640"></a></p>
+<p align="center"><a href="https://tracetoon.ai/#graph"><img src="docs/img/comic-graph.webp" alt="Two-panel comic. Where did this come from: a baffled developer surrounded by log printouts stares at a pull request under a giant ??? . Follow the string: the developer, now in a detective hat with a magnifying glass, points at a cork board where red string links cards labeled Your request, The edit, Test run and PR sentence." width="640"></a></p>
 
 Before any model writes a word, Tracetoon builds a small graph of your branch
 (`evidence-graph.json` in the run folder). It links every change in the diff
@@ -184,7 +184,7 @@ Named queries also include `verified`, `unexplained`, `turn <S#>`, `dead-ends`,
 
 ## 📦 Embedded database: a graph database that fits in your pocket
 
-<p align="center"><a href="https://tracetoon.com/#embedded"><img src="docs/img/comic-embedded.webp" alt="Two-panel comic. Most graph databases: a giant angry server rack tangled in cables, with a sticky note reading 'Setup: 3 days', looms over a panicking developer. Relate, embedded: the developer relaxes on a park bench with a laptop and opens a lunchbox holding a tiny glowing graph, saying 'No server? Nice.' while the server rack sulks in the distance." width="640"></a></p>
+<p align="center"><a href="https://tracetoon.ai/#embedded"><img src="docs/img/comic-embedded.webp" alt="Two-panel comic. Most graph databases: a giant angry server rack tangled in cables, with a sticky note reading 'Setup: 3 days', looms over a panicking developer. Relate, embedded: the developer relaxes on a park bench with a laptop and opens a lunchbox holding a tiny glowing graph, saying 'No server? Nice.' while the server rack sulks in the distance." width="640"></a></p>
 
 The graph runs on [Relate](https://github.com/relatedb/relate), an open-source
 embedded graph database written in Rust. Tracetoon ships it compiled to
@@ -212,7 +212,7 @@ WebAssembly (`assets/relate.wasm`) inside the CLI.
 
 ## 💸 Cost: a sharp brief lets cheap workers check the work
 
-<p align="center"><a href="https://tracetoon.com/#cost"><img src="docs/img/comic-cost.webp" alt="Two-panel comic. Without the graph: three tired robots buried in scrolls of session logs say 'Re-reading it. Again.' With the graph: one cheerful robot holds up a map labeled evidence graph and says 'Done. Two checks. Half the tokens.' while two small flying reviewer robots inspect it with magnifying glasses." width="640"></a></p>
+<p align="center"><a href="https://tracetoon.ai/#cost"><img src="docs/img/comic-cost.webp" alt="Two-panel comic. Without the graph: three tired robots buried in scrolls of session logs say 'Re-reading it. Again.' With the graph: one cheerful robot holds up a map labeled evidence graph and says 'Done. Two checks. Half the tokens.' while two small flying reviewer robots inspect it with magnifying glasses." width="640"></a></p>
 
 Without a map, an expensive model rereads your source to check its own claims,
 two or three times per PR. With the graph, that work is done once, before any
@@ -324,7 +324,7 @@ add `export OPENAI_API_KEY="<key>"` to your shell profile.
 
 ## 🤝 Fits your workflow: it knows the house rules
 
-<p align="center"><a href="https://tracetoon.com/#control"><img src="docs/img/comic-workflow.webp" alt="Two-panel comic. Just ask: a relaxed developer with a coffee mug says 'Open a PR for this branch.' and a robot gives a thumbs up. House rules: the robot points at a monitor reading PR OPENED, says 'Done! Comic skipped.' and tucks a comic strip into a drawer under a framed sign reading NO IMAGES IN PRs." width="640"></a></p>
+<p align="center"><a href="https://tracetoon.ai/#control"><img src="docs/img/comic-workflow.webp" alt="Two-panel comic. Just ask: a relaxed developer with a coffee mug says 'Open a PR for this branch.' and a robot gives a thumbs up. House rules: the robot points at a monitor reading PR OPENED, says 'Done! Comic skipped.' and tucks a comic strip into a drawer under a framed sign reading NO IMAGES IN PRs." width="640"></a></p>
 
 - **Nothing new to learn.** Ask for a PR, or let your agent run `gh pr create`.
   There is no preview or approval step: the agent prepares the PR, has it
@@ -726,8 +726,8 @@ evaluation scripts, the Relate WebAssembly pin and the release process.
 ---
 
 <p align="center">
-<a href="https://tracetoon.com">tracetoon.com</a> ·
-<a href="https://tracetoon.com/evidence-graph.html">Evidence graph results</a> ·
+<a href="https://tracetoon.ai">tracetoon.ai</a> ·
+<a href="https://tracetoon.ai/evidence-graph.html">Evidence graph results</a> ·
 <a href="https://github.com/relatedb/relate">Built on Relate</a> ·
 <a href="https://github.com/Tingsters/Showtail/tree/main/packages/agent-traces"><code>@showtail/agent-traces</code></a>
 </p>
