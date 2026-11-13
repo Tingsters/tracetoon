@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0-rc.25",
+  "buildId": "5f8dee49a409f798a10219934531aee56b6733915323606477c3dd48267a68e9",
+  "revision": "56cc97bce0b372ca167b94732425b05638dabff2",
+  "protocol": 2,
+  "dependencies": [
+    {
+      "name": "@showtail/agent-traces",
+      "revision": "dd0b6f40a09e206c1571a0440f2bdc2b78222c18",
+      "packageTree": "6eb00aad7a5c9aa7d54b6dbe3bdb1cd4cb17957e",
+      "sha256": "93ff323d6a1b62fe571a771facbbb17186c0530d7372b5b68b8763838fad78de"
+    }
+  ],
+  "compiler": {
+    "name": "bun",
+    "version": "1.3.14"
+  },
+  "recipe": {
+    "schema": "tracetoon.build-recipe/v1",
+    "bunVersion": "1.3.14",
+    "identity": "__TRACETOON_BUILD__",
+    "bundle": {
+      "target": "node",
+      "format": "esm",
+      "minify": true,
+      "ascii": true
+    },
+    "native": {
+      "minify": true,
+      "targets": [
+        "linux-x64",
+        "linux-arm64",
+        "darwin-x64",
+        "darwin-arm64",
+        "windows-x64"
+      ]
+    }
+  }
+}
