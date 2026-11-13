@@ -11,7 +11,7 @@ import {
 } from '../workflow/state.ts';
 import { readHost, rememberRepository } from '../workflow/hostSession.ts';
 import { readStdin, type HookAgent, BYPASS_RE } from './prHook.ts';
-import { resolveHookHost } from '../integrations/registry.ts';
+import { integration, resolveHookHost } from '../integrations/registry.ts';
 import type { HookPayload } from '../integrations/types.ts';
 import { switchState } from './switches.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
@@ -23,6 +23,13 @@ import { updateNotice } from '../update/state.ts';
 
 // Stop remains accepted for installed hooks from older releases, but is inert.
 export type LifecycleEvent = 'SessionStart' | 'PreToolUse' | 'PostToolUse' | 'Stop';
+
+const EMPTY_PAYLOAD: HookPayload = {
+  toolInput: {},
+  workspaceRoots: [],
+  planMode: false,
+  subagent: false,
+};
 
 function payloadRoots(p: HookPayload): string[] {
   const input = p.toolInput;
@@ -37,7 +44,8 @@ function payloadRoots(p: HookPayload): string[] {
   const candidates: string[] = [base];
   const moved = command ? leadingCd(command, base) : undefined;
   if (moved) candidates.unshift(moved);
-  const gitAt = command && /git\s+-C\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/.exec(command);
+  const gitAt =
+    command && /\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/.exec(command);
   if (gitAt) candidates.unshift(resolve(base, gitAt[1] ?? gitAt[2] ?? gitAt[3]!));
   for (const field of [
     'file_path',
@@ -76,7 +84,12 @@ export function lifecycle(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   if (event === 'Stop') return;
-  const resolved = resolveHookHost(agent, raw);
+  // A payload no host recognizes is observed as empty under the registered host:
+  // it can't name a session or a command, but SessionStart still gets the notice.
+  const registered = integration(agent);
+  const resolved =
+    resolveHookHost(agent, raw) ??
+    (registered?.hook ? { host: registered, payload: EMPTY_PAYLOAD } : undefined);
   if (!resolved) return;
   const { host: sender, payload: p } = resolved;
   const deny = (reason: string) => sender.hook!.deny(reason);
