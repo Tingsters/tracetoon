@@ -1,6 +1,6 @@
-# tracetoon.com site (gh-pages branch)
+# tracetoon.ai site (gh-pages branch)
 
-This branch is the website at https://tracetoon.com. The code and docs live on `main`; do not put site files there.
+This branch is the website at https://tracetoon.ai. The code and docs live on `main`; do not put site files there.
 
 ## Pages
 
@@ -24,7 +24,7 @@ Every number on the landing page comes from `evidence-graph.html` (round 23, the
 
 ## Do not delete
 
-- `CNAME`: tells GitHub the site's domain. Removing it takes tracetoon.com offline.
+- `CNAME`: tells GitHub the site's domain. Removing it takes tracetoon.ai offline.
 - `.nojekyll`: keeps GitHub from processing the files.
 - `tracetoon-hero.png`: the original top image. Older links may point to it.
 
