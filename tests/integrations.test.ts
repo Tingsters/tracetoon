@@ -264,3 +264,37 @@ describe('Factory Droid', () => {
     ).toBe('droid');
   });
 });
+
+describe('Copilot', () => {
+  test('the blocking lifecycle observer only matches shell and GitHub tools', () => {
+    const copilot = INTEGRATIONS.find((i) => i.id === 'copilot')!;
+    const data = copilot.hook!.apply(
+      {},
+      {
+        prePr: 'tracetoon hook pre-pr --agent copilot',
+        lifecycle: (e) => `tracetoon hook lifecycle --agent copilot --event ${e}`,
+        argv: {
+          prePr: ['tracetoon', 'hook', 'pre-pr', '--agent', 'copilot'],
+          lifecycle: (e) => [
+            'tracetoon',
+            'hook',
+            'lifecycle',
+            '--agent',
+            'copilot',
+            '--event',
+            e,
+          ],
+        },
+      },
+    );
+    const matchers: string[] = data.hooks.preToolUse.map(
+      (g: { matcher?: string }) => g.matcher,
+    );
+    expect(matchers.every(Boolean)).toBe(true);
+    const lifecycle = new RegExp(`^(?:${matchers[1]})$`);
+    for (const tool of ['powershell', 'bash', 'github-mcp-server-create_pull_request'])
+      expect(lifecycle.test(tool)).toBe(true);
+    for (const tool of ['view', 'apply_patch', 'grep'])
+      expect(lifecycle.test(tool)).toBe(false);
+  });
+});

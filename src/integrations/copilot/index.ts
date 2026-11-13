@@ -23,6 +23,9 @@ import { onPath } from '../../util/onPath.ts';
 import type { Env, HookPayload, Integration, Json } from '../types.ts';
 import { copilotCliAdapter, copilotVscodeAdapter } from './trace.ts';
 
+/** Shell tools, plus GitHub connector tools such as github-mcp-server-create_pull_request. */
+export const LIFECYCLE_PRE_MATCHER = 'bash|powershell|.*github.*|.*pull_request.*';
+
 const home = (h: string, env: Env) => env.COPILOT_HOME || join(h, '.copilot');
 const str = (v: unknown) => (typeof v === 'string' && v.length ? v : undefined);
 
@@ -98,7 +101,13 @@ export const integration: Integration = {
         ? {
             preToolUse: [
               { matcher: 'bash|powershell', hooks: [entry(a.prePr)] },
-              { hooks: [entry(a.lifecycle('PreToolUse'))] },
+              // Copilot denies the call if a preToolUse hook errors, so this
+              // observer only sees shell and GitHub tools (PR creation through
+              // a connector); postToolUse, which can't block, sees the rest.
+              {
+                matcher: LIFECYCLE_PRE_MATCHER,
+                hooks: [entry(a.lifecycle('PreToolUse'))],
+              },
             ],
             postToolUse: [{ hooks: [entry(a.lifecycle('PostToolUse'))] }],
             sessionStart: [{ hooks: [entry(a.lifecycle('SessionStart'))] }],

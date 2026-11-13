@@ -642,3 +642,22 @@ describe('Copilot adapters', () => {
     });
   });
 });
+
+describe('session lines that are JSON but not objects', () => {
+  test('are skipped, and the rest of the session is still read', () => {
+    for (const parse of [parseCopilotCliLines, parseFactoryLines]) {
+      const s = session('n');
+      expect(() =>
+        parse(
+          [
+            'null',
+            '42',
+            JSON.stringify({ type: 'user.message', data: { content: 'hi' } }),
+          ].join('\n'),
+          s,
+        ),
+      ).not.toThrow();
+      expect(s.warnings.length).toBe(2);
+    }
+  });
+});
