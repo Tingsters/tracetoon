@@ -23,7 +23,9 @@ write, and there's a comic on top.
 | :---------------------------------------------------: | :------------------------------------: | :-------------------------: |
 | head-to-head wins over the no-graph workflow (Claude) | factual errors in 25 Codex-written PRs | cost per PR: $0.41 vs $0.69 |
 
-<sub>From prbench rounds on the shipped build. Read the
+<sub>From prbench: 5 real PRs from Tracetoon's own development, 5 drafts per PR
+per setup, scored by AI judges. The sample is small and scores vary by about ±3
+points between runs, so read these as development numbers. See the
 <a href="https://tracetoon.com/evidence-graph.html">full results</a>, methods
 and caveats.</sub>
 
@@ -278,6 +280,8 @@ mascots and no recurring cast.
 - **It respects the repo.** Where contributing rules forbid images in PRs,
   Tracetoon skips the comic and tells you why. `comic always` overrides that;
   `comic off` turns comics off.
+- **Never a blocker.** Without an approved image route, or if drawing fails,
+  the PR is created without a comic, and the message after the PR says why.
 
 ### Set up an image route
 
@@ -548,6 +552,9 @@ trust the new hook entries in `/hooks`.
   `latest`, which includes release candidates).
 - `TRACETOON_DISABLE_UPDATES=1` blocks `update` entirely.
 - Re-running the installer also updates.
+- `update` can't replace a Claude Code plugin or a source checkout in place: the
+  plugin updates with `/plugin marketplace update tracetoon`, a checkout with
+  `git pull`. Asking your agent to update tells you which applies.
 
 **Uninstall.** Set `TRACETOON_UNINSTALL=1` and run the installer again.
 
