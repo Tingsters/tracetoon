@@ -66,10 +66,10 @@ export function updatable(
       reason: fromSource
         ? 'This copy runs from a source checkout (bun src/cli.ts). Pull the checkout to update it, ' +
           'or install the binary: ' +
-          'curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh'
+          'curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh'
         : 'This copy runs from a bundle (a Claude Code plugin). ' +
           'Update the plugin with /plugin marketplace update, or install the binary: ' +
-          'curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh',
+          'curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh',
     };
   return {
     ok: false,

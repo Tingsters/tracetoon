@@ -1,14 +1,14 @@
 {
   "name": "tracetoon",
   "owner": {
-    "name": "Tingsters"
+    "name": "Tracetoon"
   },
   "plugins": [
     {
       "name": "tracetoon",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/Tingsters/tracetoon.git",
+        "url": "https://github.com/Tracetoon/tracetoon.git",
         "path": "plugin",
         "ref": "release"
       },

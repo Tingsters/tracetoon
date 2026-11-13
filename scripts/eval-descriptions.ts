@@ -44,7 +44,7 @@ export const CASES: Case[] = [
     repo: tt,
     base: 'a400a0774a',
     head: '2b22db920f',
-    pr: { repo: 'Tingsters/tracetoon', number: 5 },
+    pr: { repo: 'Tracetoon/tracetoon', number: 5 },
   },
   {
     id: 'pr8',
@@ -52,7 +52,7 @@ export const CASES: Case[] = [
     repo: tt,
     base: 'c62818fbd7',
     head: 'c973ef3a07',
-    pr: { repo: 'Tingsters/tracetoon', number: 8 },
+    pr: { repo: 'Tracetoon/tracetoon', number: 8 },
   },
   {
     id: 'pr9',
@@ -60,7 +60,7 @@ export const CASES: Case[] = [
     repo: tt,
     base: 'c33c65b82f',
     head: '421ce024cc',
-    pr: { repo: 'Tingsters/tracetoon', number: 9 },
+    pr: { repo: 'Tracetoon/tracetoon', number: 9 },
   },
   {
     id: 'pr11',
@@ -68,7 +68,7 @@ export const CASES: Case[] = [
     repo: tt,
     base: '76fca1565a',
     head: 'd5935ebcd4',
-    pr: { repo: 'Tingsters/tracetoon', number: 11 },
+    pr: { repo: 'Tracetoon/tracetoon', number: 11 },
   },
   {
     id: 'pr12',
@@ -76,7 +76,7 @@ export const CASES: Case[] = [
     repo: tt,
     base: '0f850d80d5',
     head: '1b46c4c72f',
-    pr: { repo: 'Tingsters/tracetoon', number: 12 },
+    pr: { repo: 'Tracetoon/tracetoon', number: 12 },
   },
   {
     id: 'pr10',
@@ -84,7 +84,7 @@ export const CASES: Case[] = [
     repo: tt,
     base: 'cfd0e3d26c',
     head: '85b4567087',
-    pr: { repo: 'Tingsters/tracetoon', number: 10 },
+    pr: { repo: 'Tracetoon/tracetoon', number: 10 },
     heldOut: true,
   },
   {

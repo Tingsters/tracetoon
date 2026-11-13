@@ -16,7 +16,7 @@ and let the recorded runs speak for the tests.
 ## Setup
 
 ```sh
-git clone https://github.com/Tingsters/tracetoon && cd tracetoon
+git clone https://github.com/Tracetoon/tracetoon && cd tracetoon
 bun run dependencies:prepare
 bun install
 bun run test
