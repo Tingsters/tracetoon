@@ -6,11 +6,13 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
+  writeSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { git } from '../util/exec.ts';
 import { readSubmittedFile, repoPath } from '../util/repoFiles.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
@@ -163,10 +165,14 @@ function withTaskLock<T>(gitDir: string, action: () => T): T {
   mkdirSync(dir, { recursive: true });
   const pause = new Int32Array(new SharedArrayBuffer(4));
   const deadline = Date.now() + 5_000;
+  // The lock names its holder, so a holder that outlived a takeover never
+  // removes the lock its successor now holds.
+  const token = `${process.pid}:${randomUUID()}`;
   let fd: number | undefined;
   while (fd === undefined) {
     try {
       fd = openSync(path, 'wx');
+      writeSync(fd, token);
     } catch {
       try {
         if (Date.now() - statSync(path).mtimeMs > 30_000) rmSync(path, { force: true });
@@ -182,7 +188,11 @@ function withTaskLock<T>(gitDir: string, action: () => T): T {
   } finally {
     if (fd !== undefined) {
       closeSync(fd);
-      rmSync(path, { force: true });
+      try {
+        if (readFileSync(path, 'utf8') === token) rmSync(path, { force: true });
+      } catch {
+        /* already gone */
+      }
     }
   }
 }
