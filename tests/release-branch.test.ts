@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BUILT, releaseCommit } from '../.github/scripts/release-branch.ts';
+import { BUILT, blockingBranches, releaseCommit } from '../.github/scripts/release-branch.ts';
 import { git, run } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
 
@@ -118,4 +118,16 @@ describe.skipIf(!canRun)('release branch commits', () => {
       }),
     ).toThrow(/may only add/);
   });
+});
+
+test('branches under release/ are reported as blocking the release branch', () => {
+  // `git ls-remote --heads` output: a candidate branch named release/… blocks `release`.
+  const listing = [
+    '1b8ffede56a7a0d6224bd44ba98e3e58b4347927\trefs/heads/release/rc22-candidate',
+    'a08c5e4925aa74f32e20e6765369e2fb956aba19\trefs/heads/release/rc25-candidate',
+    'f0a3cfed946621e38d08a5e49d0cd56a0052a0b6\trefs/heads/release',
+    '8ad49fea9817aaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/releases-old',
+  ].join('\n');
+  expect(blockingBranches(listing)).toEqual(['release/rc22-candidate', 'release/rc25-candidate']);
+  expect(blockingBranches('')).toEqual([]);
 });
