@@ -88,6 +88,11 @@ core modules (`src/trace`, `src/hook`, `src/util`), never another host's folder;
 5. Update the support table in `README.md`. The installers ask the binary
    (`tracetoon integrations --skill-targets`) where the skill goes, so they need
    no change.
+6. If the agent runs headlessly, add a step to `.github/workflows/canary.yml`:
+   install it, have it create its own file, and append `<adapter-id>:<file>`
+   to the expect list, gated on the secret it needs. The weekly run then fails
+   if the reader stops finding its sessions (`scripts/canary-check.ts`) or meets
+   record types it doesn't know (`doctor --probe`).
 
 ## Before sending a change
 
