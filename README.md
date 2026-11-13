@@ -354,7 +354,9 @@ The hook only touches its own entries in each agent's config, backs up each file
 before the first change, and lists every file it changed. If a PR command was
 redirected, the agent's stop hook keeps it from finishing until that PR is
 published, so a redirected PR isn't left behind. Codex asks you to trust a new
-hook once (`/hooks`); the Antigravity IDE picks it up after a restart. Skip
+hook once (`/hooks`), and again whenever the hook entry changes;
+`tracetoon doctor` says when Codex would skip it. The Antigravity IDE picks it
+up after a restart. Skip
 installing it with `TRACETOON_NO_HOOK=1`, or manage it with
 `tracetoon hook install` and `tracetoon hook uninstall`.
 
