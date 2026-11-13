@@ -1,23 +1,23 @@
 {
   "schema": "tracetoon.release-promotion/v3",
-  "version": "1.0.0-rc.26",
-  "buildId": "8904a3bf6db635b5e19f366040c3325ef8de3e73da90dfe60195667fc44a66d0",
+  "version": "1.0.0-rc.27",
+  "buildId": "347388fc5a55fad98181ac186ecb243b5ced5e56139c4b300ad4eb1283da405c",
   "artifact": {
-    "runId": 43509671413,
-    "id": 14078742445,
-    "name": "tracetoon-candidate-992e32214af591f1d2e4abec6894c728de769cb4-attempt-1",
-    "digest": "sha256:5d7444c934f364bf239a475d7c4f9ea90d29093b43934451beb6d7cbdc4c0368"
+    "runId": 43522840960,
+    "id": 14084177729,
+    "name": "tracetoon-candidate-bb3ae414b7d3ec6af04ac293ca8bb305f7c30347-attempt-1",
+    "digest": "sha256:e22cfd96329b695747274b83aeb08b33b8214b455e3c9eb69a9e30379fa34fcc"
   },
   "expected": {
-    "manifestSha256": "d3327308085bd57a77e1a128cbeae131b2c02b855ab7c6a10a0a3b999ee5107b",
-    "checksumsSha256": "dfe25dc1158f0e30be859d4a56ce2905edb8813a50c87e221d3ea91cf3c0b018",
-    "windowsSha256": "47c8ddb74a78d8ad596508f4b6b38e56fd0bcb3212691b0637be73f13806c7b6",
-    "bundleSha256": "fb25955fcc56f664387dd39d62ea73d59906d1153348ba92e8dc4e9d5a38dbe7"
+    "manifestSha256": "988d03a09d1a0aa90bac28892fe0c2dec5abd7d8036ed85815e116e862665a44",
+    "checksumsSha256": "d3abae3e177f32b201ce42b34a6b2801a3b00f9ed9cdfd9b0e6042eb0d2548f0",
+    "windowsSha256": "84111a821be19f72cd29fc0a1c74e98976dca301bf396cb6e7f73c7cc54ff582",
+    "bundleSha256": "d1809835bfc01f5635791d9505ba8881e55c6ffe41c1b1ee6082175dda4d5d8d"
   },
   "decision": {
     "kind": "explicit-user-request",
-    "recordedAt": "2026-11-13T21:39:14.000Z",
-    "reason": "The user explicitly requested the rc.26 release once main's CI was green. The retained prbench inputs needed for calibration and admission are not available on the release machine, so the CI-tested candidate is released without a benchmark round. No evaluation result or performance gain is claimed."
+    "recordedAt": "2026-11-13T23:09:14.000Z",
+    "reason": "The user explicitly requested the rc.27 release with the Windows update fix and merged its PRs. The retained prbench inputs needed for calibration and admission are not available on the release machine, so the CI-tested candidate is released without a benchmark round. No evaluation result or performance gain is claimed."
   },
   "evaluations": {
     "calibration": { "status": "not-run" },
