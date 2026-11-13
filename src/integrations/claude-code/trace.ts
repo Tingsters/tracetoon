@@ -8,16 +8,16 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { claude } from '@showtail/agent-traces';
 import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
 import { resolvePlanResult } from '@showtail/agent-traces/transcript/plans';
-import { headTail } from './diffLines.ts';
-import { mentionsAnyRoot } from './pathMatch.ts';
-import { discoveryIndex } from './discovery.ts';
+import { headTail } from '../../trace/diffLines.ts';
+import { mentionsAnyRoot } from '../../trace/pathMatch.ts';
+import { discoveryIndex } from '../../trace/discovery.ts';
 import type {
   DecisionQuestion,
   SessionRef,
   TraceAdapter,
   TraceSession,
   Usage,
-} from './types.ts';
+} from '../../trace/types.ts';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const COMMAND_TOOLS = new Set(['Bash', 'PowerShell']);

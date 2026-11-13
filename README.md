@@ -75,14 +75,14 @@ Left out: 1 session that may not belong to this PR.
 Comics: tracetoon config set comic off|allowed|always (now: allowed)
 ```
 
-| Agent                     | Status                                           |
-| ------------------------- | ------------------------------------------------ |
-| Claude Code               | ✅ supported                                     |
-| Codex (CLI and app)       | ✅ supported                                     |
-| Antigravity (CLI and IDE) | ✅ supported                                     |
-| Gemini CLI                | 🟡 runs the skill (its own logs aren't read yet) |
-| Cursor, Windsurf          | 🗓️ planned                                       |
-| Copilot CLI               | 🗓️ planned                                       |
+| Agent                     | Status                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| Claude Code               | ✅ supported                                                                 |
+| Codex (CLI and app)       | ✅ supported                                                                 |
+| Antigravity (CLI and IDE) | ✅ supported                                                                 |
+| Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
+| Cursor, Windsurf          | 🗓️ planned                                                                   |
+| Copilot CLI               | 🗓️ planned                                                                   |
 
 > [!TIP]
 > Already installed? Ask your agent: _"Update Tracetoon."_ It works for the

@@ -11,16 +11,16 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { antigravity, antigravityIde } from '@showtail/agent-traces';
-import { headTail, splitLines } from './diffLines.ts';
-import { mentionsAnyRoot } from './pathMatch.ts';
-import { discoveryIndex } from './discovery.ts';
+import { headTail, splitLines } from '../../trace/diffLines.ts';
+import { mentionsAnyRoot } from '../../trace/pathMatch.ts';
+import { discoveryIndex } from '../../trace/discovery.ts';
 import type {
   AgentId,
   SessionRef,
   TraceAdapter,
   TraceRecord,
   TraceSession,
-} from './types.ts';
+} from '../../trace/types.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj =>

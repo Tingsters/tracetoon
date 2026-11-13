@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { commandText, parseCodexLines } from '../src/trace/codex.ts';
+import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
   unwrapArg,
-} from '../src/trace/antigravity.ts';
+} from '../src/integrations/antigravity/trace.ts';
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
 import { foldSubagents } from '../src/pipeline.ts';
 import type { TraceSession } from '../src/trace/types.ts';

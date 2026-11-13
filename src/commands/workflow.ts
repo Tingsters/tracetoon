@@ -1,3 +1,4 @@
+import { currentSessionId } from '../integrations/registry.ts';
 import { defaultBase } from '../git/pr.ts';
 import { findRun } from '../run.ts';
 import { beginTask, readTask, repository, saveTask } from '../workflow/state.ts';
@@ -19,12 +20,7 @@ export function taskCmd(
   action: 'begin' | 'complete' | 'defer' | 'block',
   opts: TaskOpts,
 ) {
-  const session =
-    opts.session ??
-    (process.env.CODEX_THREAD_ID ||
-      process.env.CLAUDE_CODE_SESSION_ID ||
-      process.env.CLAUDE_SESSION_ID ||
-      undefined);
+  const session = opts.session ?? currentSessionId();
   const observed = session ? readHost(session) : undefined;
   const info = beginTask(cwd, {
     ...opts,

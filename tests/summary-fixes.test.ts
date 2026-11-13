@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { commandKey, testOutputFailed, testSegment } from '../src/digest/build.ts';
 import { parseUnifiedDiff } from '../src/git/pr.ts';
-import { parseClaudeLines } from '../src/trace/claude.ts';
+import { parseClaudeLines } from '../src/integrations/claude-code/trace.ts';
 import type { TraceSession } from '../src/trace/types.ts';
 import { git } from '../src/util/exec.ts';
 import { ClaudeLog, makeRepo, tempDir } from './helpers.ts';

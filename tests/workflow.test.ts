@@ -595,11 +595,11 @@ describe('active transcript discovery', () => {
       file,
       JSON.stringify({ timestamp: old, cwd: dir, padding: 'x'.repeat(900) }) + '\n',
     );
-    let index = discoveryIndex(query);
+    let index = discoveryIndex(query, 'codex');
     expect(index.inspect(file)?.recent).toBe(Date.parse(old));
     index.save();
     appendFileSync(file, `{"timestamp":"${new Date().toISOString().slice(0, 10)}`);
-    index = discoveryIndex(query);
+    index = discoveryIndex(query, 'codex');
     index.inspect(file);
     index.save();
     appendFileSync(
@@ -607,7 +607,7 @@ describe('active transcript discovery', () => {
       `${new Date().toISOString().slice(10)}","cwd":${JSON.stringify(dir)}}\n`,
     );
     utimesSync(file, new Date(old), new Date(old));
-    index = discoveryIndex(query);
+    index = discoveryIndex(query, 'codex');
     const recent = index.inspect(file)!;
     index.save();
     expect(recent.recent).toBeGreaterThan(query.sinceMs);
@@ -619,7 +619,7 @@ describe('active transcript discovery', () => {
     expect(disk).not.toContain('padding');
     expect(disk).not.toContain('timestamp');
     writeFileSync(file, JSON.stringify({ timestamp: old, cwd: '/unrelated' }) + '\n');
-    index = discoveryIndex(query);
+    index = discoveryIndex(query, 'codex');
     expect(index.inspect(file)?.match).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseUnifiedDiff } from '../src/git/pr.ts';
-import { parseClaudeLines } from '../src/trace/claude.ts';
+import { parseClaudeLines } from '../src/integrations/claude-code/trace.ts';
 import type { TraceSession } from '../src/trace/types.ts';
 import {
   decodeMeta,
