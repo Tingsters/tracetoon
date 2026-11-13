@@ -11,6 +11,9 @@
  * branch only ever fast-forwards (no force) and every released source commit is reachable.
  *
  *   bun .github/scripts/release-branch.ts <release-dir> <release-promotion.json> <tag> [--push]
+ *
+ * Without --push it only checks: the release workflow runs it that way before publishing
+ * the release, so a problem stops the workflow before anything is public.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,6 +38,18 @@ function must(repo: string, args: string[], env?: NodeJS.ProcessEnv): string {
   const r = git(repo, args, undefined, env);
   if (!r.ok) throw new Error(`git ${args.join(' ')} failed: ${r.stderr.trim()}`);
   return r.stdout.trim();
+}
+
+/**
+ * Branches whose names start with `release/` (e.g. `release/rc25-candidate`) stop git from
+ * creating or updating a branch named `release`. `lsRemote` is `git ls-remote --heads` output.
+ */
+export function blockingBranches(lsRemote: string): string[] {
+  return lsRemote
+    .split('\n')
+    .map((line) => line.split(/\s+/)[1] ?? '')
+    .filter((ref) => ref.startsWith('refs/heads/release/'))
+    .map((ref) => ref.slice('refs/heads/'.length));
 }
 
 export interface ReleaseCommit {
@@ -121,9 +136,20 @@ if (import.meta.main) {
     );
   const repo = process.cwd();
   const promotion = JSON.parse(readFileSync(promotionFile, 'utf8'));
-  // The branch may not exist yet (the first release creates it).
-  const fetched = git(repo, ['fetch', 'origin', '+refs/heads/release:refs/remotes/origin/release']);
-  const previous = fetched.ok ? must(repo, ['rev-parse', 'refs/remotes/origin/release']) : undefined;
+  const blocking = blockingBranches(
+    must(repo, ['ls-remote', '--heads', 'origin', 'refs/heads/release/*']),
+  );
+  if (blocking.length)
+    throw new Error(
+      `Branch(es) ${blocking.join(', ')} block the \`release\` branch: git can't have both. ` +
+        'Delete them (a merged release candidate can go) or rename them, then run this again.',
+    );
+  // The branch may not exist yet (the first release creates it). When it does, a failed
+  // fetch must stop here rather than look like a first release. The private ref can't
+  // collide with stale remote-tracking refs such as origin/release/<something>.
+  const exists = must(repo, ['ls-remote', '--heads', 'origin', 'refs/heads/release']) !== '';
+  if (exists) must(repo, ['fetch', '--refmap=', 'origin', '+refs/heads/release:refs/tracetoon/release-head']);
+  const previous = exists ? must(repo, ['rev-parse', 'refs/tracetoon/release-head']) : undefined;
   const result = releaseCommit({
     repo,
     zip: join(dir, 'tracetoon-skill.zip'),
@@ -137,6 +163,7 @@ if (import.meta.main) {
       ? `release: ${result.commit} (${tag} on top of ${previous ?? 'nothing'})`
       : `release: already at ${tag} (${result.commit})`,
   );
-  if (process.argv.includes('--push') && result.created)
+  if (!process.argv.includes('--push')) console.log('release: ready to publish (checked, not pushed)');
+  else if (result.created)
     must(repo, ['push', 'origin', `${result.commit}:refs/heads/release`]);
 }
