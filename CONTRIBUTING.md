@@ -119,7 +119,9 @@ tests and reader probes are not automated humor scores. Artifacts stay in .git/.
 
 Bump only `package.json`, then run `bun run bundle`. The build stamps the skill
 VERSION and plugin version; commit those two (the bundle and `build.json` stay
-uncommitted) and open a same-repository PR. After all three
+uncommitted) and open a same-repository PR. Don't name its branch `release/…`:
+git can't keep a branch named `release` next to one under `release/`, and the
+release workflow stops before publishing until such a branch is deleted. After all three
 platform suites pass, CI builds the five native targets and six skill archives,
 checks reproducibility, and rehearses the exact candidate bundle and Windows
 executable. It retains an artifact named for the source commit and workflow
