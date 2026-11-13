@@ -1,4 +1,5 @@
 /** Explicit verification receipts; raw output and environment values are never persisted. */
+import { isHostSessionVar } from '../integrations/registry.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
@@ -61,8 +62,7 @@ function inputFingerprint(
  * toolchain or test environment. They change mid-task: Codex's per-call id, and
  * Claude Code's effort level, attended flag, ids and version string.
  */
-const HOST_SESSION_VARS =
-  /^(CODEX_TOOL_CALL_ID|CODEX_THREAD_ID|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_CODE_SESSION_ID|CLAUDE_CODE_SESSION_ATTENDED|CLAUDE_CODE_CHILD_SESSION|CLAUDE_CODE_MESSAGING_\w+|AI_AGENT)$/;
+const HOST_SESSION_VARS = { test: isHostSessionVar };
 
 /**
  * Result lines of a check's output: the last three that report counts.

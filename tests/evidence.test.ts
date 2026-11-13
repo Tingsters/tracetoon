@@ -8,7 +8,7 @@ import {
   runOutcome,
   verificationSegment,
 } from '../src/digest/build.ts';
-import { decisionQuestions } from '../src/trace/claude.ts';
+import { decisionQuestions } from '../src/integrations/claude-code/trace.ts';
 
 describe('decisions', () => {
   const qs = [
@@ -290,7 +290,7 @@ describe('commit detection needs a real commit line', () => {
 describe('plans', () => {
   test('the submitted plan text wins over a stale input', async () => {
     const { ClaudeLog } = await import('./helpers.ts');
-    const { parseClaudeLines } = await import('../src/trace/claude.ts');
+    const { parseClaudeLines } = await import('../src/integrations/claude-code/trace.ts');
     const log = new ClaudeLog('/repo').plan('# Old draft', true, '# Final plan');
     const s = { records: [] as any[], unknownTypes: {} } as any;
     parseClaudeLines(log.text(), s);

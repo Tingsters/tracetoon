@@ -7,7 +7,7 @@ import {
   test,
 } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { decide, DENY_REASON, writesPr } from '../src/hook/prHook.ts';
 import { parseAliases } from '../src/hook/prCommands.ts';
@@ -433,6 +433,11 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.claude'), { recursive: true });
     mkdirSync(join(h, '.codex'), { recursive: true });
     mkdirSync(join(h, '.gemini', 'antigravity-cli'), { recursive: true });
+    mkdirSync(join(h, '.factory'), { recursive: true });
+    mkdirSync(join(h, '.copilot'), { recursive: true });
+    mkdirSync(join(h, '.cursor'), { recursive: true });
+    mkdirSync(join(h, '.config', 'opencode'), { recursive: true });
+    mkdirSync(join(h, '.config', 'kilo'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -460,9 +465,23 @@ describe('installing the hook', () => {
     );
 
     const first = installHooks('/opt/tracetoon/bin', targets);
-    expect(first.map((c) => c.result)).toEqual(['installed', 'installed', 'installed']);
+    expect(first.map((c) => c.result)).toEqual([
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+    ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
+      'unchanged',
+      'unchanged',
+      'unchanged',
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -485,9 +504,57 @@ describe('installing the hook', () => {
     expect(Object.keys(agy)).toEqual(['showtail-cli', 'tracetoon']);
     expect(agy.tracetoon.PreToolUse[0].matcher).toBe('run_command');
     expect(existsSync(join(h, '.claude', 'settings.json.tracetoon.bak'))).toBe(true);
-    expect(hookStatus(targets).map((s) => s.installed)).toEqual([true, true, true]);
+    // Factory's hooks.json is the bare event map, with the shell tool named Execute.
+    const droid = JSON.parse(readFileSync(join(h, '.factory', 'hooks.json'), 'utf8'));
+    expect(droid.hooks).toBeUndefined();
+    expect(droid.PreToolUse[0]).toMatchObject({
+      matcher: 'Execute',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent factory' }],
+    });
+    // Copilot gets its own file, with exec + args so no shell parses the path.
+    const copilot = JSON.parse(
+      readFileSync(join(h, '.copilot', 'hooks', 'tracetoon.json'), 'utf8'),
+    );
+    // Cursor's hooks.json: entries sit directly under each event, PR route on beforeShellExecution.
+    // OpenCode and Kilo get a plugin file that names the command it runs.
+    const plugin = readFileSync(
+      join(h, '.config', 'kilo', 'plugins', 'tracetoon.js'),
+      'utf8',
+    );
+    expect(plugin).toContain('hook pre-pr --agent kilo');
+    expect(plugin).toContain("'tool.execute.before'");
+    const cursor = JSON.parse(readFileSync(join(h, '.cursor', 'hooks.json'), 'utf8'));
+    expect(cursor.version).toBe(1);
+    expect(cursor.hooks.beforeShellExecution[0].command).toContain(
+      'hook pre-pr --agent cursor',
+    );
+    expect(copilot.version).toBe(1);
+    expect(copilot.hooks.preToolUse[0]).toMatchObject({
+      matcher: 'bash|powershell',
+      hooks: [
+        {
+          exec: '/opt/tracetoon/bin',
+          args: ['hook', 'pre-pr', '--agent', 'copilot'],
+        },
+      ],
+    });
+    expect(hookStatus(targets).map((s) => s.installed)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
+      'removed',
+      'removed',
+      'removed',
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -496,13 +563,20 @@ describe('installing the hook', () => {
       existingClaude,
     );
     expect(existsSync(join(h, '.codex', 'hooks.json'))).toBe(false); // created by us, now empty
+    expect(existsSync(join(h, '.factory', 'hooks.json'))).toBe(false);
+    expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
+    expect(existsSync(join(h, '.cursor', 'hooks.json'))).toBe(false);
+    expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
+      false,
+    );
     expect(
       JSON.parse(readFileSync(join(h, '.gemini', 'config', 'hooks.json'), 'utf8')),
     ).toEqual({ 'showtail-cli': { enabled: true } });
   });
 
   test('upgrades remove only Tracetoon Stop hooks and preserve other settings', () => {
-    const targets = hookTargets(home(), {});
+    // Plugin files (OpenCode, Kilo) are Tracetoon's own and hold no JSON settings.
+    const targets = hookTargets(home(), {}).filter((t) => !t.file.endsWith('.js'));
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
       const old = {
@@ -564,6 +638,11 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
       'not installed',
       'not installed',
     ]);
@@ -690,5 +769,41 @@ describe('hook diagnostics', () => {
       }),
     );
     expect(hookStatus(targets)[2]!.problem).toBeUndefined();
+  });
+});
+
+describe('hooks that fire together', () => {
+  test('Cursor and the Claude Code hook it imports start one task, not two', async () => {
+    const repo = makeRepo();
+    repo.commit('a.txt', 'a\n', 'change');
+    const command = process.env.TRACETOON_TEST_BINARY
+      ? [process.env.TRACETOON_TEST_BINARY]
+      : [process.execPath, CLI];
+    // The payload Cursor sends to both its own hook and the imported Claude Code one.
+    const payload = JSON.stringify({
+      conversation_id: 'c-par',
+      session_id: 'c-par',
+      hook_event_name: 'preToolUse',
+      cursor_version: '2026.11.11',
+      tool_name: 'Shell',
+      tool_input: { command: 'gh pr create --fill', cwd: '' },
+      cwd: '',
+      workspace_roots: [repo.root],
+    });
+    const input = join(tempDir(), 'payload.json');
+    writeFileSync(input, payload);
+    const spawn = (agent: string) => {
+      const p = Bun.spawn(
+        [...command, 'hook', 'lifecycle', '--agent', agent, '--event', 'PreToolUse'],
+        { stdin: Bun.file(input), stdout: 'pipe', env: env(), cwd: tempDir() },
+      );
+      return new Response(p.stdout).text();
+    };
+    const answers = await Promise.all([spawn('cursor'), spawn('claude')]);
+    const runs = readdirSync(join(repo.root, '.git', 'tracetoon', 'runs')).filter((r) =>
+      existsSync(join(repo.root, '.git', 'tracetoon', 'runs', r, 'task.json')),
+    );
+    expect(runs).toHaveLength(1);
+    for (const answer of answers) expect(answer).toContain(`Task ${runs[0]}`);
   });
 });

@@ -3,6 +3,7 @@
  * record (https://agent-trace.dev, v0.1): for each file, which line ranges match
  * which agent and model. Lines that match no agent are listed as unknown.
  */
+import { traceLabel } from '../integrations/registry.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { evidenceLine } from '../correlate/correlate.ts';
 import { scan } from '../pipeline.ts';
@@ -26,13 +27,6 @@ function ranges(lines: number[]): Range[] {
   }
   return out;
 }
-
-const AGENT_NAMES: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  'antigravity-cli': 'Antigravity CLI',
-  'antigravity-ide': 'Antigravity',
-};
 
 export function exportCmd(
   cwd: string,
@@ -64,7 +58,7 @@ export function exportCmd(
         const key = owner.session.sessionId;
         const entry = byContributor.get(key) ?? {
           model,
-          agent: AGENT_NAMES[owner.session.agent] ?? owner.session.agent,
+          agent: traceLabel(owner.session.agent),
           session:
             'h:' +
             createHash('sha256').update(`${salt}\0${key}`).digest('hex').slice(0, 12),

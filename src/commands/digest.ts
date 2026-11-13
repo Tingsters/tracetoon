@@ -1,3 +1,4 @@
+import { currentSessionId } from '../integrations/registry.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -199,11 +200,7 @@ export function digestCmd(
   const task = readTask(run);
   if (task && task.state !== 'published') {
     // The session running the digest is the one asking; the task owner is a fallback.
-    const by =
-      process.env.CODEX_THREAD_ID ||
-      process.env.CLAUDE_CODE_SESSION_ID ||
-      process.env.CLAUDE_SESSION_ID ||
-      task.session;
+    const by = currentSessionId() || task.session;
     if (!task.prRequestedAt || (by && task.prRequestedBy !== by)) {
       task.prRequestedAt ??= new Date().toISOString();
       if (by) task.prRequestedBy = by;

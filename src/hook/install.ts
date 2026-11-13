@@ -1,29 +1,23 @@
 /**
- * Registers PR routing plus passive session and observation hooks per host.
- *
- *   Claude Code  ~/.claude/settings.json        PreToolUse, matcher Bash|PowerShell
- *   Codex        ~/.codex/hooks.json            PreToolUse, matcher Bash
- *   Antigravity  ~/.gemini/config/hooks.json    a "tracetoon" block, matcher run_command
+ * Registers PR routing plus passive session and observation hooks with every
+ * host that has a hook (see src/integrations). Each host owns its config file
+ * and format; this module only reads, asks the host to merge, and writes.
  *
  * Only Tracetoon's own entries are ever touched (recognized by "tracetoon … hook
  * pre-pr/lifecycle" in the command), re-running replaces them instead of adding more, a
  * file that isn't valid JSON is left alone, and each file is backed up once
  * (<file>.tracetoon.bak) before the first change.
  */
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import type { HookAgent } from './prHook.ts';
+import { dirname } from 'node:path';
+import { INTEGRATIONS, integration } from '../integrations/registry.ts';
+import type { HookCommands, HookIntegration, Json } from '../integrations/types.ts';
+import { readStrict, writeConfig } from './config.ts';
 
 export interface HookTarget {
-  agent: HookAgent;
+  /** The host id hooks pass as `--agent`. */
+  agent: string;
   label: string;
   file: string;
   /** The agent is installed on this machine. */
@@ -34,40 +28,22 @@ export function hookTargets(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
 ): HookTarget[] {
-  const claude = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
-  const codex = env.CODEX_HOME || join(home, '.codex');
-  const gemini = env.GEMINI_HOME || join(home, '.gemini');
-  return [
-    {
-      agent: 'claude',
-      label: 'Claude Code',
-      file: join(claude, 'settings.json'),
-      present: existsSync(claude),
-    },
-    {
-      agent: 'codex',
-      label: 'Codex',
-      file: join(codex, 'hooks.json'),
-      present: existsSync(codex),
-    },
-    {
-      agent: 'antigravity',
-      label: 'Antigravity',
-      file: join(gemini, 'config', 'hooks.json'),
-      present:
-        existsSync(join(gemini, 'antigravity-cli')) ||
-        existsSync(join(gemini, 'antigravity-ide')),
-    },
-  ];
+  return INTEGRATIONS.filter((i) => i.hook).map((i) => ({
+    agent: i.id,
+    label: i.label,
+    file: i.hook!.file(home, env),
+    present: i.hook!.present(home, env),
+  }));
 }
 
-const isOurs = (command: unknown) =>
-  typeof command === 'string' &&
-  /tracetoon/i.test(command) &&
-  /hook (?:pre-pr|lifecycle)\b/.test(command);
+const hookOf = (t: HookTarget): HookIntegration => {
+  const hook = integration(t.agent)?.hook;
+  if (!hook) throw new Error(`no hook integration for ${t.agent}`);
+  return hook;
+};
 
 /** The shell command each agent runs. Forward slashes work in bash, cmd and PowerShell. */
-export function hookCommand(agent: HookAgent, program: string | string[]): string {
+export function hookCommand(agent: string, program: string | string[]): string {
   const parts = (Array.isArray(program) ? program : [program]).map((p) => {
     const f = p.replace(/\\/g, '/');
     return /\s/.test(f) ? `"${f}"` : f;
@@ -75,116 +51,37 @@ export function hookCommand(agent: HookAgent, program: string | string[]): strin
   return `${parts.join(' ')} hook pre-pr --agent ${agent}`;
 }
 
-type Json = Record<string, any>;
-
-function readStrict(file: string): Json {
-  if (!existsSync(file)) return {};
-  const text = readFileSync(file, 'utf8');
-  if (!text.trim()) return {};
-  const parsed = JSON.parse(text); // throws on invalid JSON: never overwrite what we can't read
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('not a JSON object');
-  }
-  return parsed as Json;
-}
-
-function write(file: string, data: Json): void {
-  if (existsSync(file) && !existsSync(`${file}.tracetoon.bak`))
-    copyFileSync(file, `${file}.tracetoon.bak`);
-  if (Object.keys(data).length === 0) {
-    rmSync(file, { force: true });
-    return;
-  }
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(data, null, 2) + '\n', 'utf8');
-}
-
-function withoutOurGroups(groups: unknown): Json[] {
-  if (!Array.isArray(groups)) return [];
-  return groups.flatMap((g) => {
-    if (!g || !Array.isArray(g.hooks)) return [g];
-    const kept = g.hooks.filter((h: Json) => !isOurs(h?.command));
-    if (kept.length === g.hooks.length) return [g];
-    return kept.length ? [{ ...g, hooks: kept }] : [];
-  });
-}
-
-function setPreToolUse(data: Json, group: Json | undefined): Json {
-  const hooks: Json = { ...(data.hooks ?? {}) };
-  const kept = withoutOurGroups(hooks.PreToolUse);
-  const next = group ? [...kept, group] : kept;
-  if (next.length) hooks.PreToolUse = next;
-  else delete hooks.PreToolUse;
-  const out = { ...data };
-  if (Object.keys(hooks).length) out.hooks = hooks;
-  else delete out.hooks;
-  return out;
-}
-
-function apply(target: HookTarget, data: Json, command: string | undefined): Json {
-  const lifecycle = (event: string) =>
-    command!.replace(/hook pre-pr --agent/, 'hook lifecycle --agent') +
-    ` --event ${event}`;
-  const handler = (event: string) => ({
-    type: 'command',
-    command: lifecycle(event),
-    timeout: 10,
-  });
-  if (target.agent === 'antigravity') {
-    const out = { ...data };
-    delete out.tracetoon;
-    if (command) {
-      out.tracetoon = {
-        enabled: true,
-        PreToolUse: [{ matcher: 'run_command', hooks: [{ type: 'command', command }] }],
-        SessionStart: [handler('SessionStart')],
-        PostToolUse: [{ matcher: '.*', hooks: [handler('PostToolUse')] }],
-      };
-      out.tracetoon.PreToolUse.push({ matcher: '.*', hooks: [handler('PreToolUse')] });
-    }
-    return out;
-  }
-  const matcher = target.agent === 'claude' ? 'Bash|PowerShell' : 'Bash';
-  const out = setPreToolUse(
-    data,
-    command ? { matcher, hooks: [{ type: 'command', command, timeout: 10 }] } : undefined,
+function commandsFor(agent: string, program: string | string[]): HookCommands {
+  const prePr = hookCommand(agent, program);
+  const base = (Array.isArray(program) ? program : [program]).map((p) =>
+    p.replace(/\\/g, '/'),
   );
-  const hooks = { ...(out.hooks ?? {}) };
-  for (const event of ['SessionStart', 'PostToolUse', 'Stop']) {
-    const kept = withoutOurGroups(hooks[event]);
-    if (command && event !== 'Stop')
-      kept.push(
-        event === 'PostToolUse'
-          ? { matcher: '.*', hooks: [handler(event)] }
-          : { hooks: [handler(event)] },
-      );
-    if (kept.length) hooks[event] = kept;
-    else delete hooks[event];
-  }
-  if (command) hooks.PreToolUse.push({ matcher: '.*', hooks: [handler('PreToolUse')] });
-  if (Object.keys(hooks).length) out.hooks = hooks;
-  else delete out.hooks;
-  return out;
+  return {
+    prePr,
+    lifecycle: (event) =>
+      prePr.replace(/hook pre-pr --agent/, 'hook lifecycle --agent') +
+      ` --event ${event}`,
+    argv: {
+      prePr: [...base, 'hook', 'pre-pr', '--agent', agent],
+      lifecycle: (event) => [
+        ...base,
+        'hook',
+        'lifecycle',
+        '--agent',
+        agent,
+        '--event',
+        event,
+      ],
+    },
+  };
 }
 
 export interface HookChange {
-  agent: HookAgent;
+  agent: string;
   label: string;
   file: string;
   result: 'installed' | 'removed' | 'unchanged' | 'skipped';
   note?: string;
-}
-
-function codexNote(target: HookTarget): string {
-  const toml = join(dirname(target.file), 'config.toml');
-  try {
-    if (/^\s*hooks\s*=\s*false/m.test(readFileSync(toml, 'utf8'))) {
-      return 'Codex hooks are turned off in config.toml ([features] hooks = false); Tracetoon leaves that alone.';
-    }
-  } catch {
-    /* no config.toml */
-  }
-  return 'In Codex, run /hooks once and trust the Tracetoon hook.';
 }
 
 export function installHooks(
@@ -192,121 +89,82 @@ export function installHooks(
   targets = hookTargets(),
 ): HookChange[] {
   return targets.map((t) => {
-    if (!t.present)
-      return {
-        agent: t.agent,
-        label: t.label,
-        file: t.file,
-        result: 'skipped',
-        note: 'not installed',
-      };
+    const base = { agent: t.agent, label: t.label, file: t.file };
+    if (!t.present) return { ...base, result: 'skipped', note: 'not installed' };
+    const owned = hookOf(t).text;
+    if (owned) {
+      const next = owned.render(commandsFor(t.agent, program));
+      const current = readText(t.file);
+      if (current === next) return { ...base, result: 'unchanged' };
+      // Never replace a file of that name that Tracetoon didn't write.
+      if (current !== undefined && !owned.command(current))
+        return {
+          ...base,
+          result: 'skipped',
+          note: 'a file Tracetoon did not write is there; left untouched',
+        };
+      mkdirSync(dirname(t.file), { recursive: true });
+      writeFileSync(t.file, next, 'utf8');
+      return { ...base, result: 'installed', note: hookOf(t).installNote?.(t.file, {}) };
+    }
     let data: Json;
     try {
       data = readStrict(t.file);
     } catch (e) {
       return {
-        agent: t.agent,
-        label: t.label,
-        file: t.file,
+        ...base,
         result: 'skipped',
         note: `could not read it (${(e as Error).message}); left untouched`,
       };
     }
-    const next = apply(t, data, hookCommand(t.agent, program));
-    if (JSON.stringify(next) === JSON.stringify(data)) {
-      return { agent: t.agent, label: t.label, file: t.file, result: 'unchanged' };
-    }
-    write(t.file, next);
-    let note: string | undefined;
-    if (t.agent === 'codex') note = codexNote(t);
-    if (t.agent === 'antigravity') {
-      const bad = antigravityInvalidBlocks(next).filter((n) => n !== 'tracetoon');
-      note = bad.length
-        ? `Warning: Antigravity ignores this whole file because of an invalid block from another tool (${bad.join(', ')}). Fix or remove it to activate the hook.`
-        : 'Restart the Antigravity IDE to load it.';
-    }
-    return { agent: t.agent, label: t.label, file: t.file, result: 'installed', note };
+    const hook = hookOf(t);
+    const next = hook.apply(data, commandsFor(t.agent, program));
+    if (JSON.stringify(next) === JSON.stringify(data))
+      return { ...base, result: 'unchanged' };
+    writeConfig(t.file, next);
+    return { ...base, result: 'installed', note: hook.installNote?.(t.file, next) };
   });
 }
 
 export function uninstallHooks(targets = hookTargets()): HookChange[] {
   return targets.map((t) => {
+    const base = { agent: t.agent, label: t.label, file: t.file };
+    const owned = hookOf(t).text;
+    if (owned) {
+      // Only a file Tracetoon wrote is removed.
+      const text = readText(t.file);
+      if (text === undefined || !owned.command(text))
+        return { ...base, result: 'unchanged' };
+      rmSync(t.file, { force: true });
+      return { ...base, result: 'removed' };
+    }
     let data: Json;
     try {
       data = readStrict(t.file);
     } catch {
-      return {
-        agent: t.agent,
-        label: t.label,
-        file: t.file,
-        result: 'skipped',
-        note: 'could not read it; left untouched',
-      };
+      return { ...base, result: 'skipped', note: 'could not read it; left untouched' };
     }
-    const next = apply(t, data, undefined);
-    if (JSON.stringify(next) === JSON.stringify(data)) {
-      return { agent: t.agent, label: t.label, file: t.file, result: 'unchanged' };
-    }
-    write(t.file, next);
-    return { agent: t.agent, label: t.label, file: t.file, result: 'removed' };
+    const next = hookOf(t).apply(data, undefined);
+    if (JSON.stringify(next) === JSON.stringify(data))
+      return { ...base, result: 'unchanged' };
+    writeConfig(t.file, next);
+    return { ...base, result: 'removed' };
   });
 }
 
-const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse']);
-const HANDLER_EVENTS = new Set([
-  'SessionStart',
-  'PreInvocation',
-  'PostInvocation',
-  'Stop',
-]);
+const COVERAGE =
+  'PR creation through recognized shell commands and GitHub connectors; existing PR operations, pushes and read-only commands are left alone. Arbitrary network scripts are not intercepted.';
 
-/**
- * Named blocks in Antigravity's hooks.json that Antigravity will reject. One bad
- * block makes it ignore the whole file, Tracetoon's hook included, so this is
- * worth telling the user about. Tool events take matcher blocks with a `hooks`
- * list; the other events take handlers (with `command`) directly.
- */
-export function antigravityInvalidBlocks(data: Json): string[] {
-  const bad: string[] = [];
-  for (const [name, block] of Object.entries(data)) {
-    if (!block || typeof block !== 'object') {
-      bad.push(name);
-      continue;
-    }
-    const handlerOk = (h: unknown) => !!h && typeof (h as Json).command === 'string';
-    const ok = Object.entries(block as Json).every(([event, list]) => {
-      if (event === 'enabled') return typeof list === 'boolean';
-      if (!Array.isArray(list))
-        return !TOOL_EVENTS.has(event) && !HANDLER_EVENTS.has(event);
-      if (TOOL_EVENTS.has(event))
-        return list.every((m) => m && Array.isArray(m.hooks) && m.hooks.every(handlerOk));
-      if (HANDLER_EVENTS.has(event)) return list.every(handlerOk);
-      return true;
-    });
-    if (!ok) bad.push(name);
-  }
-  return bad;
-}
-
-/** Whether Codex has trusted Tracetoon's hook (`/hooks`), from ~/.codex/config.toml. */
-function codexTrusted(t: HookTarget, data: Json): boolean | undefined {
-  const groups: Json[] = Array.isArray(data.hooks?.PreToolUse)
-    ? data.hooks.PreToolUse
-    : [];
-  const i = groups.findIndex(
-    (g) => Array.isArray(g?.hooks) && g.hooks.some((h: Json) => isOurs(h?.command)),
-  );
-  if (i < 0) return undefined;
+function readText(file: string): string | undefined {
   try {
-    const toml = readFileSync(join(dirname(t.file), 'config.toml'), 'utf8');
-    return toml.includes(`hooks.json:pre_tool_use:${i}:0'`);
+    return readFileSync(file, 'utf8');
   } catch {
-    return false;
+    return undefined;
   }
 }
 
 export interface HookState {
-  agent: HookAgent;
+  agent: string;
   label: string;
   present: boolean;
   installed: boolean;
@@ -323,6 +181,23 @@ export interface HookState {
 /** Whether each agent currently has the Tracetoon hook, and whether it will actually run. */
 export function hookStatus(targets = hookTargets()): HookState[] {
   return targets.map((t) => {
+    const owned = hookOf(t).text;
+    if (owned) {
+      const command = (() => {
+        const text = readText(t.file);
+        return text === undefined ? undefined : owned.command(text);
+      })();
+      return {
+        agent: t.agent,
+        label: t.label,
+        present: t.present,
+        installed: !!command,
+        file: t.file,
+        completionInstalled: false,
+        command,
+        coverage: COVERAGE,
+      };
+    }
     let data: Json = {};
     let unreadable = false;
     try {
@@ -330,10 +205,12 @@ export function hookStatus(targets = hookTargets()): HookState[] {
     } catch {
       unreadable = true;
     }
+    const text = JSON.stringify(data);
+    const hook = hookOf(t);
     const installed =
       !unreadable &&
-      JSON.stringify(data).includes('hook pre-pr') &&
-      /tracetoon/i.test(JSON.stringify(data));
+      ((text.includes('hook pre-pr') && /tracetoon/i.test(text)) ||
+        !!hook.installedCommand(data));
     const state: HookState = {
       agent: t.agent,
       label: t.label,
@@ -341,28 +218,13 @@ export function hookStatus(targets = hookTargets()): HookState[] {
       installed,
       file: t.file,
       completionInstalled:
-        JSON.stringify(data).includes('hook lifecycle') &&
-        JSON.stringify(data).includes('--event Stop'),
-      command: (() => {
-        const groups =
-          t.agent === 'antigravity' ? data.tracetoon?.PreToolUse : data.hooks?.PreToolUse;
-        return (groups ?? [])
-          .flatMap((g: Json) => g.hooks ?? [])
-          .find((h: Json) => isOurs(h.command) && h.command.includes('hook pre-pr'))
-          ?.command;
-      })(),
-      coverage:
-        'PR creation through recognized shell commands and GitHub connectors; existing PR operations, pushes and read-only commands are left alone. Arbitrary network scripts are not intercepted.',
+        text.includes('hook lifecycle') && text.includes('--event Stop'),
+      command: hook.installedCommand(data),
+      coverage: COVERAGE,
     };
     if (unreadable) state.problem = `${t.file} is not valid JSON`;
-    else if (installed && t.agent === 'antigravity') {
-      const bad = antigravityInvalidBlocks(data).filter((n) => n !== 'tracetoon');
-      if (bad.length) {
-        state.problem = `Antigravity ignores the whole hooks file because of an invalid block from another tool (${bad.join(', ')}); fix or remove it to activate the hook`;
-      }
-    } else if (installed && t.agent === 'codex' && codexTrusted(t, data) === false) {
-      state.problem = 'not trusted yet: run /hooks in Codex and trust the Tracetoon hook';
-    }
+    else if (installed) state.problem = hook.problem?.(t.file, data);
+    if (state.problem === undefined) delete state.problem;
     return state;
   });
 }

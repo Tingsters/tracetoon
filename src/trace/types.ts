@@ -1,6 +1,10 @@
 /** Normalized, agent-neutral view of what happened in an agent session. */
 
-export type AgentId = 'claude-code' | 'codex' | 'antigravity-cli' | 'antigravity-ide';
+/**
+ * A trace surface (one log store), such as 'claude-code' or 'antigravity-ide'.
+ * Each integration in src/integrations owns its ids; core code treats them as opaque.
+ */
+export type AgentId = string;
 
 export interface Usage {
   input: number;

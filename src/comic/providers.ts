@@ -217,20 +217,8 @@ export function pagePrompt(script: ComicScript): string {
 
 // ---------------------------------------------------------- availability
 
-/** Where a program is on PATH, if anywhere. */
-export function onPath(name: string): string | undefined {
-  const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
-  for (const dir of (process.env.PATH ?? '').split(
-    process.platform === 'win32' ? ';' : ':',
-  )) {
-    if (!dir) continue;
-    for (const ext of exts) {
-      const p = join(dir, name + ext);
-      if (existsSync(p) && statSync(p).isFile()) return p;
-    }
-  }
-  return undefined;
-}
+export { onPath } from '../util/onPath.ts';
+import { onPath } from '../util/onPath.ts';
 
 /** An agent CLI's path: the override ("none" turns the route off), else PATH. */
 const cliBin = (override: string | undefined, name: string) =>

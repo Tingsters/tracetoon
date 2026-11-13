@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { homedir } from 'node:os';
 import { writeFileSync } from 'node:fs';
 import { Command } from 'commander';
 import {
@@ -42,7 +43,8 @@ import {
   setEnabledCmd,
   statusCmd,
 } from './commands/switch.ts';
-import { runPrHook, type HookAgent } from './hook/prHook.ts';
+import { runPrHook } from './hook/prHook.ts';
+import { HOOK_IDS, INTEGRATIONS, skillTargets } from './integrations/registry.ts';
 import { TOOL_VERSION, BUILD_INFO } from './version.ts';
 import { taskCmd, checkCmd } from './commands/workflow.ts';
 import { runLifecycle, type LifecycleEvent } from './hook/lifecycle.ts';
@@ -88,6 +90,36 @@ program
   .command('build-info')
   .description('runtime identity and supported workflow capabilities')
   .action(() => emit(g(), BUILD_INFO, () => JSON.stringify(BUILD_INFO)));
+program
+  .command('integrations')
+  .description('the agents Tracetoon supports, and where each gets the skill')
+  .option(
+    '--skill-targets',
+    'print "<agents>|<skill folder>" for each present agent (used by the installers)',
+  )
+  .action((o: { skillTargets?: boolean }) => {
+    if (o.skillTargets) {
+      for (const t of skillTargets())
+        process.stdout.write(`${t.labels.join(', ')}|${t.dir}\n`);
+      return;
+    }
+    const rows = INTEGRATIONS.map((i) => ({
+      id: i.id,
+      label: i.label,
+      status: i.status,
+      logs: i.traces.map((t) => t.id),
+      hook: !!i.hook,
+      skill: i.skill?.(homedir(), process.env) ?? null,
+    }));
+    emit(g(), rows, () =>
+      rows
+        .map(
+          (r) =>
+            `${r.label.padEnd(14)} ${r.status.padEnd(10)} logs: ${r.logs.join(', ') || 'none'}; hook: ${r.hook ? 'yes' : 'no'}${r.skill ? `; skill: ${r.skill.dir}${r.skill.present ? '' : ' (agent not found)'}` : ''}`,
+        )
+        .join('\n'),
+    );
+  });
 const task = program
   .command('task')
   .description('register and finish a cohesive local change');
@@ -167,7 +199,10 @@ program
   .command('digest')
   .description('start a run: build the redacted trace digest for this branch')
   .option('--run <id>', 'refresh an existing run, preserving its description and comic')
-  .option('--base <ref>', 'base branch, or <remote>/<branch> for one only another remote has')
+  .option(
+    '--base <ref>',
+    'base branch, or <remote>/<branch> for one only another remote has',
+  )
   .option('--include <ids>', 'session refs or ids to include', list)
   .option('--exclude <ids>', 'session refs or ids to leave out', list)
   .option('--budget <tokens>', 'approximate token budget', Number)
@@ -203,7 +238,10 @@ program
   .command('prepare')
   .description('prepare digest and contribution context from one repository snapshot')
   .option('--run <id>', 'refresh an existing run')
-  .option('--base <ref>', 'base branch, or <remote>/<branch> for one only another remote has')
+  .option(
+    '--base <ref>',
+    'base branch, or <remote>/<branch> for one only another remote has',
+  )
   .option('--include <ids>', 'session refs or ids to include', list)
   .option('--exclude <ids>', 'session refs or ids to exclude', list)
   .option('--budget <tokens>', 'approximate digest token budget', Number)
@@ -485,26 +523,26 @@ const hook = program
   .description('the agent hook that routes PRs through Tracetoon');
 hook
   .command('lifecycle')
-  .requiredOption('--agent <agent>', 'claude, codex or antigravity')
+  .requiredOption('--agent <agent>', HOOK_IDS.join(', '))
   .requiredOption('--event <event>', 'SessionStart, PreToolUse, PostToolUse or Stop')
   .action(async (o) => {
     if (
-      !['claude', 'codex', 'antigravity'].includes(o.agent) ||
+      !HOOK_IDS.includes(o.agent) ||
       !['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop'].includes(o.event)
     )
       throw new UserError('Unknown host lifecycle event.');
-    await runLifecycle(o.agent as HookAgent, o.event as LifecycleEvent);
+    await runLifecycle(o.agent, o.event as LifecycleEvent);
   });
 hook
   .command('pre-pr')
   .description(
     'called by agents before shell commands; routes PR creation through Tracetoon',
   )
-  .requiredOption('--agent <agent>', 'claude, codex or antigravity')
-  .action(async (o) => runPrHook(o.agent as HookAgent));
+  .requiredOption('--agent <agent>', HOOK_IDS.join(', '))
+  .action(async (o) => runPrHook(o.agent));
 hook
   .command('install')
-  .description('register the PR hook with Claude Code, Codex and Antigravity')
+  .description('register the PR hook with every agent that supports one')
   .option('--program <path>', 'program the hook should run (default: this one)')
   .action((o) => hookInstallCmd({ ...g(), ...o }));
 hook

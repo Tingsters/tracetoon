@@ -1,9 +1,9 @@
 # Tracetoon installer for Windows (PowerShell 5.1 or 7+).
 #
-#   irm https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Gemini CLI), caches the prebuilt binary so nothing else
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI), caches the prebuilt binary so nothing else
 # (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -13,7 +13,7 @@
 #   $env:TRACETOON_UNINSTALL = '1'      remove the skill, the hooks and the cached binary
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$repo = 'Tingsters/tracetoon'
+$repo = 'Tracetoon/tracetoon'
 
 function Has($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
@@ -27,8 +27,32 @@ function Get-Targets {
   if ((Test-Path (Join-Path $gemini 'antigravity-cli')) -or (Test-Path (Join-Path $gemini 'antigravity-ide')) -or (Has 'agy')) {
     $t += [pscustomobject]@{ Name = 'Antigravity'; Dir = Join-Path $gemini 'config\skills\tracetoon' }
   }
+  $factory = if ($env:FACTORY_HOME) { $env:FACTORY_HOME } else { Join-Path $HOME '.factory' }
+  if ((Test-Path $factory) -or (Has 'droid')) { $t += [pscustomobject]@{ Name = 'Factory Droid'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  $copilot = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Path $HOME '.copilot' }
+  if ((Test-Path $copilot) -or (Has 'copilot')) { $t += [pscustomobject]@{ Name = 'Copilot'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  $cursor = if ($env:CURSOR_HOME) { $env:CURSOR_HOME } else { Join-Path $HOME '.cursor' }
+  if ((Test-Path $cursor) -or (Has 'cursor-agent')) { $t += [pscustomobject]@{ Name = 'Cursor'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  $xdg = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME '.config' }
+  foreach ($oc in @(@('OpenCode', 'opencode'), @('Kilo', 'kilo'))) {
+    if ((Test-Path (Join-Path $xdg $oc[1])) -or (Has $oc[1])) { $t += [pscustomobject]@{ Name = $oc[0]; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  }
   if (Has 'gemini') { $t += [pscustomobject]@{ Name = 'Gemini CLI'; Dir = Join-Path $gemini 'skills\tracetoon' } }
-  return $t
+  # Hosts can share a folder (Codex, Factory Droid, Copilot, Cursor, OpenCode and Kilo read ~/.agents/skills).
+  $seen = @{}
+  return @($t | Where-Object { if ($seen.ContainsKey($_.Dir)) { $false } else { $seen[$_.Dir] = $true; $true } })
+}
+
+# The binary knows every agent it supports (tracetoon integrations). The list
+# above is only for binaries from releases before that command existed.
+function Get-BinaryTargets($exe) {
+  if (-not (Test-Path $exe)) { return @() }
+  try { $lines = @(& $exe integrations --skill-targets 2>$null) } catch { return @() }
+  if ($LASTEXITCODE -ne 0) { return @() }
+  return @($lines | Where-Object { $_ -match '\|' } | ForEach-Object {
+    $i = $_.LastIndexOf('|')
+    [pscustomobject]@{ Name = $_.Substring(0, $i); Dir = $_.Substring($i + 1) }
+  })
 }
 
 # The binary lives at a fixed path, so agent hooks keep working (and Codex keeps
@@ -40,7 +64,9 @@ $targets = @(Get-Targets)
 if ($env:TRACETOON_UNINSTALL -eq '1') {
   # Hooks first, while the binary is still around to remove them.
   if (Test-Path $stable) { & $stable hook uninstall }
-  foreach ($t in $targets) {
+  $known = @(Get-BinaryTargets $stable)
+  foreach ($t in $targets) { if (-not ($known | Where-Object { $_.Dir -eq $t.Dir })) { $known += $t } }
+  foreach ($t in $known) {
     if (Test-Path $t.Dir) { Remove-Item -Recurse -Force $t.Dir; Write-Host "removed from $($t.Name) ($($t.Dir))" }
   }
   if (Test-Path $homeRoot) { Remove-Item -Recurse -Force $homeRoot }
@@ -53,7 +79,7 @@ if ($env:TRACETOON_UNINSTALL -eq '1') {
   return
 }
 
-if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Gemini CLI).' }
+if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI).' }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 $bin = "tracetoon-windows-$arch.exe"
@@ -95,6 +121,8 @@ try {
   if ($LASTEXITCODE -ne 0 -or $manifest.version -ne $ver -or $binaryInfo.version -ne $ver -or $manifest.buildId -ne $binaryInfo.buildId) {
     throw 'Downloaded skill and runtime are different builds; nothing was activated.'
   }
+  $fromBinary = @(Get-BinaryTargets (Join-Path $tmp $bin))
+  if ($fromBinary.Count -gt 0) { $targets = $fromBinary }
   # Stage every skill before replacing any installed component. All moves stay
   # beside their explicitly selected tracetoon directory.
   foreach ($t in $targets) {

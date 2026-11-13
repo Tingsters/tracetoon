@@ -1,11 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { commandText, parseCodexLines } from '../src/trace/codex.ts';
+import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
   unwrapArg,
-} from '../src/trace/antigravity.ts';
+} from '../src/integrations/antigravity/trace.ts';
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
+import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
+import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/trace.ts';
+import {
+  parseCopilotCliLines,
+  parseVscodeChat,
+  replayChatSession,
+} from '../src/integrations/copilot/trace.ts';
 import { foldSubagents } from '../src/pipeline.ts';
 import type { TraceSession } from '../src/trace/types.ts';
 
@@ -358,5 +365,374 @@ describe('Antigravity adapter', () => {
     expect(unwrapArg('"\\"C:\\\\\\\\x\\""')).toBe('"C:\\\\x"');
     expect(unwrapArg('"plain"')).toBe('plain');
     expect(unwrapArg('not wrapped')).toBe('not wrapped');
+  });
+});
+
+describe('Factory Droid adapter', () => {
+  // Shapes from a real `droid exec` session: a Script tool runs nested calls, each
+  // logged as its own tool_use/tool_result pair with JSON-encoded inputs/results.
+  const msg = (id: string, n: number, role: string, content: unknown[], extra = {}) => ({
+    type: 'message',
+    id,
+    timestamp: T(n),
+    message: { role, content, ...extra },
+  });
+  const lines = jsonl([
+    { type: 'session_start', id: 'f1', title: 'Fix add', version: 2, cwd: '/repo' },
+    msg('context-1', 1, 'user', [
+      { type: 'text', text: '<system-reminder>\ntools</system-reminder>' },
+    ]),
+    msg('u1', 2, 'user', [{ type: 'text', text: 'Fix add() and run the test.' }]),
+    msg(
+      'a1',
+      3,
+      'assistant',
+      [
+        { type: 'thinking', thinking: '...', signature: 'x' },
+        {
+          type: 'tool_use',
+          id: 'call_1',
+          name: 'Script',
+          input: { script: 'tools.ApplyPatch(...)' },
+        },
+      ],
+      { modelId: 'gpt-6-sol' },
+    ),
+    msg('repl-tool-call:p-1', 4, 'assistant', [
+      {
+        type: 'tool_use',
+        id: 'p-1',
+        name: 'ApplyPatch',
+        input: JSON.stringify({
+          input:
+            '*** Begin Patch\n*** Update File: calc.py\n@@\n def add(a, b):\n-    return a - b\n+    return a + b\n*** Add File: test_calc.py\n+assert add(1, 2) == 3\n*** End Patch',
+        }),
+      },
+    ]),
+    msg('repl-tool-result:p-1', 5, 'user', [
+      { type: 'tool_result', tool_use_id: 'p-1', content: '"{\\"success\\":true}"' },
+    ]),
+    msg('repl-tool-call:e-1', 6, 'assistant', [
+      {
+        type: 'tool_use',
+        id: 'e-1',
+        name: 'Execute',
+        input: JSON.stringify({ command: 'python test_calc.py', riskLevel: 'low' }),
+      },
+    ]),
+    msg('repl-tool-result:e-1', 7, 'user', [
+      {
+        type: 'tool_result',
+        tool_use_id: 'e-1',
+        content: '"Traceback ...\n\n[Process exited with code 1]"',
+      },
+    ]),
+    msg('repl-tool-call:e-2', 8, 'assistant', [
+      {
+        type: 'tool_use',
+        id: 'e-2',
+        name: 'Execute',
+        input: JSON.stringify({ command: 'git status --short' }),
+      },
+    ]),
+    msg('repl-tool-result:e-2', 9, 'user', [
+      {
+        type: 'tool_result',
+        tool_use_id: 'e-2',
+        content: '" M calc.py\n\n[Process exited with code 0]"',
+      },
+    ]),
+    msg('r1', 10, 'user', [
+      {
+        type: 'tool_result',
+        tool_use_id: 'call_1',
+        content: [{ type: 'text', text: 'done' }],
+        is_error: false,
+      },
+    ]),
+    msg('repl-tool-call:e-3', 11, 'assistant', [
+      { type: 'tool_use', id: 'e-3', name: 'Execute', input: { command: 'bun test' } },
+    ]),
+    msg('a2', 12, 'assistant', [{ type: 'text', text: 'Fixed add().' }], {
+      modelId: 'gpt-6-sol',
+    }),
+    { type: 'agent_turn_outcome', turnId: 'u1', reason: 'completed' },
+    { type: 'brand_new_record' },
+  ]);
+
+  test('reads prompts, nested patch edits and commands with exit codes', () => {
+    const s = session('f1');
+    parseFactoryLines(lines, s);
+    expect(s.title).toBe('Fix add');
+    const prompts = s.records.filter((r) => r.kind === 'prompt');
+    expect(prompts.map((r) => r.kind === 'prompt' && r.text)).toEqual([
+      'Fix add() and run the test.',
+    ]);
+    const edits = s.records.filter((r) => r.kind === 'edit');
+    expect(edits).toHaveLength(2);
+    expect(edits[0]).toMatchObject({
+      added: ['    return a + b'],
+      removed: ['    return a - b'],
+    });
+    expect(edits[1]).toMatchObject({ added: ['assert add(1, 2) == 3'], created: true });
+    const commands = s.records.filter((r) => r.kind === 'command');
+    expect(
+      commands.map(
+        (c) => c.kind === 'command' && [c.cmd, c.isError ?? null, !!c.pending],
+      ),
+    ).toEqual([
+      ['python test_calc.py', true, false],
+      ['git status --short', false, false],
+      ['bun test', null, true],
+    ]);
+    expect(s.records.find((r) => r.kind === 'assistant')).toMatchObject({
+      text: 'Fixed add().',
+      model: 'gpt-6-sol',
+    });
+    expect(s.unknownTypes).toEqual({ brand_new_record: 1 });
+  });
+});
+
+describe('Copilot adapters', () => {
+  test('CLI: pairs tool starts and completions, reads exit codes and apply_patch', () => {
+    const ev = (type: string, n: number, data: object) => ({
+      type,
+      id: `e${n}`,
+      timestamp: T(n),
+      data,
+    });
+    const s = session('c1');
+    parseCopilotCliLines(
+      jsonl([
+        ev('session.start', 0, {
+          sessionId: 'c1',
+          context: { cwd: '/repo', branch: 'fix-add' },
+        }),
+        ev('user.message', 1, { content: 'Fix add() and test it.' }),
+        ev('assistant.message', 2, {
+          content: '',
+          model: 'gpt-6-luna',
+          toolRequests: [{}],
+        }),
+        ev('tool.execution_start', 3, {
+          toolCallId: 'p1',
+          toolName: 'apply_patch',
+          arguments:
+            '*** Begin Patch\n*** Update File: calc.py\n@@\n-    return a - b\n+    return a + b\n*** End Patch',
+          model: 'gpt-6-luna',
+        }),
+        ev('hook.start', 4, { hookType: 'preToolUse' }),
+        ev('tool.execution_complete', 5, {
+          toolCallId: 'p1',
+          success: true,
+          fileEdits: [],
+        }),
+        ev('tool.execution_start', 6, {
+          toolCallId: 'x1',
+          toolName: 'powershell',
+          arguments: { command: 'python test_calc.py', description: 'test' },
+        }),
+        ev('tool.execution_complete', 7, {
+          toolCallId: 'x1',
+          success: true,
+          shellExecution: { exitCode: 1 },
+          result: { content: 'AssertionError' },
+        }),
+        ev('tool.execution_start', 8, {
+          toolCallId: 'v1',
+          toolName: 'view',
+          arguments: { path: 'calc.py' },
+        }),
+        ev('tool.execution_complete', 9, { toolCallId: 'v1', success: true }),
+        ev('tool.execution_start', 10, {
+          toolCallId: 'x2',
+          toolName: 'bash',
+          arguments: { command: 'bun test' },
+        }),
+        ev('assistant.message', 11, { content: 'Fixed.', model: 'gpt-6-luna' }),
+        ev('brand.new', 12, {}),
+      ]),
+      s,
+    );
+    expect(s.records.find((r) => r.kind === 'prompt')).toMatchObject({
+      text: 'Fix add() and test it.',
+      cwd: '/repo',
+      branch: 'fix-add',
+    });
+    expect(s.records.filter((r) => r.kind === 'edit')).toMatchObject([
+      { added: ['    return a + b'], removed: ['    return a - b'] },
+    ]);
+    expect(
+      s.records.flatMap((r) =>
+        r.kind === 'command' ? [[r.cmd, r.isError ?? null, !!r.pending]] : [],
+      ),
+    ).toEqual([
+      ['python test_calc.py', true, false],
+      ['bun test', null, true],
+    ]);
+    expect(s.records.filter((r) => r.kind === 'assistant')).toHaveLength(1);
+    expect(s.unknownTypes).toEqual({ 'brand.new': 1 });
+  });
+
+  test('VS Code: replays the chat operation log, then reads prompts, terminal commands and edits', () => {
+    const log = jsonl([
+      {
+        kind: 0,
+        v: { version: 3, customTitle: 'Fix add', sessionId: 'v1', requests: [] },
+      },
+      {
+        kind: 2,
+        k: ['requests'],
+        v: [
+          {
+            requestId: 'r1',
+            timestamp: Date.parse(T(1)),
+            modelId: 'copilot/auto',
+            message: { text: 'Fix add()' },
+            response: [],
+          },
+        ],
+      },
+      { kind: 2, k: ['requests', 0, 'response'], v: [{ value: 'Working on it. ' }] },
+      {
+        kind: 2,
+        k: ['requests', 0, 'response'],
+        v: [
+          {
+            kind: 'toolInvocationSerialized',
+            toolId: 'run_in_terminal',
+            toolSpecificData: {
+              kind: 'terminal',
+              commandLine: { original: 'cd /repo; pytest', toolEdited: 'pytest' },
+              cwd: { fsPath: '/repo' },
+              terminalCommandState: { exitCode: 0 },
+            },
+          },
+          {
+            kind: 'textEditGroup',
+            uri: { fsPath: '/repo/calc.py' },
+            edits: [[{ text: 'def add(a, b):\n    return a + b\n', range: {} }]],
+          },
+        ],
+      },
+      // A later rewrite of the last part: truncate to index 2, then append.
+      { kind: 2, k: ['requests', 0, 'response'], i: 3, v: [{ value: 'Done.' }] },
+      { kind: 1, k: ['customTitle'], v: 'Fix add()' },
+      { kind: 1, k: ['missing', 'path'], v: 1 },
+    ]);
+    expect(replayChatSession(log).skipped).toBe(1);
+    const s = session('v1');
+    parseVscodeChat(log, s, '/repo');
+    expect(s.title).toBe('Fix add()');
+    expect(s.warnings).toHaveLength(1);
+    expect(s.records.find((r) => r.kind === 'prompt')).toMatchObject({
+      text: 'Fix add()',
+      cwd: '/repo',
+    });
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'pytest',
+      isError: false,
+    });
+    expect(s.records.find((r) => r.kind === 'edit')).toMatchObject({
+      file: '/repo/calc.py',
+      added: ['def add(a, b):', '    return a + b'],
+      removed: [],
+    });
+    expect(s.records.find((r) => r.kind === 'assistant')).toMatchObject({
+      text: 'Working on it. Done.',
+    });
+  });
+});
+
+describe('session lines that are JSON but not objects', () => {
+  test('are skipped, and the rest of the session is still read', () => {
+    for (const parse of [parseCopilotCliLines, parseFactoryLines, parseCursorLines]) {
+      const s = session('n');
+      expect(() =>
+        parse(
+          [
+            'null',
+            '42',
+            JSON.stringify({ type: 'user.message', data: { content: 'hi' } }),
+          ].join('\n'),
+          s,
+        ),
+      ).not.toThrow();
+      expect(s.warnings.length).toBe(2);
+    }
+  });
+});
+
+describe('Cursor adapter', () => {
+  test('reads the transcript the IDE and agent CLI write: prompts, StrReplace/Write edits, Shell commands', () => {
+    const s = session('k1');
+    parseCursorLines(
+      jsonl([
+        {
+          role: 'user',
+          message: {
+            content: [
+              {
+                type: 'text',
+                text: '<timestamp>Friday, Nov 13, 2026, 3:47 AM (UTC-8)</timestamp>\n<user_query>\nFix add() and test it.\n</user_query>',
+              },
+            ],
+          },
+        },
+        {
+          role: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'Looking at calc.py.' },
+              { type: 'tool_use', name: 'Read', input: { path: '/repo/calc.py' } },
+              {
+                type: 'tool_use',
+                name: 'StrReplace',
+                input: {
+                  path: '/repo/calc.py',
+                  old_string: 'return a - b',
+                  new_string: 'return a + b',
+                },
+              },
+              {
+                type: 'tool_use',
+                name: 'Write',
+                input: { path: 'test_calc.py', contents: 'assert add(2, 3) == 5\n' },
+              },
+              {
+                type: 'tool_use',
+                name: 'Shell',
+                input: { command: 'python test_calc.py', working_directory: '/repo' },
+              },
+            ],
+          },
+        },
+        { type: 'turn_ended', status: 'success' },
+        { type: 'something_new' },
+      ]),
+      s,
+      '/repo',
+    );
+    const ts = '2026-11-13T11:47:00.000Z';
+    expect(s.records.find((r) => r.kind === 'prompt')).toMatchObject({
+      text: 'Fix add() and test it.',
+      ts,
+    });
+    expect(s.records.filter((r) => r.kind === 'edit')).toMatchObject([
+      { removed: ['return a - b'], added: ['return a + b'], ts },
+      { added: ['assert add(2, 3) == 5'], created: true },
+    ]);
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'python test_calc.py',
+      cwd: '/repo',
+    });
+    expect(s.unknownTypes).toEqual({ something_new: 1 });
+  });
+
+  test('timestamps carry their UTC offset', () => {
+    expect(cursorTimestamp('Friday, Nov 13, 2026, 12:05 PM (UTC+5:30)')).toBe(
+      '2026-11-13T06:35:00.000Z',
+    );
+    expect(cursorTimestamp('no time here')).toBeUndefined();
   });
 });

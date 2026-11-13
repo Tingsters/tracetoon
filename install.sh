@@ -1,10 +1,10 @@
 #!/bin/sh
 # Tracetoon installer for macOS, Linux and Git Bash on Windows.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Gemini CLI), caches the matching prebuilt binary so nothing
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI), caches the matching prebuilt binary so nothing
 # else (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -14,7 +14,7 @@
 #   TRACETOON_UNINSTALL=1      remove the skill, the hooks and the cached binaries
 set -eu
 
-REPO="Tingsters/tracetoon"
+REPO="Tracetoon/tracetoon"
 say() { printf '%s\n' "$*"; }
 die() { printf 'tracetoon install: %s\n' "$*" >&2; exit 1; }
 
@@ -59,9 +59,33 @@ targets() {
   if [ -d "$gemini_home/antigravity-cli" ] || [ -d "$gemini_home/antigravity-ide" ] || command -v agy >/dev/null 2>&1; then
     printf 'Antigravity|%s\n' "$gemini_home/config/skills/tracetoon"
   fi
+  if [ -d "${FACTORY_HOME:-$HOME/.factory}" ] || command -v droid >/dev/null 2>&1; then
+    printf 'Factory Droid|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  if [ -d "${COPILOT_HOME:-$HOME/.copilot}" ] || command -v copilot >/dev/null 2>&1; then
+    printf 'Copilot|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  if [ -d "${CURSOR_HOME:-$HOME/.cursor}" ] || command -v cursor-agent >/dev/null 2>&1; then
+    printf 'Cursor|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  for oc in OpenCode:opencode Kilo:kilo; do
+    if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/${oc#*:}" ] || command -v "${oc#*:}" >/dev/null 2>&1; then
+      printf '%s|%s\n' "${oc%%:*}" "$HOME/.agents/skills/tracetoon"
+    fi
+  done
   if command -v gemini >/dev/null 2>&1; then
     printf 'Gemini CLI|%s\n' "$gemini_home/skills/tracetoon"
   fi
+}
+
+# The binary knows every agent it supports (tracetoon integrations). targets()
+# above is only for binaries from releases before that command existed.
+binary_targets() { # binary
+  [ -x "$1" ] || return 1
+  out=$("$1" integrations --skill-targets 2>/dev/null) || return 1
+  [ -n "$out" ] || return 1
+  # Windows binaries print C:\... paths; Git Bash handles them with forward slashes.
+  printf '%s\n' "$out" | tr -d '\r' | tr '\\' '/'
 }
 
 case "$(uname -s)" in
@@ -90,7 +114,7 @@ cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/tracetoon"
 if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   # Hooks first, while the binary is still around to remove them.
   if [ -x "$stable" ]; then "$stable" hook uninstall || true; fi
-  targets | while IFS='|' read -r name dir; do
+  { binary_targets "$stable" || true; targets; } | awk -F'|' '!seen[$2]++' | while IFS='|' read -r name dir; do
     if [ -d "$dir" ]; then rm -rf "$dir" && say "removed from $name ($dir)"; fi
   done
   rm -rf "$home_root" "$cache_root"
@@ -102,7 +126,7 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   exit 0
 fi
 
-[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Gemini CLI)"
+[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI)"
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)
@@ -144,7 +168,8 @@ chmod +x "$tmp/$bin"
 info=$("$tmp/$bin" build-info --json | tr -d ' \r\n') || die "downloaded runtime does not run"
 [ "$skill_version" = "$ver" ] && [ -n "$build" ] || die "skill version does not match the release"
 case "$info" in *"\"buildId\":\"$build\""*) ;; *) die "skill and runtime builds differ; nothing activated" ;; esac
-targets > "$tmp/targets"
+# Hosts can share a folder (Codex and Factory Droid read ~/.agents/skills).
+binary_targets "$tmp/$bin" > "$tmp/targets" || targets | awk -F'|' '!seen[$2]++' > "$tmp/targets"
 while IFS='|' read -r name dir; do
   [ "$(basename "$dir")" = tracetoon ] || die "unexpected skill install target: $dir"
   stage="$dir.new-$$"

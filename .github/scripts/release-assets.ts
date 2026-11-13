@@ -354,7 +354,7 @@ export function validatePromotion(p: Promotion) {
 export function promotionNotes(p: Promotion): string {
   validatePromotion(p);
   const lines = [
-    `Promotes the retained CI artifact \`${p.artifact.id}\` from [run ${p.artifact.runId}](https://github.com/Tingsters/tracetoon/actions/runs/${p.artifact.runId}).`,
+    `Promotes the retained CI artifact \`${p.artifact.id}\` from [run ${p.artifact.runId}](https://github.com/Tracetoon/tracetoon/actions/runs/${p.artifact.runId}).`,
     '',
   ];
   if (p.schema === 'tracetoon.release-promotion/v3')

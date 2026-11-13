@@ -45,7 +45,7 @@ $bundle = Join-Path (Join-Path $skill 'dist') 'tracetoon.mjs'
 if (Test-Path $bundle) {
   if ((Get-Command bun -ErrorAction SilentlyContinue) -and (Test-MatchingRuntime 'bun' @($bundle))) { & bun $bundle @args; exit $LASTEXITCODE }
   if (Get-Command node -ErrorAction SilentlyContinue) {
-    $major = [int](& node -p 'process.versions.node.split(".")[0]')
+    $major = [int](& node -p "process.versions.node.split('.')[0]")
     if ($major -ge 22 -and (Test-MatchingRuntime 'node' @($bundle))) { & node $bundle @args; exit $LASTEXITCODE }
   }
 }
@@ -53,13 +53,13 @@ if (Test-Path $bundle) {
 if ($env:TRACETOON_ALLOW_DOWNLOAD -eq '1' -and (Get-Command gh -ErrorAction SilentlyContinue)) {
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ("tracetoon-" + [guid]::NewGuid())
   New-Item -ItemType Directory -Path $tmp | Out-Null
-  & gh release download "v$ver" -R Tingsters/tracetoon -p $name -D $tmp 2>$null | Out-Null
+  & gh release download "v$ver" -R Tracetoon/tracetoon -p $name -D $tmp 2>$null | Out-Null
   $file = Join-Path $tmp $name
   if (Test-Path $file) {
     # Prefer a checksum pinned in the skill; otherwise use the release's own list.
     $line = Get-Content (Join-Path $skill 'checksums.txt') -ErrorAction SilentlyContinue | Where-Object { $_ -match " $([regex]::Escape($name))$" }
     if (-not $line) {
-      & gh release download "v$ver" -R Tingsters/tracetoon -p checksums.txt -D $tmp 2>$null | Out-Null
+      & gh release download "v$ver" -R Tracetoon/tracetoon -p checksums.txt -D $tmp 2>$null | Out-Null
       $line = Get-Content (Join-Path $tmp 'checksums.txt') -ErrorAction SilentlyContinue | Where-Object { $_ -match " $([regex]::Escape($name))$" }
     }
     $want = if ($line) { ($line -split ' ')[0] } else { '' }
