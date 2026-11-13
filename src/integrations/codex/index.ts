@@ -7,29 +7,12 @@ import {
   installedClaudeStyle,
   parseClaudeStyle,
 } from '../../hook/claudeStyle.ts';
-import { isOurs } from '../../hook/config.ts';
 import { onPath } from '../../util/onPath.ts';
-import type { Env, Integration, Json } from '../types.ts';
+import type { Env, Integration } from '../types.ts';
 import { codexAdapter } from './trace.ts';
+import { codexTrustProblem } from './trust.ts';
 
 const home = (h: string, env: Env) => env.CODEX_HOME || join(h, '.codex');
-
-/** Whether Codex has trusted Tracetoon's hook (`/hooks`), from config.toml beside hooks.json. */
-function trusted(file: string, data: Json): boolean | undefined {
-  const groups: Json[] = Array.isArray(data.hooks?.PreToolUse)
-    ? data.hooks.PreToolUse
-    : [];
-  const i = groups.findIndex(
-    (g) => Array.isArray(g?.hooks) && g.hooks.some((h: Json) => isOurs(h?.command)),
-  );
-  if (i < 0) return undefined;
-  try {
-    const toml = readFileSync(join(dirname(file), 'config.toml'), 'utf8');
-    return toml.includes(`hooks.json:pre_tool_use:${i}:0'`);
-  } catch {
-    return false;
-  }
-}
 
 export const integration: Integration = {
   id: 'codex',
@@ -53,10 +36,7 @@ export const integration: Integration = {
       }
       return 'In Codex, run /hooks once and trust the Tracetoon hook.';
     },
-    problem: (file, data) =>
-      trusted(file, data) === false
-        ? 'not trusted yet: run /hooks in Codex and trust the Tracetoon hook'
-        : undefined,
+    problem: codexTrustProblem,
   },
   skill: (h, env) => ({
     present: existsSync(home(h, env)) || !!onPath('codex', env),

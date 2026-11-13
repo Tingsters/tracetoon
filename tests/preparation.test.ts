@@ -148,7 +148,8 @@ test('locked dependencies shared from another worktree through a link validate',
     pkg = join(shared, 'Showtail', 'packages', 'agent-traces');
   mkdirSync(join(pkg, 'src'), { recursive: true });
   writeFileSync(join(pkg, 'src', 'module.ts'), 'export const value = 1;');
-  symlinkSync(shared, join(repo.root, '.tracetoon-deps'), 'dir');
+  // A junction on Windows: like a directory symlink, but creating one needs no extra rights.
+  symlinkSync(shared, join(repo.root, '.tracetoon-deps'), 'junction');
   // The same bytes in a real directory fingerprint identically.
   const local = makeRepo();
   writeFileSync(join(local.root, 'build-dependencies.json'), lock);
@@ -166,6 +167,6 @@ test('locked dependencies shared from another worktree through a link validate',
   expect(executeCheck(repo.root, run, { name: 'tests', command }).outcome).toBe('passed');
   writeFileSync(join(pkg, 'src', 'module.ts'), 'export const value = 2;');
   expect(checkReport(repo.root, run).every((c) => !c.current)).toBe(true);
-  symlinkSync(join(pkg, 'src'), join(pkg, 'linked'), 'dir');
+  symlinkSync(join(pkg, 'src'), join(pkg, 'linked'), 'junction');
   expect(() => dependencyFingerprint(repo.root)).toThrow('contains a symlink');
 }, 30000);

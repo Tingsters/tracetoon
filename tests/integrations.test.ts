@@ -16,6 +16,7 @@ import {
   skillTargets,
 } from '../src/integrations/registry.ts';
 import type { HookCommands } from '../src/integrations/types.ts';
+import { codexHookHash, codexTrust } from '../src/integrations/codex/trust.ts';
 import { decide, DENY_REASON } from '../src/hook/prHook.ts';
 import { hookTargets, installHooks, uninstallHooks } from '../src/hook/install.ts';
 import { tempDir } from './helpers.ts';
@@ -374,5 +375,68 @@ describe('plugin hooks', () => {
     });
     expect(readFileSync(join(dir, 'tracetoon.js'), 'utf8')).toBe('// my own plugin\n');
     expect(uninstallHooks(targets)[0]!.result).toBe('unchanged');
+  });
+});
+
+describe('Codex hook trust', () => {
+  test('mirrors the hash Codex records when /hooks trusts a hook', () => {
+    // Recorded by Codex 0.169 for a hooks.json handler with no timeout (Codex fills in 600).
+    expect(
+      codexHookHash('PostToolUse', '^(apply_patch|shell_command|Bash)$', {
+        type: 'command',
+        command: 'showtail hook post-edit --tool codex',
+        async: true,
+      }),
+    ).toBe('sha256:2ce41c0a1bb7536790efe74d0f1f69e7016de0ca29037aa8fafb8c3e37f4eb7a');
+    // Stop has no matcher in Codex's identity, so one in the file doesn't change the hash.
+    const stop = { type: 'command', command: 'x' };
+    expect(codexHookHash('Stop', 'ignored', stop)).toBe(
+      codexHookHash('Stop', undefined, stop),
+    );
+    // commandWindows replaces the command only on Windows.
+    const both = { type: 'command', command: 'a', commandWindows: 'b' };
+    expect(codexHookHash('PreToolUse', 'Bash', both, 'win32')).toBe(
+      codexHookHash('PreToolUse', 'Bash', { type: 'command', command: 'b' }, 'win32'),
+    );
+    expect(codexHookHash('PreToolUse', 'Bash', both, 'linux')).toBe(
+      codexHookHash('PreToolUse', 'Bash', { type: 'command', command: 'a' }, 'linux'),
+    );
+  });
+
+  test('reads state keys in either TOML string form and matches the hooks.json path', () => {
+    const handler = {
+      type: 'command',
+      command: '/x/tracetoon hook pre-pr --agent codex',
+      timeout: 10,
+    };
+    const data = {
+      hooks: {
+        PreToolUse: [
+          { matcher: 'other', hooks: [{ type: 'command', command: 'y' }] },
+          { matcher: 'Bash', hooks: [handler] },
+        ],
+      },
+    };
+    const hash = codexHookHash('PreToolUse', 'Bash', handler)!;
+    const win = String.raw`C:\h\.codex\hooks.json`;
+    // Codex writes literal-string keys with the path as Windows displays it.
+    const literal = `[hooks.state.'${win}:pre_tool_use:1:0']\ntrusted_hash = "${hash}"\n`;
+    expect(codexTrust('C:/h/.codex/hooks.json', data, literal, 'win32')).toEqual([
+      'trusted',
+    ]);
+    const escaped = win.replace(/\\/g, '\\\\');
+    const basic = `[hooks.state."${escaped}:pre_tool_use:1:0"]\ntrusted_hash = "${hash}"\n`;
+    expect(codexTrust(win, data, basic, 'win32')).toEqual(['trusted']);
+    // Another layer's hooks.json (a project's .codex) doesn't vouch for the user's.
+    const other = `[hooks.state.'${String.raw`C:\repo\.codex\hooks.json`}:pre_tool_use:1:0']\ntrusted_hash = "${hash}"\n`;
+    expect(codexTrust(win, data, other, 'win32')).toEqual(['untrusted']);
+    // The index is part of the key: a hook that moved groups needs trusting again.
+    const moved = `[hooks.state.'/h/.codex/hooks.json:pre_tool_use:0:0']\ntrusted_hash = "${hash}"\n`;
+    expect(codexTrust('/h/.codex/hooks.json', data, moved, 'linux')).toEqual([
+      'untrusted',
+    ]);
+    expect(codexTrust('/h/.codex/hooks.json', data, undefined, 'linux')).toEqual([
+      'untrusted',
+    ]);
   });
 });

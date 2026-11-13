@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -9,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { applyRelease } from '../src/update/apply.ts';
+import { applyRelease, stagedBinary } from '../src/update/apply.ts';
 import { installLayout, updatable } from '../src/update/layout.ts';
 import { parseReleases, pickRelease, type Release } from '../src/update/release.ts';
 import { compareVersions, parseVersion } from '../src/update/version.ts';
@@ -83,6 +84,26 @@ describe('what update may replace', () => {
     expect(layout.asset).toBe('tracetoon-windows-arm64.exe');
     expect(layout.stable).toMatch(/tracetoon.bin.tracetoon\.exe$/);
   });
+
+  test('the staged binary keeps its .exe extension last, so Windows can run it', () => {
+    expect(stagedBinary('C:\\L\\tracetoon\\bin\\tracetoon.exe', 'a1')).toBe(
+      'C:\\L\\tracetoon\\bin\\tracetoon.new-a1.exe',
+    );
+    expect(stagedBinary('/h/.local/bin/tracetoon', 'a1')).toBe(
+      '/h/.local/bin/tracetoon.new-a1',
+    );
+  });
+
+  test.skipIf(process.platform !== 'win32')(
+    'a staged copy of an executable runs on Windows',
+    () => {
+      // `tracetoon.exe.new-<id>` is refused ("Executable not found"); the staged name must run.
+      const dir = tempDir();
+      const staged = stagedBinary(join(dir, 'tracetoon.exe'), 't');
+      copyFileSync(process.execPath, staged);
+      expect(run(staged, ['--version']).ok).toBe(true);
+    },
+  );
 });
 
 const canRun =

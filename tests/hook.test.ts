@@ -19,6 +19,7 @@ import {
   uninstallHooks,
 } from '../src/hook/install.ts';
 import { switchState } from '../src/hook/switches.ts';
+import { codexHookHash } from '../src/integrations/codex/trust.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
 
@@ -752,13 +753,29 @@ describe('hook diagnostics', () => {
     expect(status[1]!.problem).toContain('/hooks');
     expect(status[2]!.problem).toContain('(other)');
 
-    writeFileSync(
-      join(h, '.codex', 'config.toml'),
-      "[hooks.state.'" +
-        join(h, '.codex') +
-        '\hooks.json:pre_tool_use:0:0\']\ntrusted_hash = "sha256:x"\n',
-    );
+    // Trust every Tracetoon handler the way Codex's /hooks records it.
+    const codexFile = join(h, '.codex', 'hooks.json');
+    const codexData = JSON.parse(readFileSync(codexFile, 'utf8'));
+    const trustAll = (hash?: (current: string) => string, extra = '') => {
+      let toml = '';
+      for (const [event, groups] of Object.entries<any[]>(codexData.hooks))
+        groups.forEach((group, g) =>
+          group.hooks.forEach((handler: any, i: number) => {
+            const current = codexHookHash(event, group.matcher, handler)!;
+            const label = event.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+            toml += `[hooks.state.'${codexFile}:${label}:${g}:${i}']\ntrusted_hash = "${hash ? hash(current) : current}"\n${extra}\n`;
+          }),
+        );
+      writeFileSync(join(h, '.codex', 'config.toml'), toml);
+    };
+    trustAll();
     expect(hookStatus(targets)[1]!.problem).toBeUndefined();
+    // A record from before an update no longer matches: Codex skips the hook as modified.
+    trustAll(() => 'sha256:x');
+    expect(hookStatus(targets)[1]!.problem).toContain('trust the Tracetoon hook again');
+    trustAll(undefined, 'enabled = false');
+    expect(hookStatus(targets)[1]!.problem).toContain('turn the Tracetoon hook back on');
+    trustAll();
     writeFileSync(
       join(h, '.gemini', 'config', 'hooks.json'),
       JSON.stringify({
