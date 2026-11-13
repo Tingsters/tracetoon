@@ -85,6 +85,12 @@ function swapDir(stage: string, target: string, tag: string): () => void {
   };
 }
 
+/** Where the new binary is staged before the swap: `tracetoon.new-<id>.exe` on Windows. */
+export function stagedBinary(stable: string, id: string): string {
+  const ext = /\.exe$/i.exec(stable)?.[0] ?? '';
+  return `${stable.slice(0, stable.length - ext.length)}.new-${id}${ext}`;
+}
+
 export async function applyRelease(
   release: Release,
   layout: Layout,
@@ -158,7 +164,8 @@ export async function applyRelease(
     // 4. Replace. A rename keeps a running hook's binary intact on Unix; Windows
     //    refuses to overwrite a loaded exe but allows a rename, so set the old one aside.
     mkdirSync(dirname(layout.stable), { recursive: true });
-    const next = `${layout.stable}.new-${id}`;
+    // Keep the extension last: Windows (and Bun's spawn there) runs only names ending in .exe.
+    const next = stagedBinary(layout.stable, id);
     copyFileSync(binary, next);
     chmodSync(next, 0o755);
     if (!run(next, ['--version']).ok)
@@ -222,7 +229,7 @@ export async function applyRelease(
     throw e;
   } finally {
     for (const s of staged) discard(s);
-    discard(`${layout.stable}.new-${id}`);
+    discard(stagedBinary(layout.stable, id));
     discard(tmp);
   }
 }
