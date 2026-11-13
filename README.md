@@ -558,6 +558,10 @@ trust the new hook entries in `/hooks`.
   `latest`, which includes release candidates).
 - `TRACETOON_DISABLE_UPDATES=1` blocks `update` entirely.
 - Re-running the installer also updates.
+- On Windows, `update` in 1.0.0-rc.26 and earlier stops with "the downloaded
+  binary does not run" and leaves the old version in place. Run the installer
+  once (`irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`)
+  to reach a version whose `update` works.
 - `update` can't replace a Claude Code plugin or a source checkout in place: the
   plugin updates with `/plugin marketplace update tracetoon`, a checkout with
   `git pull`. Asking your agent to update tells you which applies.
