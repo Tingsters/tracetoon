@@ -25,7 +25,7 @@ html{scroll-padding-top:70px} .toc{top:calc(env(safe-area-inset-top,0px) + 82px)
       <a href="./#why" class="opt">Why</a>
       <a href="./#talk" class="opt">Talk</a>
       <a href="evidence-graph.html" aria-current="page">Results</a>
-      <a href="https://github.com/Tingsters/tracetoon" class="ext">GitHub<svg viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5h5v5M9.5 2.5 3 9"/></svg><span class="site-sr"> (leaves this site)</span></a>
+      <a href="https://github.com/Tracetoon/tracetoon" class="ext">GitHub<svg viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5h5v5M9.5 2.5 3 9"/></svg><span class="site-sr"> (leaves this site)</span></a>
     </nav>
   </div>
 </header>
@@ -190,7 +190,7 @@ svg .mono{font-family:var(--mono)}
 
 <section>
 <h2 id="tracetoon">What Tracetoon is</h2>
-<p><a href="https://github.com/Tingsters/tracetoon">Tracetoon</a> is an open-source tool that writes better pull-request descriptions from the work an AI coding agent already did. Agents such as Claude Code, Codex and Antigravity keep session logs on disk: the user's requests, plans, decisions, file edits and the commands they ran. A PR description written from the diff alone loses most of that. It can't say why the change was made, what was tried first, or which tests actually ran on the final code.</p>
+<p><a href="https://github.com/Tracetoon/tracetoon">Tracetoon</a> is an open-source tool that writes better pull-request descriptions from the work an AI coding agent already did. Agents such as Claude Code, Codex and Antigravity keep session logs on disk: the user's requests, plans, decisions, file edits and the commands they ran. A PR description written from the diff alone loses most of that. It can't say why the change was made, what was tried first, or which tests actually ran on the final code.</p>
 <p>Tracetoon runs as an agent skill. When an agent is about to open a PR, Tracetoon takes over:</p>
 <ul>
   <li><b>Finds the matching sessions.</b> It identifies which sessions produced the current branch by matching agent edits to lines in the diff, and asks when a session is ambiguous.</li>
