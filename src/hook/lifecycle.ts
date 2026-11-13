@@ -113,7 +113,11 @@ export function lifecycle(
       at: new Date().toISOString(),
       buildId: BUILD_INFO.buildId,
     };
-    writeLocal(healthPath, health);
+    try {
+      writeLocal(healthPath, health);
+    } catch {
+      /* diagnostics only: never let them stop the hook */
+    }
   }
   // Said at the end of the session start; reads only local files.
   const notice = event === 'SessionStart' ? updateNotice(agent, env) : undefined;
@@ -136,7 +140,11 @@ export function lifecycle(
   }
   if (event !== 'PreToolUse') return notice;
   host = readHost(id);
-  const targets = publicationTargets(p, [...allRoots, ...host.repos.map((r) => r.root)]);
+  // A command with no cwd runs in the workspace, not in the hook's own folder.
+  const targets = publicationTargets({ ...p, cwd: p.cwd ?? p.workspaceRoots[0] }, [
+    ...allRoots,
+    ...host.repos.map((r) => r.root),
+  ]);
   if (targets?.kind !== 'pr') return;
   if (!targets.roots.length)
     return deny(

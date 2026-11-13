@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Copilot, Gemini CLI), caches the matching prebuilt binary so nothing
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, Gemini CLI), caches the matching prebuilt binary so nothing
 # else (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -65,6 +65,9 @@ targets() {
   if [ -d "${COPILOT_HOME:-$HOME/.copilot}" ] || command -v copilot >/dev/null 2>&1; then
     printf 'Copilot|%s\n' "$HOME/.agents/skills/tracetoon"
   fi
+  if [ -d "${CURSOR_HOME:-$HOME/.cursor}" ] || command -v cursor-agent >/dev/null 2>&1; then
+    printf 'Cursor|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
   if command -v gemini >/dev/null 2>&1; then
     printf 'Gemini CLI|%s\n' "$gemini_home/skills/tracetoon"
   fi
@@ -118,7 +121,7 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   exit 0
 fi
 
-[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Gemini CLI)"
+[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, Gemini CLI)"
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)

@@ -7,6 +7,7 @@ import {
 } from '../src/integrations/antigravity/trace.ts';
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
 import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
+import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/trace.ts';
 import {
   parseCopilotCliLines,
   parseVscodeChat,
@@ -645,7 +646,7 @@ describe('Copilot adapters', () => {
 
 describe('session lines that are JSON but not objects', () => {
   test('are skipped, and the rest of the session is still read', () => {
-    for (const parse of [parseCopilotCliLines, parseFactoryLines]) {
+    for (const parse of [parseCopilotCliLines, parseFactoryLines, parseCursorLines]) {
       const s = session('n');
       expect(() =>
         parse(
@@ -659,5 +660,79 @@ describe('session lines that are JSON but not objects', () => {
       ).not.toThrow();
       expect(s.warnings.length).toBe(2);
     }
+  });
+});
+
+describe('Cursor adapter', () => {
+  test('reads the transcript the IDE and agent CLI write: prompts, StrReplace/Write edits, Shell commands', () => {
+    const s = session('k1');
+    parseCursorLines(
+      jsonl([
+        {
+          role: 'user',
+          message: {
+            content: [
+              {
+                type: 'text',
+                text: '<timestamp>Friday, Nov 13, 2026, 3:47 AM (UTC-8)</timestamp>\n<user_query>\nFix add() and test it.\n</user_query>',
+              },
+            ],
+          },
+        },
+        {
+          role: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'Looking at calc.py.' },
+              { type: 'tool_use', name: 'Read', input: { path: '/repo/calc.py' } },
+              {
+                type: 'tool_use',
+                name: 'StrReplace',
+                input: {
+                  path: '/repo/calc.py',
+                  old_string: 'return a - b',
+                  new_string: 'return a + b',
+                },
+              },
+              {
+                type: 'tool_use',
+                name: 'Write',
+                input: { path: 'test_calc.py', contents: 'assert add(2, 3) == 5\n' },
+              },
+              {
+                type: 'tool_use',
+                name: 'Shell',
+                input: { command: 'python test_calc.py', working_directory: '/repo' },
+              },
+            ],
+          },
+        },
+        { type: 'turn_ended', status: 'success' },
+        { type: 'something_new' },
+      ]),
+      s,
+      '/repo',
+    );
+    const ts = '2026-11-13T11:47:00.000Z';
+    expect(s.records.find((r) => r.kind === 'prompt')).toMatchObject({
+      text: 'Fix add() and test it.',
+      ts,
+    });
+    expect(s.records.filter((r) => r.kind === 'edit')).toMatchObject([
+      { removed: ['return a - b'], added: ['return a + b'], ts },
+      { added: ['assert add(2, 3) == 5'], created: true },
+    ]);
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'python test_calc.py',
+      cwd: '/repo',
+    });
+    expect(s.unknownTypes).toEqual({ something_new: 1 });
+  });
+
+  test('timestamps carry their UTC offset', () => {
+    expect(cursorTimestamp('Friday, Nov 13, 2026, 12:05 PM (UTC+5:30)')).toBe(
+      '2026-11-13T06:35:00.000Z',
+    );
+    expect(cursorTimestamp('no time here')).toBeUndefined();
   });
 });
