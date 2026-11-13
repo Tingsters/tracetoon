@@ -84,7 +84,11 @@ export function parseClaudeStyle(raw: unknown): HookPayload | undefined {
     transcript: str(p.transcript_path),
     toolName: str(p.tool_name),
     toolInput,
-    workspaceRoots: [],
+    // Cursor sends its own payload (workspace_roots, often an empty cwd) to the
+    // Claude Code hooks it imports.
+    workspaceRoots: Array.isArray(p.workspace_roots)
+      ? p.workspace_roots.filter((r: unknown) => typeof r === 'string' && r.length)
+      : [],
     planMode: p.permission_mode === 'plan',
     subagent: !!(p.is_subagent || p.parent_session_id),
   };

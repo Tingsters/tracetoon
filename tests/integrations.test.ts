@@ -71,6 +71,18 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     toolName: 'powershell',
     toolArgs: { command, description: 'run it' },
   }),
+  // Cursor's beforeShellExecution payload (snake_case, conversation_id).
+  cursor: (command, cwd) => ({
+    conversation_id: 'c1',
+    generation_id: 'g1',
+    hook_event_name: 'beforeShellExecution',
+    cursor_version: '2026.11.11',
+    workspace_roots: [cwd],
+    transcript_path: null,
+    command,
+    cwd,
+    sandbox: false,
+  }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
     transcriptPath: '/t.jsonl',
@@ -296,5 +308,28 @@ describe('Copilot', () => {
       expect(lifecycle.test(tool)).toBe(true);
     for (const tool of ['view', 'apply_patch', 'grep'])
       expect(lifecycle.test(tool)).toBe(false);
+  });
+});
+
+describe('Cursor', () => {
+  test('a Cursor payload sent to the imported Claude Code hook keeps the workspace root', () => {
+    // What Cursor passed to the hook in ~/.claude/settings.json: its own fields, empty cwd.
+    const raw = {
+      conversation_id: 'c1',
+      session_id: 'c1',
+      hook_event_name: 'preToolUse',
+      tool_name: 'Shell',
+      tool_input: { command: 'gh pr create', cwd: '' },
+      cwd: '',
+      workspace_roots: ['/work/repo'],
+      cursor_version: '2026.11.11',
+    };
+    const resolved = resolveHookHost('claude', raw);
+    expect(resolved?.host.id).toBe('claude');
+    expect(resolved?.payload.cwd).toBeUndefined();
+    expect(resolved?.payload.workspaceRoots).toEqual(['/work/repo']);
+    expect(resolveHookHost('cursor', raw)?.payload.workspaceRoots).toEqual([
+      '/work/repo',
+    ]);
   });
 });

@@ -1,5 +1,14 @@
 /** Worktree-local task state: the evidence window and, once asked for, the PR. */
-import { existsSync, readdirSync, lstatSync, rmSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { git } from '../util/exec.ts';
@@ -141,7 +150,51 @@ export function tasks(gitDir: string): { run: Run; task: Task }[] {
  */
 const TARGET_BOUND = ['approval.json', 'submission.json', 'final-body.md'];
 
+/**
+ * Run `action` while holding the repository's task lock. Several hooks can see
+ * the same PR request at once (Cursor runs its own hook and the Claude Code hook
+ * it imports, in parallel), and each would otherwise start its own task. A lock
+ * older than 30 s is from a process that died and is taken over; after 5 s of
+ * waiting the action runs anyway rather than holding up the agent.
+ */
+function withTaskLock<T>(gitDir: string, action: () => T): T {
+  const dir = join(gitDir, 'tracetoon');
+  const path = join(dir, 'task.lock');
+  mkdirSync(dir, { recursive: true });
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  const deadline = Date.now() + 5_000;
+  let fd: number | undefined;
+  while (fd === undefined) {
+    try {
+      fd = openSync(path, 'wx');
+    } catch {
+      try {
+        if (Date.now() - statSync(path).mtimeMs > 30_000) rmSync(path, { force: true });
+      } catch {
+        /* released meanwhile */
+      }
+      if (Date.now() > deadline) break;
+      Atomics.wait(pause, 0, 0, 25);
+    }
+  }
+  try {
+    return action();
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+      rmSync(path, { force: true });
+    }
+  }
+}
+
 export function beginTask(
+  cwd: string,
+  options: Parameters<typeof beginTaskLocked>[1] = {},
+) {
+  return withTaskLock(repository(cwd).gitDir, () => beginTaskLocked(cwd, options));
+}
+
+function beginTaskLocked(
   cwd: string,
   options: {
     run?: string;
