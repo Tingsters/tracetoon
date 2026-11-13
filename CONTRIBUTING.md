@@ -1,9 +1,22 @@
 # Contributing
 
+## AI contributions are welcome
+
+**AI-assisted and agent-written contributions are welcome here.** Use Claude
+Code, Codex, Antigravity or any other agent you like.
+
+**We strongly encourage opening your PR with Tracetoon**, comic included. Ask
+your agent: _"Open a PR for this branch with Tracetoon."_ The description then
+shows what you asked for, what ran and what changed, and the comic is the
+part we read first.
+
+You remain responsible for what you submit: read the diff before you send it,
+and let the recorded runs speak for the tests.
+
 ## Setup
 
 ```sh
-git clone https://github.com/Tingsters/tracetoon && cd tracetoon
+git clone https://github.com/Tracetoon/tracetoon && cd tracetoon
 bun run dependencies:prepare
 bun install
 bun run test
@@ -136,7 +149,9 @@ tests and reader probes are not automated humor scores. Artifacts stay in .git/.
 
 Bump only `package.json`, then run `bun run bundle`. The build stamps the skill
 VERSION and plugin version; commit those two (the bundle and `build.json` stay
-uncommitted) and open a same-repository PR. After all three
+uncommitted) and open a same-repository PR. Don't name its branch `release/…`:
+git can't keep a branch named `release` next to one under `release/`, and the
+release workflow stops before publishing until such a branch is deleted. After all three
 platform suites pass, CI builds the five native targets and six skill archives,
 checks reproducibility, and rehearses the exact candidate bundle and Windows
 executable. It retains an artifact named for the source commit and workflow

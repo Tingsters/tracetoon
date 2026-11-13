@@ -1,7 +1,7 @@
 #!/bin/sh
 # Tracetoon installer for macOS, Linux and Git Bash on Windows.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Tingsters/tracetoon/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
 # Codex, Antigravity, Factory Droid, Gemini CLI), caches the matching prebuilt binary so nothing
@@ -14,7 +14,7 @@
 #   TRACETOON_UNINSTALL=1      remove the skill, the hooks and the cached binaries
 set -eu
 
-REPO="Tingsters/tracetoon"
+REPO="Tracetoon/tracetoon"
 say() { printf '%s\n' "$*"; }
 die() { printf 'tracetoon install: %s\n' "$*" >&2; exit 1; }
 
