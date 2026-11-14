@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
 import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
+import { parseDevinChain } from '../src/integrations/devin/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
@@ -1145,5 +1147,118 @@ describe('Junie adapter', () => {
       added: ['B'],
     });
     expect(changedLines('', 'x\n')).toEqual({ removed: [], added: ['x'] });
+  });
+});
+
+describe('Devin adapter', () => {
+  // Shapes recorded from Devin CLI 3000.12.57 (paths scrubbed).
+  test('walks the main chain: the prompt, write/edit calls and exec results', () => {
+    const s = session('picayune-door');
+    const meta = (created_at: string, extra: Record<string, unknown> = {}) => ({
+      created_at,
+      ...extra,
+    });
+    parseDevinChain(
+      [
+        {
+          role: 'system',
+          content: 'You are Devin.',
+          metadata: meta('2026-11-14T02:24:55Z'),
+        },
+        {
+          role: 'user',
+          content: 'Create calc.py',
+          metadata: meta('2026-11-14T02:24:56Z', { is_user_input: true }),
+        },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'w',
+              name: 'write',
+              arguments: {
+                file_path: '/repo/calc.py',
+                content: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+            { id: 'r', name: 'read', arguments: { file_path: '/repo/calc.py' } },
+          ],
+          metadata: meta('2026-11-14T02:24:58Z'),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'w',
+          content: 'File created successfully',
+          metadata: meta('2026-11-14T02:24:59Z'),
+        },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'e',
+              name: 'edit',
+              arguments: {
+                file_path: '/repo/calc.py',
+                old_string: '    return a + b\n',
+                new_string: '    return int(a) + int(b)\n',
+              },
+            },
+            {
+              id: 'x',
+              name: 'exec',
+              arguments: { command: 'git commit -m calc', workdir: '/repo' },
+            },
+            {
+              id: 'y',
+              name: 'exec',
+              arguments: { command: 'npm test', workdir: '/repo' },
+            },
+            { id: 'z', name: 'teleport', arguments: {} },
+          ],
+          metadata: meta('2026-11-14T02:25:01Z'),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'x',
+          content: 'Output from command:\n[feature 170f343] calc\n\n\nExit code: 0',
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'y',
+          content: 'Output from command:\n1 failing\n\n\nExit code: 1',
+        },
+        {
+          role: 'assistant',
+          content: 'Done.',
+          tool_calls: [],
+          metadata: meta('2026-11-14T02:25:14Z'),
+        },
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T02:24:56Z',
+    });
+    expect(s.records[1]).toMatchObject({ file: resolve('/repo/calc.py'), removed: [] });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({ cmd: 'git commit -m calc', cwd: '/repo' });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
   });
 });
