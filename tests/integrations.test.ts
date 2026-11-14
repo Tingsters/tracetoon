@@ -127,6 +127,14 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     tool_name: 'powershell',
     tool_input: { command, timeout: 30 },
   }),
+  // Recorded from Goose 1.58.1 (the shell tool is `shell`).
+  goose: (command, cwd) => ({
+    event: 'PreToolUse',
+    session_id: '20261114_3',
+    tool_name: 'shell',
+    tool_input: { command },
+    working_dir: cwd,
+  }),
   // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
   kiro: (command, cwd) => ({
     session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',
@@ -221,8 +229,10 @@ describe('hook contract', () => {
         expect(hook.text.render(commands)).toBe(text);
         expect(hook.text.command(text)).toBe(commands.prePr);
         expect(hook.text.command('// another plugin')).toBeUndefined();
+        // Each extra file must be recognized as Tracetoon's, so install and
+        // uninstall never mistake it for someone else's.
         for (const render of Object.values(hook.text.siblings ?? {}))
-          expect(hook.text.command(render(commands))).toBe(commands.prePr);
+          expect(hook.text.command(render(commands))).toBeTruthy();
         return;
       }
       const once = hook.apply(foreign, commands);

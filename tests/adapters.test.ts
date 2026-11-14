@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
 import { parseDevinChain } from '../src/integrations/devin/trace.ts';
+import { parseGooseMessages } from '../src/integrations/goose/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
@@ -1260,5 +1261,100 @@ describe('Devin adapter', () => {
     expect(s.records[3]).not.toHaveProperty('isError');
     expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
     expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+  });
+});
+
+describe('Goose adapter', () => {
+  // Shapes recorded from Goose 1.58.1 (paths scrubbed).
+  const row = (role: string, s: number, blocks: unknown[]) => ({
+    role,
+    created_timestamp: s,
+    content_json: JSON.stringify(blocks),
+  });
+  const request = (id: string, name: string, args: Record<string, unknown>) => ({
+    type: 'toolRequest',
+    id,
+    toolCall: { status: 'success', value: { name, arguments: args } },
+  });
+  const response = (id: string, text: string, extra: Record<string, unknown> = {}) => ({
+    type: 'toolResponse',
+    id,
+    toolResult: {
+      status: 'success',
+      value: { content: [{ type: 'text', text }], isError: false, ...extra },
+    },
+  });
+  test('reads the prompt, write and edit calls, and shell results with their exit codes', () => {
+    const s = session('20261114_2');
+    parseGooseMessages(
+      [
+        row('user', 1794624069, [{ type: 'text', text: 'Create calc.py' }]),
+        row('user', 1794624071, [
+          {
+            type: 'text',
+            text: '<turn-context>\n<current-time>now</current-time>\n</turn-context>',
+          },
+        ]),
+        row('assistant', 1794624073, [request('k', 'load_skill', { name: 'tracetoon' })]),
+        row('assistant', 1794624079, [
+          request('w', 'write', {
+            path: 'calc.py',
+            content: 'def add(a, b):\n    return a + b\n',
+          }),
+        ]),
+        row('assistant', 1794624081, [
+          request('e', 'edit', {
+            path: 'calc.py',
+            before: '    return a + b\n',
+            after: '    return int(a) + int(b)\n',
+          }),
+        ]),
+        row('assistant', 1794624083, [
+          request('c', 'shell', { command: 'git commit -m "calc"' }),
+        ]),
+        row('user', 1794624084, [
+          response('c', '[feature fe2df56] calc', {
+            structuredContent: { exit_code: 0 },
+          }),
+        ]),
+        row('assistant', 1794624085, [request('t', 'shell', { command: 'npm test' })]),
+        row('user', 1794624086, [
+          response('t', '1 failing', { structuredContent: { exit_code: 1 } }),
+        ]),
+        row('assistant', 1794624090, [
+          { type: 'text', text: 'Done.' },
+          { type: 'image', data: '' },
+        ]),
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T02:41:09.000Z',
+    });
+    expect(s.records[1]).toMatchObject({
+      file: resolve('/repo', 'calc.py'),
+      removed: [],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({
+      cmd: 'git commit -m "calc"',
+      output: '[feature fe2df56] calc',
+    });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ image: 1 });
   });
 });
