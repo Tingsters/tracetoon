@@ -31,7 +31,7 @@ that; the notes below say what.
 ## Notes
 
 - **Cursor:** Cursor's logs don't record exit codes, so the PR can't confirm that tests or builds passed.
-- **Cline:** PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are. In the VS Code extension, PR commands are redirected on Windows only, and a blocked one stops the task, since the extension cannot skip a single command.
+- **Cline:** PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are. In the VS Code extension, a blocked PR command stops the task, since its hooks cannot skip a single command.
 - **Amp:** Amp keeps its threads on Amp's servers, so the PR is written from the diff and git history, not session logs. Only PR commands run in the shell are redirected to Tracetoon.
 
 `tracetoon integrations` prints the same list for your machine, with the

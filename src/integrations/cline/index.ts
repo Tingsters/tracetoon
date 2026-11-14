@@ -2,7 +2,7 @@
  * Cline: the Cline CLI (3.x) and the VS Code extension (4.x), which share
  * ~/.cline. Skills are read from ~/.agents/skills (shared with Codex). The CLI's
  * hooks are event-named scripts in ~/.cline/hooks (see ./hook.ts); the
- * extension on Windows runs PreToolUse.ps1 from ~/Documents/Cline/Hooks
+ * extension runs PreToolUse(.ps1 on Windows) from ~/Documents/Cline/Hooks
  * instead, with the older payload (`preToolUse: { toolName, parameters }`).
  *
  * Payloads: `{ hookName, taskId, sessionContext: { rootSessionId },
@@ -21,12 +21,13 @@ import {
   renderClineObserver,
   renderClinePowerShell,
   renderClinePre,
+  renderClineShell,
 } from './hook.ts';
 import { clineAdapter } from './trace.ts';
 
 const home = (h: string) => join(h, '.cline');
-/** From ~/.cline/hooks to the extension's ~/Documents/Cline/Hooks. */
-export const EXTENSION_HOOK = '../../Documents/Cline/Hooks/PreToolUse.ps1';
+/** From ~/.cline/hooks to the VS Code extension's ~/Documents/Cline/Hooks. */
+const EXTENSION_HOOKS = '../../Documents/Cline/Hooks';
 const str = (v: unknown) => (typeof v === 'string' && v.length ? v : undefined);
 
 function parse(raw: unknown): HookPayload | undefined {
@@ -71,7 +72,7 @@ export const integration: Integration = {
   variants: 'CLI and VS Code extension',
   limits: [
     'PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are.',
-    'In the VS Code extension, PR commands are redirected on Windows only, and a blocked one stops the task, since the extension cannot skip a single command.',
+    'In the VS Code extension, a blocked PR command stops the task, since its hooks cannot skip a single command.',
   ],
   traces: [clineAdapter],
   hook: {
@@ -85,12 +86,13 @@ export const integration: Integration = {
       siblings: {
         'PostToolUse.mjs': (c) => renderClineObserver(c, 'PostToolUse'),
         'TaskStart.mjs': (c) => renderClineObserver(c, 'SessionStart'),
-        // The VS Code extension on Windows reads only .ps1 hooks, from
-        // ~/Documents/Cline/Hooks.
+        // The VS Code extension reads hooks from ~/Documents/Cline/Hooks only:
+        // PreToolUse.ps1 on Windows, an executable PreToolUse elsewhere.
         ...(process.platform === 'win32'
-          ? { [EXTENSION_HOOK]: renderClinePowerShell }
-          : {}),
+          ? { [`${EXTENSION_HOOKS}/PreToolUse.ps1`]: renderClinePowerShell }
+          : { [`${EXTENSION_HOOKS}/PreToolUse`]: renderClineShell }),
       },
+      executable: [`${EXTENSION_HOOKS}/PreToolUse`],
     },
     parse,
     deny: denyCline,

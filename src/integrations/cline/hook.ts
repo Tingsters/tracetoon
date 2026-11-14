@@ -132,11 +132,42 @@ $out
 `;
 }
 
-/** The pre-pr command line a written hook runs, from its first line. */
+const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * The same hook for the VS Code extension on macOS and Linux, which runs an
+ * executable file named after the event (no extension) from
+ * ~/Documents/Cline/Hooks through the shell. A deny from Tracetoon gets
+ * `"cancel":true` added in front, so the extension stops the task and shows
+ * `errorMessage`; any other answer lets the call run.
+ */
+export function renderClineShell(commands: HookCommands): string {
+  const a = commands.argv!;
+  const ask = (
+    argv: string[],
+  ) => `answer=$(printf '%s' "$payload" | ${argv.map(shQuote).join(' ')} 2>/dev/null)
+case "$answer" in *'"errorMessage"'*) printf '{"cancel":true,%s\\n' "\${answer#\\{}"; exit 0 ;; esac`;
+  return `#!/bin/sh
+${CLINE_PS_MARKER} ${commands.prePr}
+# Routes PR creation in the Cline VS Code extension through Tracetoon. Written by
+# \`tracetoon hook install\`; \`tracetoon hook uninstall\` removes it. Edits are overwritten.
+payload=$(cat)
+case "$payload" in
+  *'"toolName":"run_commands"'* | *'"toolName":"execute_command"'*) ;;
+  *) echo '{}'; exit 0 ;;
+esac
+${ask(a.prePr)}
+${ask(a.lifecycle('PreToolUse'))}
+echo '{}'
+`;
+}
+
+/** The pre-pr command line a written hook runs, from its first line (after any #!). */
 export function clineHookCommand(text: string): string | undefined {
-  const first = text.split(/\r?\n/, 1)[0] ?? '';
+  const [first = '', second = ''] = text.split(/\r?\n/, 2);
+  const line = first.startsWith('#!') ? second : first;
   for (const marker of [CLINE_MARKER, CLINE_PS_MARKER])
-    if (first.startsWith(marker)) return first.slice(marker.length).trim();
+    if (line.startsWith(marker)) return line.slice(marker.length).trim();
   return undefined;
 }
 
