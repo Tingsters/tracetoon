@@ -43,8 +43,14 @@ export function parseSkillSettings(text: string): SkillSettings {
   return out;
 }
 
-/** The skill folder next to this runtime (SKILL.md, references/, assets/). */
+/**
+ * The skill folder next to this runtime (SKILL.md, references/, assets/).
+ * `TRACETOON_SKILL_DIR` names it when the runtime doesn't sit inside the skill:
+ * the npm wrapper sets it to the skill it ships, so `npx tracetoon setup` works.
+ */
 export function skillDir(): string | undefined {
+  const named = process.env.TRACETOON_SKILL_DIR;
+  if (named && existsSync(join(named, 'SKILL.md'))) return named;
   const assets = assetsDir();
   return assets ? dirname(assets) : undefined;
 }
