@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
 import { parseDevinChain } from '../src/integrations/devin/trace.ts';
 import { parseGooseMessages } from '../src/integrations/goose/trace.ts';
+import { commandOutput, parseQwenLines } from '../src/integrations/qwen/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
@@ -1356,5 +1357,130 @@ describe('Goose adapter', () => {
     expect(s.records[3]).not.toHaveProperty('isError');
     expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
     expect(s.unknownTypes).toEqual({ image: 1 });
+  });
+});
+
+describe('Qwen Code adapter', () => {
+  // Shapes recorded from Qwen Code 0.27.3 (paths scrubbed).
+  const line = (type: string, parts: unknown[], extra: Record<string, unknown> = {}) => ({
+    timestamp: '2026-11-14T02:57:14.961Z',
+    type,
+    cwd: '/repo',
+    gitBranch: 'feature',
+    message: { parts },
+    ...extra,
+  });
+  test('reads real prompts, file writes and edits, and shell results without Qwen\u2019s wrapper', () => {
+    const s = session('be6aeb9e');
+    parseQwenLines(
+      jsonl([
+        line('user', [{ text: 'Create calc.py' }], { provenance: 'real_user' }),
+        line('system', [{ text: 'memory' }], { subtype: 'memory_catalog_snapshot' }),
+        line('assistant', [
+          { text: 'thinking…', thought: true },
+          { text: 'I will create it.' },
+          {
+            functionCall: {
+              id: 'w',
+              name: 'write_file',
+              args: {
+                file_path: '/repo/calc.py',
+                content: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+          },
+          {
+            functionCall: {
+              id: 'r',
+              name: 'read_file',
+              args: { file_path: '/repo/calc.py' },
+            },
+          },
+        ]),
+        line('assistant', [
+          {
+            functionCall: {
+              id: 'e',
+              name: 'edit',
+              args: {
+                file_path: '/repo/calc.py',
+                old_string: '    return a + b',
+                new_string: '    return int(a) + int(b)',
+              },
+            },
+          },
+          {
+            functionCall: {
+              id: 'c',
+              name: 'run_shell_command',
+              args: { command: 'git commit -am "calc"', directory: '/repo' },
+            },
+          },
+          {
+            functionCall: {
+              id: 'g',
+              name: 'run_shell_command',
+              args: { command: 'gh pr create --fill' },
+            },
+          },
+          { functionCall: { id: 'x', name: 'teleport', args: {} } },
+        ]),
+        line(
+          'tool_result',
+          [
+            {
+              functionResponse: {
+                id: 'c',
+                name: 'run_shell_command',
+                response: {
+                  output:
+                    'Command: git commit -am "calc"\nDirectory: /repo\nOutput: [feature 23f37ea] calc\n 1 file changed\nError: (none)\nExit Code: 0',
+                },
+              },
+            },
+          ],
+          { toolCallResult: { status: 'success' } },
+        ),
+        line(
+          'tool_result',
+          [
+            {
+              functionResponse: {
+                id: 'g',
+                name: 'run_shell_command',
+                response: { error: 'Tracetoon handles PR creation' },
+              },
+            },
+          ],
+          { toolCallResult: { status: 'error' } },
+        ),
+      ]),
+      s,
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'assistant',
+      'edit',
+      'edit',
+      'command',
+      'command',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      cwd: '/repo',
+      branch: 'feature',
+    });
+    expect(s.records[4]).toMatchObject({
+      cmd: 'git commit -am "calc"',
+      output: '[feature 23f37ea] calc\n 1 file changed',
+    });
+    expect(s.records[4]).not.toHaveProperty('isError');
+    expect(s.records[5]).toMatchObject({ cmd: 'gh pr create --fill', isError: true });
+    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+  });
+
+  test('commandOutput keeps plain output as it is', () => {
+    expect(commandOutput('plain text')).toBe('plain text');
+    expect(commandOutput(undefined)).toBeUndefined();
   });
 });

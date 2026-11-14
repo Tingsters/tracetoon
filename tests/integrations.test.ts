@@ -135,6 +135,14 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     tool_input: { command },
     working_dir: cwd,
   }),
+  // Qwen Code speaks Claude Code's protocol (shell tool: run_shell_command).
+  qwen: (command, cwd) => ({
+    session_id: 'be6aeb9e-ee90-49ee-926c-d5d2e27f7809',
+    hook_event_name: 'PreToolUse',
+    cwd,
+    tool_name: 'run_shell_command',
+    tool_input: { command, is_background: false },
+  }),
   // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
   kiro: (command, cwd) => ({
     session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',

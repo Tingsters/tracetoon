@@ -444,6 +444,7 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.cline'), { recursive: true });
     mkdirSync(join(h, '.junie'), { recursive: true });
     mkdirSync(gooseDataDir({}, h), { recursive: true });
+    mkdirSync(join(h, '.qwen'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -484,9 +485,11 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -571,6 +574,12 @@ describe('installing the hook', () => {
         readFileSync(join(h, '.agents', 'plugins', 'tracetoon', 'plugin.json'), 'utf8'),
       ).name,
     ).toBe('tracetoon');
+    // Qwen Code takes Claude-style groups in settings.json; its shell tool is run_shell_command.
+    const qwen = JSON.parse(readFileSync(join(h, '.qwen', 'settings.json'), 'utf8'));
+    expect(qwen.hooks.PreToolUse[0]).toMatchObject({
+      matcher: 'run_shell_command',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent qwen' }],
+    });
     // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
     const kiro = JSON.parse(
       readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
@@ -604,9 +613,11 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -713,6 +724,7 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
       'not installed',
       'not installed',
       'not installed',
