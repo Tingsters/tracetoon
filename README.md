@@ -194,7 +194,7 @@ tracetoon query outline          # changed units, their requests and checks
 tracetoon query why src/foo.ts   # which request and which runs are behind this file (or a hunk: H3)
 tracetoon query unverified       # changes no run saw after their last edit
 tracetoon query stale R2         # what changed after run R2
-tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.path LIMIT 5'   # read-only Cypher
+tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.file LIMIT 5'   # read-only Cypher
 ```
 
 Named queries also include `verified`, `unexplained`, `turn <S#>`, `dead-ends`,
@@ -361,11 +361,11 @@ add `export OPENAI_API_KEY="<key>"` to your shell profile.
 ### The PR hook
 
 The installer adds a small hook to each agent. When an agent tries to open a PR,
-or rewrite a PR's title or body, the hook points it to Tracetoon instead.
+the hook points it to Tracetoon instead.
 
 | Redirected to Tracetoon                                                                    | Left alone                                                                         |
 | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `gh pr create`, `gh pr edit` and gh aliases for them                                       | `git push` (branches for CI, tags, release commits)                                |
+| `gh pr create` and gh aliases for it                                                        | `git push` (branches for CI, tags, release commits), `gh pr edit`                  |
 | `hub pull-request`, git-extras `git pull-request`, Git Town `git town propose`             | Stacking tools: Graphite, git-spice                                                |
 | Writes to GitHub's pulls API through `gh api`, `hub api`, curl, wget, HTTPie or PowerShell | API reads, state-only changes (closing a PR), other forges                         |
 | GraphQL `createPullRequest`, and the GitHub connector tools agents use                     | Calls made inside a script, or a GraphQL mutation read from a file (can't be seen) |
