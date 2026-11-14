@@ -86,7 +86,7 @@ import { readComicStatus, renderedComic } from './comic.ts';
 import { leakBlocks, leakNotice } from '../review/leak.ts';
 import { digestHash } from './digest.ts';
 import { loadPasses, unchangedFlags } from './review.ts';
-import { emit, UserError, type OutOpts } from './output.ts';
+import { codedError, emit, ghFailure, UserError, type OutOpts } from './output.ts';
 import {
   sameSubmission,
   snapshotProblem,
@@ -928,6 +928,8 @@ export interface PublishOpts extends OutOpts {
   acceptOpen?: boolean;
   /** Publish a checked brief-path draft with no slim review (only when the user asks for the cheapest run). */
   noReview?: boolean;
+  /** Run every check and report what would be posted, without pushing or calling gh to change anything. */
+  dryRun?: boolean;
 }
 
 /** Why a brief-path draft can't be published yet for lack of its slim review, if so. */
@@ -960,6 +962,8 @@ export function briefPathOpen(run: { dir: string }): string | undefined {
 }
 
 export function publishCmd(cwd: string, opts: PublishOpts): void {
+  // A dry run changes nothing, so it needs neither the lock nor a timing record.
+  if (opts.dryRun) return publishImpl(cwd, opts);
   const { run } = loadRun(cwd, opts.run);
   const start = performance.now();
   try {
@@ -975,10 +979,14 @@ export function publishCmd(cwd: string, opts: PublishOpts): void {
 
 function publishImpl(cwd: string, opts: PublishOpts): void {
   const { run, truth } = loadRun(cwd, opts.run);
+  const dry = !!opts.dryRun;
   const approval = readJson<Approval>(run, 'approval.json');
   const bodyPath = join(run.dir, 'final-body.md');
   if (!approval || !existsSync(bodyPath))
-    throw new UserError('Nothing rendered yet. Run `tracetoon render` first.');
+    throw codedError(
+      'NOTHING_RENDERED',
+      'Nothing rendered yet. Run `tracetoon render` first.',
+    );
   const problem = snapshotProblem(truth.toplevel, approval.submission);
   if (problem)
     throw new UserError(
@@ -994,7 +1002,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
   const unreviewed = briefPathUnreviewed(run);
   if (unreviewed) {
     if (!opts.noReview) throw new UserError(unreviewed);
-    writeJson(run, 'no-review.json', { at: new Date().toISOString() });
+    if (!dry) writeJson(run, 'no-review.json', { at: new Date().toISOString() });
   }
   // The review plan from prepare: its passes, lenses, model and effort.
   const planProblem = planGate(run);
@@ -1011,10 +1019,11 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       throw new UserError(
         `${briefOpen}\nFix body.md and run tracetoon render again. Pass --accept-open only if the user, in their own words, agrees to publish as is.`,
       );
-    writeJson(run, 'accepted-open.json', {
-      at: new Date().toISOString(),
-      reason: briefOpen,
-    });
+    if (!dry)
+      writeJson(run, 'accepted-open.json', {
+        at: new Date().toISOString(),
+        reason: briefOpen,
+      });
   }
   const body = readFileSync(bodyPath, 'utf8');
   if (codeFor(approval, body) !== approval.code || sha(body) !== approval.bodySha) {
@@ -1032,7 +1041,35 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
   const published = readLocal<{ code: string; url: string; hosting: string }>(
     join(run.dir, 'published.json'),
   );
+  // What a dry run reports: the target, and every command publishing would run.
+  const commands: string[][] = [];
+  const dryResult = (action: 'create' | 'edit' | 'reconcile' | 'none', url?: string) =>
+    emit(
+      opts,
+      {
+        dryRun: true,
+        mode: approval.mode,
+        action,
+        target: approval.repo ?? resolveTarget(truth.toplevel)?.repo ?? null,
+        head: approval.head,
+        base: approval.base,
+        title: approval.title,
+        bodySha256: sha(body),
+        draft: !!opts.draft,
+        comic: approval.comicFile ? { hosting: opts.hosting ?? config.hosting } : null,
+        ...(url ? { url } : {}),
+        commands,
+      },
+      () =>
+        [
+          `Dry run: would ${action === 'create' ? 'create' : action === 'edit' ? 'update' : 'not change'} the PR for ${approval.head} -> ${approval.base}${url ? ` (${url})` : ''}.`,
+          `Title: ${approval.title}`,
+          ...commands.map((c) => `  ${c.join(' ')}`),
+          'Nothing was pushed or posted.',
+        ].join('\n'),
+    );
   if (published?.code === approval.code && published.url) {
+    if (dry) return dryResult('none', published.url);
     // Repair a crash between the durable publication receipt and local lifecycle updates.
     const task = readTask(run);
     if (task) {
@@ -1076,14 +1113,18 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
     const remoteSha = remote.stdout.trim().split(/\s/)[0];
     if (!remote.ok || remoteSha !== approval.submission!.headSha) {
       if (opts.push === false) {
-        throw new UserError(
+        throw codedError(
+          'BRANCH_NOT_PUSHED',
           remoteSha
             ? `Branch ${approval.head} on GitHub differs from the rendered code. Push it (or re-run with --push) and publish again.`
             : `Branch ${approval.head} is not on GitHub yet. Push it (or re-run with --push) and publish again.`,
         );
       }
-      const p = git(truth.toplevel, ['push', '-u', 'origin', approval.head]);
-      if (!p.ok) throw new UserError(`git push failed: ${p.stderr.trim()}`);
+      if (dry) commands.push(['git', 'push', '-u', 'origin', approval.head]);
+      else {
+        const p = git(truth.toplevel, ['push', '-u', 'origin', approval.head]);
+        if (!p.ok) throw new UserError(`git push failed: ${p.stderr.trim()}`);
+      }
     }
   }
 
@@ -1094,6 +1135,78 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       `The PR was rendered for ${approval.repo}, but this clone now targets ${nowTarget ?? 'no repository'} (origin or gh's default repo changed). Run \`tracetoon context\` (not offline) and \`tracetoon render\` again.`,
     );
   const repo = repoArgs(approval.repo);
+
+  if (dry) {
+    const posted = join(run.dir, 'posted-body.md');
+    const args = ['--title', approval.title, '--body-file', posted];
+    if (approval.mode === 'edit' && approval.prNumber) {
+      commands.push(['gh', 'pr', 'edit', String(approval.prNumber), ...repo, ...args]);
+      return dryResult('edit');
+    }
+    const head = prHead(approval.head, truth.remote?.owner, approval.repo);
+    const headOwner = head.includes(':') ? head.split(':')[0]!.toLowerCase() : undefined;
+    // Reading the open PRs changes nothing, and tells a create from a reconcile.
+    const listing = gh(truth.toplevel, [
+      'pr',
+      'list',
+      '--state',
+      'open',
+      ...repo,
+      '--head',
+      approval.head,
+      '--base',
+      approval.base,
+      '--json',
+      'number,url,body,headRefName,baseRefName,headRepositoryOwner',
+    ]);
+    if (!listing.ok)
+      throw codedError(
+        'GITHUB_UNREACHABLE',
+        'Could not check for an existing PR. Retry when GitHub is reachable.',
+      );
+    let existing: {
+      url?: string;
+      body?: string;
+      headRefName?: string;
+      baseRefName?: string;
+      headRepositoryOwner?: { login?: string };
+    }[] = [];
+    try {
+      existing = JSON.parse(listing.stdout);
+      if (!Array.isArray(existing)) existing = [];
+    } catch {
+      existing = [];
+    }
+    if (headOwner)
+      existing = existing.filter(
+        (pr) => (pr.headRepositoryOwner?.login ?? '').toLowerCase() === headOwner,
+      );
+    const same = existing.filter(
+      (pr) => pr.headRefName === approval.head && pr.baseRefName === approval.base,
+    );
+    const matching = same.find(
+      (pr) => pr.body && decodeMeta(pr.body)?.submission === approval.code,
+    );
+    if (matching?.url) return dryResult('reconcile', matching.url);
+    if (same.length)
+      throw codedError(
+        'PR_EXISTS',
+        'A PR already exists for this branch and base. Refresh context and review its update instead of creating another.',
+      );
+    commands.push([
+      'gh',
+      'pr',
+      'create',
+      ...repo,
+      '--base',
+      approval.base,
+      '--head',
+      head,
+      ...args,
+      ...(opts.draft ? ['--draft'] : []),
+    ]);
+    return dryResult('create');
+  }
 
   const hosted =
     progress.hosted ??
@@ -1113,7 +1226,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       ...repo,
       ...args,
     ]);
-    if (!r.ok) throw new UserError(`gh pr edit failed: ${r.stderr.trim()}`);
+    if (!r.ok) throw ghFailure('gh pr edit', r.stderr);
     url = gh(truth.toplevel, [
       'pr',
       'view',
@@ -1142,7 +1255,8 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       'number,url,title,body,headRefName,baseRefName,headRefOid,headRepositoryOwner',
     ]);
     if (!listing.ok)
-      throw new UserError(
+      throw codedError(
+        'GITHUB_UNREACHABLE',
         'Could not check for an existing PR. Retry publication when GitHub is reachable.',
       );
     let existing: {
@@ -1185,7 +1299,8 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
           (pr) => pr.headRefName === approval.head && pr.baseRefName === approval.base,
         )
       )
-        throw new UserError(
+        throw codedError(
+          'PR_EXISTS',
           'A PR already exists for this branch and base. Refresh context and review its update instead of creating another.',
         );
       const create = [
@@ -1202,7 +1317,7 @@ function publishImpl(cwd: string, opts: PublishOpts): void {
       progress.attemptedCreate = true;
       writeLocal(progressPath, progress);
       const r = gh(truth.toplevel, create);
-      if (!r.ok) throw new UserError(`gh pr create failed: ${r.stderr.trim()}`);
+      if (!r.ok) throw ghFailure('gh pr create', r.stderr);
       url = r.stdout.trim().split(/\s+/).pop() ?? '';
     }
   }

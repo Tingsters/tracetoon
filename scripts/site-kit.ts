@@ -62,6 +62,8 @@ export const PAGES: Record<string, string> = {
   'AGENTS.md': 'agents.md',
   'docs/agents/install.md': 'docs/agents/install.md',
   'docs/agents/faq.md': 'docs/agents/faq.md',
+  'docs/agents/cli.md': 'docs/agents/cli.md',
+  'docs/agents/errors.md': 'docs/agents/errors.md',
   'plugin/skills/tracetoon/SKILL.md': 'skill.md',
 };
 
@@ -70,6 +72,8 @@ export const SITE_LINKS: LlmsLinks = {
   agents: `${SITE}/agents.md`,
   skill: `${SITE}/skill.md`,
   faq: `${SITE}/docs/agents/faq.md`,
+  cli: `${SITE}/docs/agents/cli.md`,
+  errors: `${SITE}/docs/agents/errors.md`,
   readme: `${SITE}/index.md`,
 };
 
@@ -390,6 +394,7 @@ export function siteKit(opts: { skillZip?: string } = {}): Map<string, string | 
       out.get('agents.md') as string,
       out.get('docs/agents/install.md') as string,
       out.get('docs/agents/faq.md') as string,
+      out.get('docs/agents/errors.md') as string,
     ),
   );
   out.set('robots.txt', robotsTxt());
