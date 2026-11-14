@@ -1,0 +1,34 @@
+{
+  "name": "tracetoon",
+  "displayName": "Tracetoon",
+  "version": "1.0.0-rc.27",
+  "description": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro and Cline, and an optional one-off comic.",
+  "author": {
+    "name": "Tracetoon"
+  },
+  "homepage": "https://tracetoon.ai",
+  "repository": "https://github.com/Tracetoon/tracetoon",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pull-request",
+    "pull-request-description",
+    "github",
+    "code-review",
+    "agent-skills",
+    "session-logs",
+    "agent-trace",
+    "provenance",
+    "comic"
+  ],
+  "logo": "assets/tracetoon.svg",
+  "mcpServers": {
+    "tracetoon": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tracetoon@1.0.0-rc.27",
+        "mcp"
+      ]
+    }
+  }
+}

@@ -11,6 +11,7 @@ import {
   supportedLabels,
 } from '../scripts/agent-surfaces.ts';
 import pkg from '../package.json';
+import { git } from '../src/util/exec.ts';
 
 const read = (p: string) => readFileSync(join(root, p), 'utf8').replace(/\r\n/g, '\n');
 const RAW = 'https://raw.githubusercontent.com/Tracetoon/tracetoon/main/';
@@ -93,6 +94,9 @@ describe('agent surfaces', () => {
       'CONTRIBUTING.md',
       'plugin/.claude-plugin/plugin.json',
       '.claude-plugin/marketplace.json',
+      'plugin/plugin.json',
+      'plugin/.cursor-plugin/plugin.json',
+      'gemini-extension.json',
     ])
       expect(read(file)).not.toMatch(directive);
     expect(read('README.md')).not.toMatch(/<!--[^>]*\b(agent|assistant|AI)\b[^>]*-->/i);
@@ -129,5 +133,167 @@ describe('agent surfaces', () => {
       args: ['mcp'],
     });
     expect(existsSync(join(root, 'plugin/skills/tracetoon/bin/tracetoon'))).toBe(true);
+  });
+
+  test('the Cursor plugin and Gemini extension start the MCP server from the npm package', () => {
+    const entry = { command: 'npx', args: ['-y', `tracetoon@${pkg.version}`, 'mcp'] };
+    for (const path of ['plugin/.cursor-plugin/plugin.json', 'gemini-extension.json'])
+      expect(JSON.parse(read(path)).mcpServers).toEqual({ tracetoon: entry });
+    const server = JSON.parse(read('server.json'));
+    expect(server.packages[0].identifier).toBe('tracetoon');
+    expect(server.packages[0].runtimeHint).toBe(entry.command);
+  });
+});
+
+describe('vendor catalog manifests', () => {
+  const json = (p: string) => JSON.parse(read(p));
+  const MANIFESTS = [
+    'plugin/plugin.json',
+    'plugin/.codex-plugin/plugin.json',
+    'plugin/.cursor-plugin/plugin.json',
+    '.agents/plugins/marketplace.json',
+    '.cursor-plugin/marketplace.json',
+    'gemini-extension.json',
+    'catalog/agentfinder/Tracetoon/tracetoon.json',
+  ];
+  const plugin = (p: string) => join(root, 'plugin', p);
+
+  test('every manifest parses and carries the shared pitch and package version', () => {
+    for (const path of MANIFESTS) expect(() => json(path)).not.toThrow();
+    for (const path of [
+      'plugin/plugin.json',
+      'plugin/.codex-plugin/plugin.json',
+      'plugin/.cursor-plugin/plugin.json',
+      'plugin/.claude-plugin/plugin.json',
+      'gemini-extension.json',
+    ]) {
+      expect(json(path).name).toBe('tracetoon');
+      expect(json(path).version).toBe(pkg.version);
+      expect(json(path).description).toBe(pitch());
+    }
+    expect(json('.cursor-plugin/marketplace.json').metadata.version).toBe(pkg.version);
+    expect(json('catalog/agentfinder/Tracetoon/tracetoon.json').description).toBe(
+      pitch(),
+    );
+  });
+
+  test('plugin/plugin.json follows Agent Plugins 1.0.0 and Kiro power rules', () => {
+    const m = json('plugin/plugin.json');
+    // plugin.schema.json: $schema and name required, no other top-level keys.
+    expect(m.$schema).toBe('https://agent-plugins.org/schemas/1.0.0/plugin.schema.json');
+    expect(m.name).toMatch(/^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/);
+    const allowed = [
+      '$schema',
+      'name',
+      'version',
+      'description',
+      'author',
+      'homepage',
+      'repository',
+      'license',
+      'keywords',
+      'extensions',
+    ];
+    for (const key of Object.keys(m)) expect(allowed).toContain(key);
+    for (const key of Object.keys(m.author))
+      expect(['name', 'email', 'url']).toContain(key);
+    // Kiro (kiro.dev/docs/powers/create) also requires version, description,
+    // author.name and keywords; keywords activate the power.
+    expect(m.author.name.length).toBeGreaterThan(0);
+    expect(m.keywords).toContain('pull request');
+    // Components are discovered from their default folders.
+    expect(existsSync(plugin('skills/tracetoon/SKILL.md'))).toBe(true);
+  });
+
+  test('the Codex manifests have the fields and limits the submission portal checks', () => {
+    const codex = json('plugin/.codex-plugin/plugin.json');
+    const ui = codex.interface;
+    expect(json('plugin/plugin.json').extensions['com.openai'].interface).toEqual(ui);
+    expect(codex.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    expect(codex.name.length).toBeLessThanOrEqual(64);
+    expect(codex.version).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
+    expect(codex.description.length).toBeLessThanOrEqual(4000);
+    expect(codex.author.name.length).toBeLessThanOrEqual(120);
+    expect(codex.skills).toBe('./skills/');
+    expect(ui.displayName.length).toBeLessThanOrEqual(30);
+    expect(ui.shortDescription.length).toBeLessThanOrEqual(30);
+    expect(ui.longDescription.length).toBeLessThanOrEqual(4000);
+    expect(ui.developerName.length).toBeLessThanOrEqual(80);
+    expect(ui.category.length).toBeGreaterThan(0);
+    expect(ui.capabilities.length).toBeLessThanOrEqual(20);
+    expect(ui.defaultPrompt.length).toBeLessThanOrEqual(3);
+    for (const p of ui.defaultPrompt) expect(p.length).toBeLessThanOrEqual(128);
+    expect(ui.brandColor).toMatch(/^#[0-9A-F]{6}$/i);
+    expect(ui.websiteURL).toMatch(/^https:\/\//);
+    for (const icon of [ui.composerIcon, ui.logo]) {
+      expect(icon).toMatch(/^\.\//);
+      expect(existsSync(plugin(icon))).toBe(true);
+    }
+    const market = json('.agents/plugins/marketplace.json');
+    expect(market.plugins).toHaveLength(1);
+    const [entry] = market.plugins;
+    expect(entry.name).toBe(codex.name);
+    expect(entry.source).toEqual({
+      source: 'git-subdir',
+      url: 'https://github.com/Tracetoon/tracetoon.git',
+      path: './plugin',
+      ref: 'release', // main has no build
+    });
+    expect(entry.policy).toEqual({
+      installation: 'AVAILABLE',
+      authentication: 'ON_INSTALL',
+    });
+    expect(entry.category.length).toBeGreaterThan(0);
+  });
+
+  test('the Cursor plugin and marketplace match cursor/plugin-template', () => {
+    const p = json('plugin/.cursor-plugin/plugin.json');
+    expect(p.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    expect(existsSync(plugin(p.logo))).toBe(true);
+    const market = json('.cursor-plugin/marketplace.json');
+    expect(market.owner.name.length).toBeGreaterThan(0);
+    const [entry] = market.plugins;
+    expect(entry.name).toBe(p.name);
+    expect(existsSync(join(root, entry.source, '.cursor-plugin', 'plugin.json'))).toBe(
+      true,
+    );
+  });
+
+  test('the Gemini extension bundles the skill through skills/', () => {
+    const ext = json('gemini-extension.json');
+    expect(ext.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    expect(existsSync(join(root, ext.contextFileName))).toBe(true);
+    // Gemini reads <extension>/skills/<name>/SKILL.md; a link keeps one copy.
+    const entry = git(root, ['ls-files', '-s', '--', 'skills']).stdout.trim();
+    expect(entry).toMatch(/^120000 [0-9a-f]+ 0\tskills$/);
+    const blob = entry.split(/\s+/)[1] ?? '';
+    expect(git(root, ['cat-file', 'blob', blob]).stdout).toBe('plugin/skills');
+  });
+
+  test('the agent finder entry follows the catalog CONTRIBUTING schema', () => {
+    const e = json('catalog/agentfinder/Tracetoon/tracetoon.json');
+    expect(e.identifier).toBe('urn:ai:github.com:Tracetoon:tracetoon:tracetoon');
+    expect(e.mediaType).toBe('application/ai-skill');
+    expect(e.displayName.length).toBeGreaterThan(0);
+    expect(e.url).toBe(
+      `https://github.com/Tracetoon/tracetoon/blob/release/${e.metadata.repoPath}`,
+    );
+    expect(e.metadata.sourceSet).toBe('Tracetoon/tracetoon');
+    expect(existsSync(join(root, e.metadata.repoPath))).toBe(true);
+  });
+
+  test('listings.md names files that exist and marks every catalog unsubmitted', () => {
+    const text = read('docs/agents/listings.md');
+    const rows = text
+      .split('\n')
+      .filter((l) => /^\| [^-]/.test(l) && !l.startsWith('| Catalog'));
+    expect(rows.length).toBeGreaterThanOrEqual(10);
+    for (const row of rows) {
+      expect(row).toMatch(/\| not (submitted|applicable)/);
+      const backed = row.split(' | ')[1] ?? '';
+      for (const [, path = ''] of backed.matchAll(/`([^`\s]+)`/g))
+        expect(existsSync(join(root, path))).toBe(true);
+    }
+    for (const path of MANIFESTS) expect(text).toContain(`\`${path}\``);
   });
 });

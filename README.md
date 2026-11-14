@@ -105,6 +105,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 | Kilo CLI                  | ✅ supported (hook is a plugin in `~/.config/kilo/plugins`)                  |
 | Kilo Code (VS Code)       | ✅ supported through Kilo CLI, which the extension runs                      |
 | Kiro (IDE and CLI)        | ✅ supported (hook file in `~/.kiro/hooks`)                                  |
+| Cline CLI                 | ✅ supported (hook scripts in `~/.cline/hooks`)                              |
 | Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
 | Windsurf                  | 🗓️ planned                                                                   |
 
@@ -120,7 +121,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 <p align="center"><a href="https://tracetoon.ai/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
 
 AI-written PRs are usually vague and padded, and they sound sure about tests
-nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo and Kiro already keep session logs on
+nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro and Cline already keep session logs on
 your machine. Tracetoon finds the sessions that produced this branch and turns
 them into a redacted evidence brief your agent writes from.
 
@@ -194,7 +195,7 @@ tracetoon query outline          # changed units, their requests and checks
 tracetoon query why src/foo.ts   # which request and which runs are behind this file (or a hunk: H3)
 tracetoon query unverified       # changes no run saw after their last edit
 tracetoon query stale R2         # what changed after run R2
-tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.path LIMIT 5'   # read-only Cypher
+tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.file LIMIT 5'   # read-only Cypher
 ```
 
 Named queries also include `verified`, `unexplained`, `turn <S#>`, `dead-ends`,
@@ -361,11 +362,11 @@ add `export OPENAI_API_KEY="<key>"` to your shell profile.
 ### The PR hook
 
 The installer adds a small hook to each agent. When an agent tries to open a PR,
-or rewrite a PR's title or body, the hook points it to Tracetoon instead.
+the hook points it to Tracetoon instead.
 
 | Redirected to Tracetoon                                                                    | Left alone                                                                         |
 | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `gh pr create`, `gh pr edit` and gh aliases for them                                       | `git push` (branches for CI, tags, release commits)                                |
+| `gh pr create` and gh aliases for it                                                        | `git push` (branches for CI, tags, release commits), `gh pr edit`                  |
 | `hub pull-request`, git-extras `git pull-request`, Git Town `git town propose`             | Stacking tools: Graphite, git-spice                                                |
 | Writes to GitHub's pulls API through `gh api`, `hub api`, curl, wget, HTTPie or PowerShell | API reads, state-only changes (closing a PR), other forges                         |
 | GraphQL `createPullRequest`, and the GitHub connector tools agents use                     | Calls made inside a script, or a GraphQL mutation read from a file (can't be seen) |
@@ -614,6 +615,7 @@ trust the new hook entries in `/hooks`.
   | Copilot        | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Cursor         | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | OpenCode, Kilo | `~/.agents/skills/tracetoon` (shared with Codex)                     |
+  | Cline          | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Kiro           | `~/.kiro/skills/tracetoon`                                           |
   | Gemini CLI     | `~/.gemini/skills/tracetoon`                                         |
 

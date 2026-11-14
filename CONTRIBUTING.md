@@ -103,10 +103,12 @@ core modules (`src/trace`, `src/hook`, `src/util`), never another host's folder;
   (in `node_modules/.cache`), files start slowest first, so a long end-to-end
   file no longer starts last; without that history (a fresh checkout, CI) they
   start largest first. `bun run typecheck && bun run test`
-  macOS runs one file at a time because the pinned Bun version's subprocess-heavy
-  suites fail intermittently under concurrent macOS load. Full coverage is kept.
-  Windows runs two files at a time to reduce Git-process contention; Linux runs
-  up to four. Every invocation retains per-file logs under `node_modules/.cache/test-logs`.
+  macOS scales with the machine: the pinned Bun version's subprocess-heavy suites
+  fail intermittently when the box is oversubscribed, so a CI runner (3-4 cores)
+  still runs one file at a time, while a Mac with 8 or more cores runs four, as
+  Linux does. Windows runs two to reduce Git-process contention. Full coverage is
+  kept either way, and `TRACETOON_TEST_WORKERS` pins the count if a flake appears.
+  Every invocation retains per-file logs under `node_modules/.cache/test-logs`.
 - Don't commit build outputs. `bun run bundle` writes `plugin/skills/tracetoon/dist/tracetoon.mjs`
   and `build.json` for local packaged runs; both are ignored, because every source change
   regenerates them. The release workflow publishes them on the `release` branch. A

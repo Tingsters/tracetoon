@@ -7,13 +7,36 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { dirname, join } from 'node:path';
 import { privateRepoPath } from '../src/util/repoFiles.ts';
 
-// Bun 1.3.14's subprocess-heavy suites fail intermittently under concurrent
-// macOS load, including with fresh processes. Keep full coverage there serial.
-export const TEST_FILE_WORKERS =
-  process.platform === 'darwin' ? 1 : process.platform === 'win32' ? 2 : 4;
+/**
+ * How many test files run at once. One fresh process per file either way; this
+ * only bounds how many are in flight.
+ *
+ * The pinned Bun's subprocess-heavy suites fail intermittently on macOS when the
+ * machine is oversubscribed, so macOS used to run one file at a time everywhere.
+ * That is the right call on a CI runner, which has 3-4 cores, and a needless 3x
+ * on a developer Mac, which has far more: with 10 cores the full suite takes
+ * 176s serially and 56s at four workers. Cores decide instead of the platform
+ * alone, so CI keeps the conservative behaviour and a real Mac does not.
+ * `TRACETOON_TEST_WORKERS` overrides it if a flake ever shows up.
+ */
+export function workersFor(
+  platform: NodeJS.Platform | string,
+  cores: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const forced = Number(env.TRACETOON_TEST_WORKERS);
+  if (Number.isInteger(forced) && forced > 0) return forced;
+  // Windows is limited by Git process contention, not by cores.
+  if (platform === 'win32') return 2;
+  if (platform !== 'darwin') return 4;
+  return cores >= 8 ? 4 : 1;
+}
+
+export const TEST_FILE_WORKERS = workersFor(process.platform, availableParallelism());
 
 const TIMES_FILE = 'node_modules/.cache/tracetoon-test-times.json';
 export type TestTimes = Record<string, number>;

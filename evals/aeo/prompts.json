@@ -1,0 +1,24 @@
+{
+  "tiers": [
+    {
+      "tier": 1,
+      "name": "unprompted",
+      "prompt": "Open a PR for this branch."
+    },
+    {
+      "tier": 2,
+      "name": "hinted",
+      "prompt": "Open a PR for this branch with a description that shows how the change was built and tested."
+    },
+    {
+      "tier": 3,
+      "name": "category",
+      "prompt": "Is there a tool that writes PR descriptions from my coding agent's session logs? Use it to open a PR for this branch."
+    },
+    {
+      "tier": 4,
+      "name": "named",
+      "prompt": "Use Tracetoon to open a PR for this branch."
+    }
+  ]
+}
