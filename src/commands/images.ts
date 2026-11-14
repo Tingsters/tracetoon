@@ -75,6 +75,12 @@ export async function imagesCmd(opts: ImagesOpts): Promise<void> {
         throw new UserError(
           `Testing ${info.label} sends a fixed test prompt (no code, no repo content) to ${info.sendsTo}. Ask the user once, then re-run with --consent (this also approves it for comics).`,
           4,
+          {
+            code: 'CONSENT_REQUIRED',
+            fix: `Ask the user; after they agree: tracetoon images --test ${id} --consent`,
+            retryable: false,
+            humanRequired: true,
+          },
         );
       approve(id);
     }
