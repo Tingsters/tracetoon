@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Tracetoon: PR descriptions written from your coding agents’ session logs.",
-    "version": "1.0.0-rc.27"
+    "version": "1.0.0-rc.28"
   },
   "plugins": [
     {

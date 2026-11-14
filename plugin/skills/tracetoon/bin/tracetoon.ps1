@@ -15,7 +15,7 @@ $buildInfoPath = Join-Path $skill 'build.json'
 $buildId = if (Test-Path $buildInfoPath) { (Get-Content $buildInfoPath -Raw | ConvertFrom-Json).buildId } else { $null }
 if (-not $buildId) {
   # Build outputs aren't committed: a source checkout has no build.json until it is built.
-  [Console]::Error.WriteLine('tracetoon: this copy has no build (no build.json; a source checkout?). Run `bun run bundle` to build it, or `bun src/cli.ts` from the checkout. Plugin users: install from the release branch.')
+  [Console]::Error.WriteLine('tracetoon: this copy has no build (no build.json; a source checkout?). Run `bun run bundle` to build it, or `bun src/cli.ts` from the checkout. Installed with a skills tool? Reinstall from the release branch: npx skills add Tracetoon/tracetoon#release, or gh skill install Tracetoon/tracetoon plugin/skills/tracetoon --pin release.')
   exit 3
 }
 function Test-MatchingRuntime([string]$program, [string[]]$leading = @()) {

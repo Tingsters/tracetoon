@@ -48,6 +48,7 @@ describe.skipIf(process.platform === 'win32')('skill launcher messages', () => {
     expect(r.code).toBe(3);
     expect(r.stderr).toContain('has no build');
     expect(r.stderr).toContain('bun run bundle');
+    expect(r.stderr).toContain('Tracetoon/tracetoon#release');
   });
 
   test('the launcher is valid shell', () => {
