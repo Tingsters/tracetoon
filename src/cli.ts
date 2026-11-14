@@ -6,8 +6,15 @@ import { findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
 import { recordTiming } from './workflow/publication.ts';
 import { saveProfile } from './util/profile.ts';
+import { claudeCodeHint } from './util/claudeHint.ts';
 
 const cwd = process.cwd();
+
+// Claude Code's plugin-install hint (off until Tracetoon is in an official marketplace).
+// stderr only, on its own line, so --json stdout is never touched.
+const hint = claudeCodeHint(process.argv.slice(2));
+if (hint) process.stderr.write(hint);
+
 const { program, state } = buildProgram(cwd);
 
 // A test harness may name a file to receive the exit code just before exit (see
