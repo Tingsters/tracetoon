@@ -65,6 +65,12 @@ export interface HookIntegration {
   /** The answer that blocks the tool call, in this host's format. */
   deny(reason: string): string;
   /**
+   * For a host that ignores a JSON answer and blocks on the hook's exit status
+   * (Kiro): the status to exit with. The `deny` text then goes to stderr, which
+   * is what such hosts show the agent, instead of stdout.
+   */
+  blockExitCode?: number;
+  /**
    * For a host whose hook is a source file Tracetoon owns outright (OpenCode's
    * plugins) rather than a JSON config: the whole file, and the pre-pr command a
    * written file runs. With `text`, the engine writes and removes the file

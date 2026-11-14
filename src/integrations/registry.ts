@@ -14,6 +14,7 @@ import { integration as copilot } from './copilot/index.ts';
 import { integration as cursor } from './cursor/index.ts';
 import { integration as opencode } from './opencode/index.ts';
 import { integration as kilo } from './kilo/index.ts';
+import { integration as kiro } from './kiro/index.ts';
 
 /** In display order. Hook targets, skill installs and doctor follow it. */
 export const INTEGRATIONS: readonly Integration[] = [
@@ -25,6 +26,7 @@ export const INTEGRATIONS: readonly Integration[] = [
   cursor,
   opencode,
   kilo,
+  kiro,
   geminiCli,
 ];
 
@@ -33,7 +35,7 @@ export const INTEGRATIONS: readonly Integration[] = [
  * inside another one (Codex run from Claude Code) inherits the outer variables,
  * so the hosts most often nested come first.
  */
-const SESSION_ORDER = ['codex', 'factory', 'copilot', 'cursor', 'claude'];
+const SESSION_ORDER = ['codex', 'factory', 'copilot', 'cursor', 'kiro', 'claude'];
 
 export const ADAPTERS: TraceAdapter[] = INTEGRATIONS.flatMap((i) => i.traces);
 

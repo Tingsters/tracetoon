@@ -8,6 +8,7 @@ import {
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
 import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
 import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/trace.ts';
+import { parseKiroLines } from '../src/integrations/kiro/trace.ts';
 import {
   parseCopilotCliLines,
   parseVscodeChat,
@@ -734,5 +735,116 @@ describe('Cursor adapter', () => {
       '2026-11-13T06:35:00.000Z',
     );
     expect(cursorTimestamp('no time here')).toBeUndefined();
+  });
+});
+
+describe('Kiro adapter', () => {
+  // Shapes recorded from Kiro CLI 3.3.0 (paths scrubbed).
+  const line = (timestamp: string, payload: Record<string, unknown>) => ({
+    id: 'x',
+    timestamp,
+    payload,
+  });
+  test('reads prompts, fs_write and str_replace edits, shell commands and their exit codes', () => {
+    const s = session('sess_1');
+    parseKiroLines(
+      jsonl([
+        line('2026-11-13T23:54:55.000Z', {
+          type: 'agent_note',
+          content: '<session_context>',
+        }),
+        line('2026-11-13T23:54:55.100Z', { type: 'user', content: 'Create calc.py' }),
+        line('2026-11-13T23:54:56.000Z', {
+          type: 'assistant',
+          content: '...',
+          operationType: 'Reasoning',
+        }),
+        line('2026-11-13T23:54:57.000Z', {
+          type: 'tool_call',
+          toolCallId: 't1',
+          toolName: 'fs_write',
+          args: { path: '/repo/calc.py', text: 'def add(a, b):\n    return a + b\n' },
+          status: 'approved',
+          actionType: 'create',
+        }),
+        line('2026-11-13T23:54:58.000Z', {
+          type: 'tool_call',
+          toolCallId: 't2',
+          toolName: 'str_replace',
+          args: {
+            path: '/repo/calc.py',
+            oldStr: '    return a + b',
+            newStr: '    return int(a) + int(b)',
+          },
+          status: 'approved',
+        }),
+        line('2026-11-13T23:54:59.000Z', {
+          type: 'tool_call',
+          toolCallId: 't3',
+          toolName: 'execute_pwsh',
+          args: { command: 'git commit -m calc', cwd: '/repo' },
+          status: 'completed',
+        }),
+        line('2026-11-13T23:54:59.500Z', {
+          type: 'tool_result',
+          toolCallId: 't3',
+          content: 'Output:\n[feature 72105a1] calc\n\n\nExit Code: 0',
+          success: true,
+        }),
+        line('2026-11-13T23:55:00.000Z', {
+          type: 'tool_call',
+          toolCallId: 't4',
+          toolName: 'execute_pwsh',
+          args: { command: 'npm test', cwd: '/repo' },
+          status: 'failed',
+        }),
+        line('2026-11-13T23:55:01.000Z', {
+          type: 'tool_result',
+          toolCallId: 't4',
+          content: 'Output:\n1 failing\n\n\nExit Code: 1',
+          success: false,
+        }),
+        line('2026-11-13T23:55:02.000Z', {
+          type: 'tool_call',
+          toolCallId: 't5',
+          toolName: 'execute_pwsh',
+          args: { command: 'gh pr create --fill', cwd: '/repo' },
+          status: 'denied',
+        }),
+        line('2026-11-13T23:55:02.100Z', {
+          type: 'ContextualHookInvoked',
+          name: 'tracetoon-pr',
+        }),
+        line('2026-11-13T23:55:03.000Z', {
+          type: 'assistant',
+          content: 'Done.',
+          operationType: 'Say',
+        }),
+        line('2026-11-13T23:55:04.000Z', { type: 'brand_new_event' }),
+      ]),
+      s,
+      '/repo',
+    );
+    const kinds = s.records.map((r) => r.kind);
+    expect(kinds).toEqual(['prompt', 'edit', 'edit', 'command', 'command', 'assistant']);
+    expect(s.records[1]).toMatchObject({
+      kind: 'edit',
+      created: true,
+      added: ['def add(a, b):', '    return a + b'],
+      removed: [],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({ cmd: 'git commit -m calc', cwd: '/repo' });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[3]).not.toHaveProperty('pending');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    // The refused gh pr create never ran, so it isn't a command.
+    expect(s.records.some((r) => r.kind === 'command' && r.cmd.includes('gh pr'))).toBe(
+      false,
+    );
+    expect(s.unknownTypes).toEqual({ brand_new_event: 1 });
   });
 });
