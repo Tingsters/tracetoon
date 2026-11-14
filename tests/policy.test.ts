@@ -64,6 +64,20 @@ describe('policy classification', () => {
     expect(p.verdict).toBe('disclosure-required');
   });
 
+  test('a bolded "**Never**: open a PR" rule still sets noPullRequests', () => {
+    // Agent instructions are markdown, so the rule is routinely emphasised and
+    // followed by a colon: the literal line a real CLAUDE.md carries.
+    const p = detectAiPolicy(
+      repoWith({
+        'CLAUDE.md':
+          '# Working in this repo (Claude-driven, trunk-based)\n' +
+          'Land straight to `main` when your work is done and tests pass. No PR.\n' +
+          '**Never**: open a PR, `git push --force`, or `git checkout main`.',
+      }),
+    );
+    expect(p.noPullRequests).toBe(true);
+  });
+
   test('Django: disclose the tool and how it was used', () => {
     const p = detectAiPolicy(
       repoWith({

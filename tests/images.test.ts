@@ -124,6 +124,17 @@ describe('tracetoon images', () => {
     expect(r.json.tested.error).toContain('no image tool here');
   });
 
+  test('a route that just failed its test is not then reported as ready', () => {
+    // The probe only reads `codex login status`, which still says "logged in"
+    // when the token behind it has expired. Once a test run has actually failed,
+    // the next step must not keep calling that route ready.
+    env.FAKE_CODEX_MAKE = '0';
+    const r = cli(tempDir('tracetoon-cwd-'), 'images', '--approve', 'codex', '--test');
+    expect(r.json.tested.ok).toBe(false);
+    expect(r.json.next.text).not.toContain('Comics are ready');
+    expect(r.json.next.kind).not.toBe('ready');
+  });
+
   test('nothing found: how to set one up, keys included', () => {
     env.TRACETOON_CODEX_BIN = 'none';
     const r = cli(tempDir('tracetoon-cwd-'), 'images', '--brief');

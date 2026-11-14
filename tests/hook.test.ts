@@ -440,6 +440,7 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.config', 'opencode'), { recursive: true });
     mkdirSync(join(h, '.config', 'kilo'), { recursive: true });
     mkdirSync(join(h, '.kiro'), { recursive: true });
+    mkdirSync(join(h, '.cline'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -477,9 +478,11 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -532,6 +535,13 @@ describe('installing the hook', () => {
     expect(cursor.hooks.beforeShellExecution[0].command).toContain(
       'hook pre-pr --agent cursor',
     );
+    // Cline gets one script per event; the PreToolUse one routes PRs.
+    expect(readFileSync(join(h, '.cline', 'hooks', 'PreToolUse.mjs'), 'utf8')).toContain(
+      'hook pre-pr --agent cline',
+    );
+    expect(readFileSync(join(h, '.cline', 'hooks', 'TaskStart.mjs'), 'utf8')).toContain(
+      '"--event","SessionStart"',
+    );
     // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
     const kiro = JSON.parse(
       readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
@@ -562,9 +572,11 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -583,6 +595,8 @@ describe('installing the hook', () => {
     expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
     expect(existsSync(join(h, '.cursor', 'hooks.json'))).toBe(false);
     expect(existsSync(join(h, '.kiro', 'hooks', 'tracetoon.json'))).toBe(false);
+    for (const name of ['PreToolUse.mjs', 'PostToolUse.mjs', 'TaskStart.mjs'])
+      expect(existsSync(join(h, '.cline', 'hooks', name))).toBe(false);
     expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
       false,
     );
@@ -595,7 +609,7 @@ describe('installing the hook', () => {
     // Plugin files (OpenCode, Kilo) are Tracetoon's own and hold no JSON settings;
     // Kiro's file is new, so no release ever wrote a Stop hook there.
     const targets = hookTargets(home(), {}).filter(
-      (t) => !t.file.endsWith('.js') && t.agent !== 'kiro',
+      (t) => !t.file.endsWith('.js') && !t.file.endsWith('.mjs') && t.agent !== 'kiro',
     );
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
@@ -658,6 +672,7 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
       'not installed',
       'not installed',
       'not installed',
@@ -867,5 +882,43 @@ describe('hooks that fire together', () => {
     );
     expect(runs).toHaveLength(1);
     for (const answer of answers) expect(answer).toContain(`Task ${runs[0]}`);
+  });
+});
+
+describe('Cline hook files', () => {
+  test("a script of the same name that isn't Tracetoon's is left alone, and uninstall keeps it", () => {
+    const h = tempDir('tracetoon-home-');
+    mkdirSync(join(h, '.cline', 'hooks'), { recursive: true });
+    writeFileSync(join(h, '.cline', 'hooks', 'PostToolUse.mjs'), '// my own hook\n');
+    const targets = hookTargets(h, {}).filter((t) => t.agent === 'cline');
+    expect(installHooks('/x/tracetoon', targets)[0]).toMatchObject({ result: 'skipped' });
+    expect(existsSync(join(h, '.cline', 'hooks', 'PreToolUse.mjs'))).toBe(false);
+    expect(uninstallHooks(targets)[0]).toMatchObject({ result: 'unchanged' });
+    expect(readFileSync(join(h, '.cline', 'hooks', 'PostToolUse.mjs'), 'utf8')).toBe(
+      '// my own hook\n',
+    );
+  });
+
+  test('a PR command is replaced by an echo of the reason, which every shell runs', () => {
+    const answer = JSON.parse(
+      decide(
+        'cline',
+        {
+          hookName: 'tool_call',
+          taskId: 't',
+          sessionContext: { rootSessionId: 's' },
+          workspaceRoots: [tempDir()],
+          tool_call: {
+            name: 'run_commands',
+            input: { commands: ['git push', 'gh pr create --fill'] },
+          },
+        },
+        env(), // CI turns Tracetoon off unless the test clears it
+      )!,
+    );
+    expect(answer.errorMessage).toBe(DENY_REASON);
+    expect(answer.cancel).toBeUndefined(); // cancel would stop the whole run
+    const [echo] = answer.overrideInput.commands;
+    expect(echo).toMatch(/^echo 'Blocked by Tracetoon\. [^'‘’‚‛]*'$/);
   });
 });

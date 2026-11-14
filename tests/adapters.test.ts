@@ -9,6 +9,7 @@ import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts
 import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
 import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/trace.ts';
 import { parseKiroLines } from '../src/integrations/kiro/trace.ts';
+import { parseClineMessages } from '../src/integrations/cline/trace.ts';
 import {
   parseCopilotCliLines,
   parseVscodeChat,
@@ -358,6 +359,74 @@ describe('Antigravity adapter', () => {
       cmd: 'npm test',
       cwd: '/repo',
       isError: false,
+    });
+  });
+
+  test('CLI 1.5.8 write_file edits are captured without a CODE_ACTION record', () => {
+    // Antigravity CLI 1.5.8 renamed the tool to `write_file` with `Path`/`Content`,
+    // and its transcripts carry no CODE_ACTION record to confirm the edit against.
+    const s = session();
+    s.agent = 'antigravity-cli';
+    parseAntigravityLines(
+      jsonl([
+        {
+          step_index: 0,
+          type: 'USER_INPUT',
+          created_at: T(0),
+          content: 'Create agy.py that prints agy, then run it.',
+        },
+        {
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(1),
+          source: 'MODEL',
+          tool_calls: [
+            {
+              name: 'write_file',
+              args: { Path: '/repo/agy.py', Content: 'print("agy")\n' },
+            },
+          ],
+        },
+        {
+          step_index: 2,
+          type: 'GENERIC',
+          created_at: T(2),
+          source: 'MODEL',
+          status: 'DONE',
+          content: 'Created At: x\nCompleted At: y\nCreated file.',
+        },
+        {
+          step_index: 3,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(3),
+          source: 'MODEL',
+          tool_calls: [{ name: 'run_command', args: { CommandLine: 'python3 agy.py' } }],
+        },
+        {
+          step_index: 4,
+          type: 'GENERIC',
+          created_at: T(4),
+          source: 'MODEL',
+          status: 'DONE',
+          content:
+            'Created At: x\nCompleted At: y\nCommand exited with code 0.\n\nCommand output:\nagy\r\n',
+        },
+      ]),
+      s,
+      { history: [] },
+    );
+    const edits = s.records.filter((r) => r.kind === 'edit') as any[];
+    expect(
+      edits.map((e) => [
+        e.file.replace(/\\/g, '/').replace(/^[A-Z]:/, ''),
+        e.added,
+        e.created,
+      ]),
+    ).toEqual([['/repo/agy.py', ['print("agy")'], true]]);
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'python3 agy.py',
+      isError: false,
+      output: 'agy',
     });
   });
 
@@ -846,5 +915,155 @@ describe('Kiro adapter', () => {
       false,
     );
     expect(s.unknownTypes).toEqual({ brand_new_event: 1 });
+  });
+});
+
+describe('Cline adapter', () => {
+  // Shapes recorded from Cline CLI 3.0.74 (paths scrubbed).
+  test('reads the prompt, editor edits and run_commands results, skipping Cline nudges', () => {
+    const s = session('1794619105708_aut90');
+    const msg = (role: string, ts: number, content: unknown[]) => ({
+      id: 'm',
+      role,
+      ts,
+      content,
+    });
+    parseClineMessages(
+      JSON.stringify({
+        version: 1,
+        sessionId: '1794619105708_aut90',
+        messages: [
+          msg('user', 1794619106156, [
+            { type: 'text', text: '<user_input mode="yolo">Create calc.py</user_input>' },
+          ]),
+          msg('user', 1794619106160, [
+            {
+              type: 'text',
+              text: '[SYSTEM] This run is not complete until you call submit_and_exit.',
+            },
+          ]),
+          msg('assistant', 1794619110454, [
+            { type: 'thinking', thinking: '' },
+            { type: 'text', text: 'I will create calc.py.' },
+            {
+              type: 'tool_use',
+              id: 'c1',
+              name: 'editor',
+              input: {
+                path: '/repo/calc.py',
+                new_text: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+          ]),
+          msg('user', 1794619111000, [
+            { type: 'tool_result', tool_use_id: 'c1', name: 'editor', content: '{}' },
+          ]),
+          msg('assistant', 1794619112000, [
+            {
+              type: 'tool_use',
+              id: 'c2',
+              name: 'editor',
+              input: {
+                path: '/repo/calc.py',
+                old_text: '    return a + b\n',
+                new_text: '    return a + b\n\n\ndef sub(a, b):\n    return a - b\n',
+              },
+            },
+            {
+              type: 'tool_use',
+              id: 'c3',
+              name: 'run_commands',
+              input: { commands: ['git commit -m calc', 'npm test'] },
+            },
+            { type: 'tool_use', id: 'c4', name: 'read_files', input: { files: [] } },
+          ]),
+          msg('user', 1794619113000, [
+            {
+              type: 'tool_result',
+              tool_use_id: 'c3',
+              name: 'run_commands',
+              content: [
+                {
+                  query: 'git commit -m calc',
+                  result: '[feature 4822154] calc',
+                  success: true,
+                },
+                { query: 'npm test', result: '1 failing', success: false },
+              ],
+            },
+          ]),
+          msg('assistant', 1794619114000, [{ type: 'image', source: {} }]),
+        ],
+      }),
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'assistant',
+      'edit',
+      'edit',
+      'command',
+      'command',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T01:18:26.156Z',
+    });
+    expect(s.records[2]).toMatchObject({ created: true, removed: [] });
+    expect(s.records[3]).toMatchObject({ removed: ['    return a + b'] });
+    expect(s.records[3]).not.toHaveProperty('created');
+    expect(s.records[4]).toMatchObject({
+      cmd: 'git commit -m calc',
+      output: '[feature 4822154] calc',
+    });
+    expect(s.records[4]).not.toHaveProperty('pending');
+    expect(s.records[5]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ image: 1 });
+  });
+
+  test('reads the single-command execute_command tool and its plain-text result', () => {
+    const s = session('x');
+    parseClineMessages(
+      JSON.stringify({
+        messages: [
+          {
+            role: 'assistant',
+            ts: 1,
+            content: [
+              {
+                type: 'tool_use',
+                id: 'e1',
+                name: 'execute_command',
+                input: { command: 'npm test' },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            ts: 2,
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'e1',
+                content: '2 failing',
+                is_error: true,
+              },
+            ],
+          },
+        ],
+      }),
+      s,
+      '/repo',
+    );
+    expect(s.records).toEqual([
+      expect.objectContaining({
+        kind: 'command',
+        cmd: 'npm test',
+        isError: true,
+        output: '2 failing',
+      }),
+    ]);
+    expect(s.records[0]).not.toHaveProperty('pending');
   });
 });

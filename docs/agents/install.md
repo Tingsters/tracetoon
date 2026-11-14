@@ -66,6 +66,7 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 | OpenCode | `~/.agents/skills/tracetoon` | yes |
 | Kilo CLI | `~/.agents/skills/tracetoon` | yes |
 | Kiro | `~/.kiro/skills/tracetoon` | yes |
+| Cline | `~/.agents/skills/tracetoon` | yes |
 | Gemini CLI | `~/.gemini/skills/tracetoon` | no (legacy) |
 
 ## Check the install

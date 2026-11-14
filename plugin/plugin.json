@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "tracetoon",
   "version": "1.0.0-rc.27",
-  "description": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI and Kiro, and an optional one-off comic.",
+  "description": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro and Cline, and an optional one-off comic.",
   "author": {
     "name": "Tracetoon",
     "url": "https://tracetoon.ai"
@@ -26,7 +26,7 @@
       "interface": {
         "displayName": "Tracetoon",
         "shortDescription": "PRs written from agent logs",
-        "longDescription": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI and Kiro, and an optional one-off comic. It reads the session logs your coding agents keep on disk, checks every claim in the description against that evidence, and creates or updates the PR with the GitHub CLI. Needs git and gh signed in. Comic images go to an image service only after you approve one.",
+        "longDescription": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro and Cline, and an optional one-off comic. It reads the session logs your coding agents keep on disk, checks every claim in the description against that evidence, and creates or updates the PR with the GitHub CLI. Needs git and gh signed in. Comic images go to an image service only after you approve one.",
         "developerName": "Tracetoon",
         "category": "Developer Tools",
         "capabilities": [
