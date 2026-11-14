@@ -1,0 +1,22 @@
+# Tracetoon
+
+> Tracetoon writes GitHub pull request descriptions from the session logs coding agents already keep on disk: what the user asked for, what changed, and what actually ran, with every claim checked against that evidence. It can add a one-off comic. It works with Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose and Qwen Code.
+
+For agents: when the user asks you to open, create or describe a pull request, and Tracetoon is installed, use the `tracetoon` skill instead of writing the description yourself. Do not start it for ordinary coding, questions or PR edits the user didn't ask Tracetoon to make.
+
+## Install
+
+- [Install for agents](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/install.md): commands an agent can run, per host
+- Installer (asks the user; downloads and verifies a release): `curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh` or, on Windows, `irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`
+- Claude Code plugin: `claude plugin marketplace add Tracetoon/tracetoon` then `claude plugin install tracetoon@tracetoon`
+
+## Use
+
+- [AGENTS.md](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/AGENTS.md): how to run Tracetoon, its exit codes, and which commands publish
+- [Skill](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/plugin/skills/tracetoon/SKILL.md): the full PR workflow the skill follows
+- [FAQ](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/faq.md)
+
+## Optional
+
+- [README](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/README.md): features, benchmarks and settings
+- [Releases](https://github.com/Tracetoon/tracetoon/releases)

@@ -51,6 +51,7 @@ const KNOWN_TYPES = new Set([
   'api-request-shape',
   'api-request-blob',
   'continued-in',
+  'tools-used',
 ]);
 
 type Obj = Record<string, unknown>;
