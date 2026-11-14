@@ -143,6 +143,14 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     tool_name: 'run_shell_command',
     tool_input: { command, is_background: false },
   }),
+  // Crush sends Claude-style payloads (shell tool: bash).
+  crush: (command, cwd) => ({
+    hook_event_name: 'PreToolUse',
+    session_id: '923d3c49-2fe3-4fee-9c30-51890c104ee3',
+    cwd,
+    tool_name: 'bash',
+    tool_input: { command, working_dir: cwd },
+  }),
   // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
   kiro: (command, cwd) => ({
     session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',

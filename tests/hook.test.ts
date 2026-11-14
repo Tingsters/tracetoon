@@ -445,6 +445,7 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.junie'), { recursive: true });
     mkdirSync(gooseDataDir({}, h), { recursive: true });
     mkdirSync(join(h, '.qwen'), { recursive: true });
+    mkdirSync(join(h, '.config', 'crush'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -486,9 +487,11 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -580,6 +583,16 @@ describe('installing the hook', () => {
       matcher: 'run_shell_command',
       hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent qwen' }],
     });
+    // Crush's crush.json takes one flat list of hooks per event.
+    const crush = JSON.parse(
+      readFileSync(join(h, '.config', 'crush', 'crush.json'), 'utf8'),
+    );
+    expect(crush.hooks.PreToolUse[0]).toMatchObject({
+      name: 'tracetoon-pr',
+      matcher: '^bash$',
+      command: '/opt/tracetoon/bin hook pre-pr --agent crush',
+    });
+    expect(crush.hooks.SessionStart[0].matcher).toBeUndefined();
     // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
     const kiro = JSON.parse(
       readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
@@ -614,9 +627,11 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -661,7 +676,8 @@ describe('installing the hook', () => {
         !t.file.endsWith('.js') &&
         !t.file.endsWith('.mjs') &&
         t.agent !== 'kiro' &&
-        t.agent !== 'goose',
+        t.agent !== 'goose' &&
+        t.agent !== 'crush',
     );
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
@@ -724,6 +740,7 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
       'not installed',
       'not installed',
       'not installed',

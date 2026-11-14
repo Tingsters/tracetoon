@@ -20,6 +20,7 @@ import { integration as junie } from './junie/index.ts';
 import { integration as devin } from './devin/index.ts';
 import { integration as goose } from './goose/index.ts';
 import { integration as qwen } from './qwen/index.ts';
+import { integration as crush } from './crush/index.ts';
 
 /** In display order. Hook targets, skill installs and doctor follow it. */
 export const INTEGRATIONS: readonly Integration[] = [
@@ -37,6 +38,7 @@ export const INTEGRATIONS: readonly Integration[] = [
   devin,
   goose,
   qwen,
+  crush,
   geminiCli,
 ];
 

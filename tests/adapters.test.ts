@@ -4,6 +4,7 @@ import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts
 import { parseDevinChain } from '../src/integrations/devin/trace.ts';
 import { parseGooseMessages } from '../src/integrations/goose/trace.ts';
 import { commandOutput, parseQwenLines } from '../src/integrations/qwen/trace.ts';
+import { parseCrushMessages } from '../src/integrations/crush/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
@@ -1482,5 +1483,96 @@ describe('Qwen Code adapter', () => {
   test('commandOutput keeps plain output as it is', () => {
     expect(commandOutput('plain text')).toBe('plain text');
     expect(commandOutput(undefined)).toBeUndefined();
+  });
+});
+
+describe('Crush adapter', () => {
+  // Shapes recorded from Crush 0.101.0 (paths scrubbed).
+  const row = (role: string, s: number, parts: unknown[]) => ({
+    role,
+    created_at: s,
+    parts: JSON.stringify(parts),
+  });
+  const call = (id: string, name: string, input: Record<string, unknown>) => ({
+    type: 'tool_call',
+    data: {
+      id,
+      name,
+      input: JSON.stringify(input),
+      provider_executed: false,
+      finished: true,
+    },
+  });
+  const result = (id: string, name: string, content: string, is_error = false) => ({
+    type: 'tool_result',
+    data: { tool_call_id: id, name, content, is_error },
+  });
+  test('reads the prompt, write/edit/multiedit calls and bash results without the cwd note', () => {
+    const s = session('923d3c49');
+    parseCrushMessages(
+      [
+        row('user', 1794625635, [{ type: 'text', data: { text: '\n\nCreate calc.py' } }]),
+        row('assistant', 1794625642, [
+          { type: 'reasoning', data: { thinking: 'plan' } },
+          call('w', 'write', {
+            file_path: '/repo/calc.py',
+            content: 'def add(a, b):\n    return a + b\n',
+          }),
+          call('v', 'view', { file_path: '/repo/calc.py' }),
+        ]),
+        row('assistant', 1794625659, [
+          call('e', 'edit', {
+            file_path: '/repo/calc.py',
+            old_string: '    return a + b',
+            new_string: '    return int(a) + int(b)',
+          }),
+          call('m', 'multiedit', {
+            file_path: '/repo/calc.py',
+            edits: [{ old_string: 'a', new_string: 'b' }],
+          }),
+          call('c', 'bash', { command: 'git commit -m "calc"', working_dir: '/repo' }),
+          call('g', 'bash', { command: 'gh pr create --fill', working_dir: '/repo' }),
+        ]),
+        row('tool', 1794625681, [
+          result(
+            'c',
+            'bash',
+            '[feature 63024de] calc\n 1 file changed\n\n\n<cwd>/repo</cwd>',
+          ),
+          result(
+            'g',
+            'bash',
+            '\nGraphQL: Could not resolve\n\nExit code 1\n\n<cwd>/repo</cwd>',
+          ),
+        ]),
+        row('assistant', 1794625690, [
+          { type: 'text', data: { text: 'Done.' } },
+          { type: 'finish', data: { reason: 'stop' } },
+          { type: 'image', data: {} },
+        ]),
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T03:07:15.000Z',
+    });
+    expect(s.records[5]).toMatchObject({ cmd: 'gh pr create --fill', isError: true });
+    expect(s.records[4]).toMatchObject({
+      cmd: 'git commit -m "calc"',
+      output: '[feature 63024de] calc\n 1 file changed',
+    });
+    expect(s.records[4]).not.toHaveProperty('isError');
+    expect(s.unknownTypes).toEqual({ image: 1 });
   });
 });
