@@ -21,6 +21,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj =>
@@ -189,6 +190,7 @@ export function parseAntigravityLines(
       for (const call of calls) {
         if (!isObj(call)) continue;
         const name = str(call.name) ?? '';
+        sawToolCall(into);
         const args = isObj(call.args) ? call.args : {};
         const target = fileFromArg(args.TargetFile ?? args.Path);
         if (
@@ -246,6 +248,8 @@ export function parseAntigravityLines(
           if (cmd) pendingCommands.push({ cmd, ts, cwd: fileFromArg(args.Cwd) ?? cwd });
         } else if (name === 'ask_question') {
           pendingQuestion = { text: unwrapArg(args.questions) ?? '', ts };
+        } else {
+          sawUnknownTool(into, name);
         }
       }
       continue;

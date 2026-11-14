@@ -20,6 +20,7 @@ import {
 } from '../../trace/diffLines.ts';
 import { mentionsAnyRoot } from '../../trace/pathMatch.ts';
 import type { SessionRef, TraceAdapter, TraceSession } from '../../trace/types.ts';
+import { sawToolCall } from '../../trace/toolCalls.ts';
 import { discoveryIndex } from '../../trace/discovery.ts';
 
 type Obj = Record<string, unknown>;
@@ -81,6 +82,9 @@ function planFromArgs(args: unknown): string | undefined {
 }
 
 /** Parse one rollout file's content. Exported for tests. */
+/** Codex's shell tools: converted when their output arrives, not at call time. */
+const SHELL_TOOL = /^(shell|shell_command|local_shell|container\.exec)$/;
+
 export function parseCodexLines(content: string, into: TraceSession): void {
   let cwd: string | undefined;
   let branch: string | undefined;
@@ -284,16 +288,18 @@ export function parseCodexLines(content: string, into: TraceSession): void {
             addEdit(f.moveTo ?? f.path, f, ts, f.op === 'Add');
           }
         }
+        sawToolCall(into);
+        // Deliberately no unknown-tool note here. Codex reports the same work
+        // twice: as these calls, and as `item_completed` CommandExecution items,
+        // which is the path this adapter converts. A name unhandled here is
+        // usually still captured there, so flagging it would be noise. The
+        // evidence check in doctor's probe covers the case where both stop.
         continue;
       }
       if ((rt === 'function_call_output' || rt === 'custom_tool_call_output') && callId) {
         const call = pendingCalls.get(callId);
         pendingCalls.delete(callId);
-        if (
-          !call ||
-          !/^(shell|shell_command|local_shell|container\.exec)$/.test(call.name)
-        )
-          continue;
+        if (!call || !SHELL_TOOL.test(call.name)) continue;
         const args = parseJson(call.args);
         const cmd = isObj(args) ? commandText(args.command) : undefined;
         if (!cmd) continue;

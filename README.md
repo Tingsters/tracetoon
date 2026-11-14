@@ -105,7 +105,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 | OpenCode (CLI)                                           | ✅ supported                                                             |
 | Kilo CLI (CLI, and Kilo Code for VS Code, which runs it) | ✅ supported                                                             |
 | Kiro (IDE and CLI)                                       | ✅ supported                                                             |
-| Cline (CLI)                                              | ✅ supported ([see notes](docs/agents/support.md#notes))                 |
+| Cline (CLI and VS Code extension)                        | ✅ supported ([see notes](docs/agents/support.md#notes))                 |
 | Junie (JetBrains CLI)                                    | ✅ supported                                                             |
 | Devin (CLI)                                              | ✅ supported (uses Claude Code's hook)                                   |
 | Goose (CLI and desktop app)                              | ✅ supported                                                             |
