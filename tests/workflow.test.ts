@@ -757,7 +757,9 @@ describe('requested PR to publication rehearsal', () => {
       ...gh,
       FAKE_GH_FAIL_CREATE_ONCE: '1',
     });
-    expect(firstPublish.code).toBe(1);
+    // A lost connection is retryable (exit 7); the retry reconciles instead of duplicating.
+    expect(firstPublish.code).toBe(7);
+    expect(firstPublish.json.retryable).toBe(true);
     const retried = cli(repo.root, ['publish', '--run', run.id], gh);
     expect(retried.json.error).toBeUndefined();
     expect(retried.code).toBe(0);
