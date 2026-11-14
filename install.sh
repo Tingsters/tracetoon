@@ -239,3 +239,4 @@ printf '{\n  "method": "installer",\n  "version": "%s",\n  "tag": "%s",\n  "path
 # Comics need an image route: say what's there and what to do next.
 "$stable" images --brief 2>/dev/null || true
 say "Done. Restart your agent, then ask it to open a PR."
+say "For agents: install routes and checks are in https://github.com/Tracetoon/tracetoon/blob/main/docs/agents/install.md"

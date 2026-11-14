@@ -6,9 +6,12 @@ For agents: when the user asks you to open, create or describe a pull request, a
 
 ## Install
 
-- [Install for agents](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/install.md): commands an agent can run, per host
-- Installer (asks the user; downloads and verifies a release): `curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh` or, on Windows, `irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`
+- [Install for agents](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/install.md): commands an agent can run, per host, in this order
+- npm (after the first npm release): `npx tracetoon@latest setup` installs the skill into every agent found and adds the PR hook
 - Claude Code plugin: `claude plugin marketplace add Tracetoon/tracetoon` then `claude plugin install tracetoon@tracetoon`
+- Skills CLI or GitHub CLI, from the `release` branch: `npx skills add Tracetoon/tracetoon#release --skill tracetoon -g -y` or `gh skill install Tracetoon/tracetoon plugin/skills/tracetoon --pin release --scope user`
+- Skill from the GitHub release: `gh release download --repo Tracetoon/tracetoon --pattern tracetoon-skill.zip`, then unzip it into the agent's skills folder
+- Installer (asks the user; downloads and verifies a release): `curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh` or, on Windows, `irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`
 
 ## Use
 

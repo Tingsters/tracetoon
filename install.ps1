@@ -225,6 +225,7 @@ try {
   # Comics need an image route: say what's there and what to do next.
   & $exe images --brief
   Write-Host 'Done. Restart your agent, then ask it to open a PR.'
+  Write-Host 'For agents: install routes and checks are in https://github.com/Tracetoon/tracetoon/blob/main/docs/agents/install.md'
 }
 finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
