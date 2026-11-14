@@ -111,6 +111,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 | Goose                     | ✅ supported (plugin in `~/.agents/plugins`; needs `sh` on Windows)          |
 | Qwen Code                 | ✅ supported (hooks in `~/.qwen/settings.json`)                              |
 | Crush                     | ✅ supported (hooks in `~/.config/crush/crush.json`)                         |
+| Amp                       | 🟡 PR routing and skill (plugin); threads live on Amp's servers              |
 | Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
 | Windsurf                  | 🗓️ planned                                                                   |
 
@@ -622,6 +623,7 @@ trust the new hook entries in `/hooks`.
   | OpenCode, Kilo | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Cline, Devin   | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Goose, Crush   | `~/.agents/skills/tracetoon` (shared with Codex)                     |
+  | Amp            | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Kiro           | `~/.kiro/skills/tracetoon`                                           |
   | Qwen Code      | `~/.qwen/skills/tracetoon`                                           |
   | Junie          | `~/.junie/skills/tracetoon`                                          |

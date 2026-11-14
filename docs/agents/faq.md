@@ -24,4 +24,4 @@ still prepare the description; only publishing needs it.
 **How do I turn it off for a repo?** `tracetoon off`; `tracetoon status`
 says which setting decided.
 
-**Which hosts are supported?** Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose, Qwen Code and Crush.
+**Which hosts are supported?** Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush and Amp.

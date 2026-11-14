@@ -72,6 +72,7 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 | Goose | `~/.agents/skills/tracetoon` | yes |
 | Qwen Code | `~/.qwen/skills/tracetoon` | yes |
 | Crush | `~/.agents/skills/tracetoon` | yes |
+| Amp | `~/.agents/skills/tracetoon` | yes |
 | Gemini CLI | `~/.gemini/skills/tracetoon` | no (legacy) |
 
 ## Check the install
