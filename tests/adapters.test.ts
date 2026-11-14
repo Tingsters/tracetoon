@@ -414,9 +414,13 @@ describe('Antigravity adapter', () => {
       { history: [] },
     );
     const edits = s.records.filter((r) => r.kind === 'edit') as any[];
-    expect(edits.map((e) => [e.file.replace(/\\/g, '/'), e.added, e.created])).toEqual([
-      ['/repo/agy.py', ['print("agy")'], true],
-    ]);
+    expect(
+      edits.map((e) => [
+        e.file.replace(/\\/g, '/').replace(/^[A-Z]:/, ''),
+        e.added,
+        e.created,
+      ]),
+    ).toEqual([['/repo/agy.py', ['print("agy")'], true]]);
     expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
       cmd: 'python3 agy.py',
       isError: false,
