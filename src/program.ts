@@ -58,6 +58,7 @@ import { updateCmd } from './commands/update.ts';
 import { setupCmd } from './commands/setup.ts';
 import { guideCmd } from './commands/guide.ts';
 import { feedbackCmd } from './commands/feedback.ts';
+import { serveStdio } from './mcp/server.ts';
 
 export interface ProgramState {
   /** The command being run, for the timing record src/cli.ts writes afterwards. */
@@ -654,6 +655,13 @@ export function buildProgram(cwd: string = process.cwd()): {
     .action((o) => feedbackCmd(cwd, { ...g(), ...o }));
 
   program
+    .command('mcp')
+    .description(
+      'serve Tracetoon to MCP hosts on stdin/stdout: status, prepare and publish tools, and the skill as resources',
+    )
+    .action(() => serveStdio());
+
+  program
     .command('commands')
     .description('every command and option, with which ones act outside the machine')
     .action(() => {
@@ -667,6 +675,10 @@ export function buildProgram(cwd: string = process.cwd()): {
 /** What a command can do beyond this machine and its run folder. */
 export const EFFECTS: Record<string, { effects: string[]; when?: string }> = {
   publish: { effects: ['publishes'] },
+  mcp: {
+    effects: ['publishes'],
+    when: 'when a client calls tracetoon_publish_pr with dryRun false',
+  },
   'comic art': { effects: ['sends-data', 'may-cost'] },
   images: { effects: ['sends-data', 'may-cost'], when: 'with --approve or --test' },
   'review run': { effects: ['sends-data', 'may-cost'] },

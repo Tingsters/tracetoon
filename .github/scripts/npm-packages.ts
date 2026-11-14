@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { SUPPORTED_TARGETS, verifyCandidateInputs } from './release-assets.ts';
+import rootPkg from '../../package.json';
 
 const ROOT = resolve(import.meta.dir, '../..');
 const TEMPLATES = join(import.meta.dir, 'npm');
@@ -123,6 +124,8 @@ export function buildNpmPackages(
       'claude-code',
       'codex',
     ],
+    // The MCP Registry accepts server.json only when the npm package names it here.
+    mcpName: rootPkg.mcpName,
     bin: { tracetoon: 'bin/tracetoon.js' },
     files: ['bin/', 'skill/'],
     engines: { node: '>=18' },

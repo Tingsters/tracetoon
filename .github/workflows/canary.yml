@@ -12,6 +12,7 @@ name: drift canary
 #   OpenCode      ANTHROPIC_API_KEY (optional variable OPENCODE_MODEL, as provider/model)
 #   Kilo CLI      ANTHROPIC_API_KEY (optional variable KILO_MODEL, as provider/model)
 #   Kiro CLI      KIRO_API_KEY (an API key from Kiro, for headless mode)
+#   Cline CLI     ANTHROPIC_API_KEY
 on:
   schedule:
     - cron: '17 6 * * 1'
@@ -98,6 +99,13 @@ jobs:
           npm install -g @kilocode/cli
           kilo run --auto ${KILO_MODEL:+--model "$KILO_MODEL"} "Create kilo.py that prints kilo."
           echo "kilo:kilo.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Cline CLI session
+        if: ${{ !cancelled() && env.ANTHROPIC_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g cline
+          cline -y -P anthropic -k "$ANTHROPIC_API_KEY" "Create cline.py that prints cline."
+          echo "cline:cline.py" >> "$RUNNER_TEMP/expect.txt"
       - name: Kiro CLI session
         if: ${{ !cancelled() && env.KIRO_API_KEY != '' }}
         working-directory: ${{ runner.temp }}/toy

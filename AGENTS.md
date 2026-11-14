@@ -17,6 +17,12 @@ plus a `tracetoon` CLI.
 - **Install:** [docs/agents/install.md](docs/agents/install.md) lists the
   routes an agent can run for each host. With the runtime already present,
   `tracetoon setup --json` copies its skill to every agent and adds the PR hook.
+- **MCP:** `tracetoon mcp` serves the same flow over MCP on stdio for hosts
+  without skills or a shell (`claude mcp add tracetoon -- tracetoon mcp`; the
+  Claude Code plugin registers it). Tools: `tracetoon_status`,
+  `tracetoon_prepare_pr` (brief plus drafting guidance; write `title.txt` and
+  `body.md` in the run folder) and `tracetoon_publish_pr` (`dryRun` defaults
+  to true). The skill and its references are `tracetoon://skill/` resources.
 - **Requirements:** `git`, and the GitHub CLI (`gh`) signed in. Without `gh`
   you can still prepare everything; only publishing needs it.
   `tracetoon doctor --json` lists `checks` with `ok`, `severity` and `fix`.
@@ -74,12 +80,15 @@ bun install
 bun run typecheck
 bun run test                   # each tests/*.test.ts in its own process
 bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
+bun scripts/site-kit.ts        # build site-kit/ (agent files for tracetoon.ai)
 ```
 
 - Layout and how to add an agent host: [CONTRIBUTING.md](CONTRIBUTING.md).
 - `src/integrations/registry.ts` is the single list of hosts. The agent
-  surfaces (`llms.txt`, `docs/agents/`, plugin manifests) are generated from
-  it; `tests/agent-surface.test.ts` fails when they are stale.
+  surfaces (`llms.txt`, `docs/agents/`, `GEMINI.md`, the plugin and catalog
+  manifests) are generated from it; `tests/agent-surface.test.ts` fails when
+  they are stale. `docs/agents/listings.md` tracks where each manifest is
+  submitted.
 - Tests fake external tools through environment variables
   (`TRACETOON_GH_SCRIPT=tests/fake-gh.ts`, `tests/fake-codex.ts`); never call
   the real GitHub from tests.
@@ -87,4 +96,13 @@ bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
   committed to `main`; the `release` branch carries them and is never
   force-pushed.
 - `src/graph/vendor/` is pinned generated code; never edit it.
+- MCP: `src/mcp/server.ts` (hand-rolled JSON-RPC; tools run the CLI commands
+  in-process). The plugin registers it in `plugin/.mcp.json`; `server.json`
+  (MCP Registry) is generated, and the release workflow publishes it only when
+  the repository variable `MCP_REGISTRY_PUBLISH` is set.
+- Claude Code plugin hint: `src/util/claudeHint.ts` can print Claude Code's
+  `<claude-code-hint />` install prompt on stderr. It is off
+  (`CLAUDE_CODE_HINT_ENABLED = false`) because hints only work for plugins in
+  an official Anthropic marketplace. Once Tracetoon is listed, set it to true
+  and `HINT_PLUGIN` to the listed `name@marketplace`.
 - Open PRs with Tracetoon: _"Open a PR for this branch with Tracetoon."_

@@ -69,6 +69,21 @@ export const CLI_CONTRACTS: PackagedContract[] = [
     minimum: 1,
   },
 ];
+/** `tracetoon mcp` (tests/mcp.test.ts): the stdio protocol, tools and skill resources. */
+export const MCP_CONTRACTS: PackagedContract[] = [
+  {
+    id: 'mcp-tools-and-resources',
+    file: 'tests/mcp.test.ts',
+    pattern: 'mcp server lists its tools and skill resources and answers status',
+    minimum: 1,
+  },
+  {
+    id: 'mcp-dry-run-publish',
+    file: 'tests/mcp.test.ts',
+    pattern: 'mcp prepare and dry-run publish post nothing',
+    minimum: 1,
+  },
+];
 export const NATIVE_CONTRACTS = [
   EVIDENCE_GRAPH_CONTRACT,
   PUBLICATION_CONTRACT,
@@ -76,6 +91,7 @@ export const NATIVE_CONTRACTS = [
   PREPARATION_CONTRACT,
   CHECK_PROGRESS_CONTRACT,
   ...CLI_CONTRACTS,
+  ...MCP_CONTRACTS,
 ];
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
   EVIDENCE_GRAPH_CONTRACT,
@@ -85,7 +101,8 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
     // Needs the generated build.json and bundle, which aren't committed.
     id: 'launcher-runtime-selection',
     file: 'tests/runtime.test.ts',
-    pattern: 'skips an executable from another build and runs the matching shipped bundle',
+    pattern:
+      'skips an executable from another build and runs the matching shipped bundle',
     minimum: 1,
   },
   {
@@ -149,6 +166,7 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
   PUBLICATION_CONTRACT,
   PASSIVE_CREATION_CONTRACT,
   ...CLI_CONTRACTS,
+  ...MCP_CONTRACTS,
 ];
 export const contractPattern = (cases: PackagedContract[]) =>
   cases.map((c) => `(?:${c.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`).join('|');

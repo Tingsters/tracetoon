@@ -10,7 +10,7 @@
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { INTEGRATIONS, integration } from '../integrations/registry.ts';
 import type { HookCommands, HookIntegration, Json } from '../integrations/types.ts';
 import { readStrict, writeConfig } from './config.ts';
@@ -93,18 +93,22 @@ export function installHooks(
     if (!t.present) return { ...base, result: 'skipped', note: 'not installed' };
     const owned = hookOf(t).text;
     if (owned) {
-      const next = owned.render(commandsFor(t.agent, program));
-      const current = readText(t.file);
-      if (current === next) return { ...base, result: 'unchanged' };
+      const commands = commandsFor(t.agent, program);
+      const files = ownedFiles(t.file, owned, commands);
+      const current = files.map((f) => readText(f.path));
+      if (files.every((f, i) => current[i] === f.text))
+        return { ...base, result: 'unchanged' };
       // Never replace a file of that name that Tracetoon didn't write.
-      if (current !== undefined && !owned.command(current))
+      if (current.some((c) => c !== undefined && !owned.command(c)))
         return {
           ...base,
           result: 'skipped',
           note: 'a file Tracetoon did not write is there; left untouched',
         };
-      mkdirSync(dirname(t.file), { recursive: true });
-      writeFileSync(t.file, next, 'utf8');
+      for (const f of files) {
+        mkdirSync(dirname(f.path), { recursive: true });
+        writeFileSync(f.path, f.text, 'utf8');
+      }
       return { ...base, result: 'installed', note: hookOf(t).installNote?.(t.file, {}) };
     }
     let data: Json;
@@ -131,12 +135,15 @@ export function uninstallHooks(targets = hookTargets()): HookChange[] {
     const base = { agent: t.agent, label: t.label, file: t.file };
     const owned = hookOf(t).text;
     if (owned) {
-      // Only a file Tracetoon wrote is removed.
-      const text = readText(t.file);
-      if (text === undefined || !owned.command(text))
-        return { ...base, result: 'unchanged' };
-      rmSync(t.file, { force: true });
-      return { ...base, result: 'removed' };
+      // Only files Tracetoon wrote are removed.
+      let removed = false;
+      for (const path of [t.file, ...siblingPaths(t.file, owned)]) {
+        const text = readText(path);
+        if (text === undefined || !owned.command(text)) continue;
+        rmSync(path, { force: true });
+        removed = true;
+      }
+      return { ...base, result: removed ? 'removed' : 'unchanged' };
     }
     let data: Json;
     try {
@@ -154,6 +161,22 @@ export function uninstallHooks(targets = hookTargets()): HookChange[] {
 
 const COVERAGE =
   'PR creation through recognized shell commands and GitHub connectors; existing PR operations, pushes and read-only commands are left alone. Arbitrary network scripts are not intercepted.';
+
+type OwnedText = NonNullable<HookIntegration['text']>;
+
+const siblingPaths = (file: string, owned: OwnedText) =>
+  Object.keys(owned.siblings ?? {}).map((name) => join(dirname(file), name));
+
+/** The main file and its siblings, each with the text Tracetoon writes there. */
+function ownedFiles(file: string, owned: OwnedText, commands: HookCommands) {
+  return [
+    { path: file, text: owned.render(commands) },
+    ...Object.entries(owned.siblings ?? {}).map(([name, render]) => ({
+      path: join(dirname(file), name),
+      text: render(commands),
+    })),
+  ];
+}
 
 function readText(file: string): string | undefined {
   try {

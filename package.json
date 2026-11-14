@@ -3,6 +3,7 @@
   "version": "1.0.0-rc.27",
   "description": "Write pull request descriptions from the AI agent session logs already on your machine, plus a one-off comic.",
   "private": true,
+  "mcpName": "io.github.tracetoon/tracetoon",
   "type": "module",
   "license": "Apache-2.0",
   "homepage": "https://tracetoon.ai",
@@ -43,7 +44,8 @@
     "build": "bun run scripts/build.ts",
     "build:check": "bun run scripts/build-info.ts --check",
     "build:reproduce": "bun run scripts/reproduce.ts",
-    "agent-surfaces": "bun run scripts/agent-surfaces.ts"
+    "agent-surfaces": "bun run scripts/agent-surfaces.ts",
+    "site-kit": "bun run scripts/site-kit.ts"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "2.6.2",

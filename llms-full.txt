@@ -1,6 +1,6 @@
 # Tracetoon
 
-> Tracetoon writes GitHub pull request descriptions from the session logs coding agents already keep on disk: what the user asked for, what changed, and what actually ran, with every claim checked against that evidence. It can add a one-off comic. It works with Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI and Kiro.
+> Tracetoon writes GitHub pull request descriptions from the session logs coding agents already keep on disk: what the user asked for, what changed, and what actually ran, with every claim checked against that evidence. It can add a one-off comic. It works with Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro and Cline.
 
 For agents: when the user asks you to open, create or describe a pull request, and Tracetoon is installed, use the `tracetoon` skill instead of writing the description yourself. Do not start it for ordinary coding, questions or PR edits the user didn't ask Tracetoon to make.
 
@@ -12,6 +12,7 @@ For agents: when the user asks you to open, create or describe a pull request, a
 - Skills CLI or GitHub CLI, from the `release` branch: `npx skills add Tracetoon/tracetoon#release --skill tracetoon -g -y` or `gh skill install Tracetoon/tracetoon plugin/skills/tracetoon --pin release --scope user`
 - Skill from the GitHub release: `gh release download --repo Tracetoon/tracetoon --pattern tracetoon-skill.zip`, then unzip it into the agent's skills folder
 - Installer (asks the user; downloads and verifies a release): `curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh` or, on Windows, `irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`
+- MCP server (any MCP host, with the runtime installed): `tracetoon mcp` on stdio, for example `claude mcp add tracetoon -- tracetoon mcp`
 
 ## Use
 
@@ -47,6 +48,12 @@ plus a `tracetoon` CLI.
 - **Install:** [docs/agents/install.md](docs/agents/install.md) lists the
   routes an agent can run for each host. With the runtime already present,
   `tracetoon setup --json` copies its skill to every agent and adds the PR hook.
+- **MCP:** `tracetoon mcp` serves the same flow over MCP on stdio for hosts
+  without skills or a shell (`claude mcp add tracetoon -- tracetoon mcp`; the
+  Claude Code plugin registers it). Tools: `tracetoon_status`,
+  `tracetoon_prepare_pr` (brief plus drafting guidance; write `title.txt` and
+  `body.md` in the run folder) and `tracetoon_publish_pr` (`dryRun` defaults
+  to true). The skill and its references are `tracetoon://skill/` resources.
 - **Requirements:** `git`, and the GitHub CLI (`gh`) signed in. Without `gh`
   you can still prepare everything; only publishing needs it.
   `tracetoon doctor --json` lists `checks` with `ok`, `severity` and `fix`.
@@ -104,12 +111,15 @@ bun install
 bun run typecheck
 bun run test                   # each tests/*.test.ts in its own process
 bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
+bun scripts/site-kit.ts        # build site-kit/ (agent files for tracetoon.ai)
 ```
 
 - Layout and how to add an agent host: [CONTRIBUTING.md](CONTRIBUTING.md).
 - `src/integrations/registry.ts` is the single list of hosts. The agent
-  surfaces (`llms.txt`, `docs/agents/`, plugin manifests) are generated from
-  it; `tests/agent-surface.test.ts` fails when they are stale.
+  surfaces (`llms.txt`, `docs/agents/`, `GEMINI.md`, the plugin and catalog
+  manifests) are generated from it; `tests/agent-surface.test.ts` fails when
+  they are stale. `docs/agents/listings.md` tracks where each manifest is
+  submitted.
 - Tests fake external tools through environment variables
   (`TRACETOON_GH_SCRIPT=tests/fake-gh.ts`, `tests/fake-codex.ts`); never call
   the real GitHub from tests.
@@ -117,6 +127,15 @@ bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
   committed to `main`; the `release` branch carries them and is never
   force-pushed.
 - `src/graph/vendor/` is pinned generated code; never edit it.
+- MCP: `src/mcp/server.ts` (hand-rolled JSON-RPC; tools run the CLI commands
+  in-process). The plugin registers it in `plugin/.mcp.json`; `server.json`
+  (MCP Registry) is generated, and the release workflow publishes it only when
+  the repository variable `MCP_REGISTRY_PUBLISH` is set.
+- Claude Code plugin hint: `src/util/claudeHint.ts` can print Claude Code's
+  `<claude-code-hint />` install prompt on stderr. It is off
+  (`CLAUDE_CODE_HINT_ENABLED = false`) because hints only work for plugins in
+  an official Anthropic marketplace. Once Tracetoon is listed, set it to true
+  and `HINT_PLUGIN` to the listed `name@marketplace`.
 - Open PRs with Tracetoon: _"Open a PR for this branch with Tracetoon."_
 
 ---
@@ -211,6 +230,36 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 
 `TRACETOON_NO_HOOK=1` skips the PR hook; `TRACETOON_VERSION=<tag>` pins a release.
 
+## 6. MCP server (hosts without skills or a shell)
+
+With the runtime installed (`npm install -g tracetoon` from route 1, the
+installer from route 5, or the plugin), `tracetoon mcp` serves Tracetoon
+over MCP on stdio; after the first npm release `npx -y tracetoon@latest mcp`
+works without an install. The Claude Code plugin registers it already, and the
+Cursor plugin and Gemini extension start it through `npx`. For another
+Claude Code setup:
+
+```sh
+claude mcp add tracetoon -- tracetoon mcp
+```
+
+Any host that reads an `mcpServers` map:
+
+```json
+{
+  "mcpServers": {
+    "tracetoon": { "command": "tracetoon", "args": ["mcp"] }
+  }
+}
+```
+
+Tools: `tracetoon_status` (read-only doctor checks), `tracetoon_prepare_pr`
+(evidence brief and drafting guidance; you write `title.txt` and `body.md`
+in the run folder) and `tracetoon_publish_pr` (`dryRun` is true unless you
+pass false). The skill and its references are resources under
+`tracetoon://skill/`. On Windows, if the host can't start `tracetoon`
+directly, use `cmd /c tracetoon mcp`.
+
 ## Where each host reads the skill
 
 | Host | Personal skill folder | PR hook |
@@ -224,6 +273,7 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 | OpenCode | `~/.agents/skills/tracetoon` | yes |
 | Kilo CLI | `~/.agents/skills/tracetoon` | yes |
 | Kiro | `~/.kiro/skills/tracetoon` | yes |
+| Cline | `~/.agents/skills/tracetoon` | yes |
 | Gemini CLI | `~/.gemini/skills/tracetoon` | no (legacy) |
 
 ## Check the install
@@ -262,7 +312,7 @@ still prepare the description; only publishing needs it.
 **How do I turn it off for a repo?** `tracetoon off`; `tracetoon status`
 says which setting decided.
 
-**Which hosts are supported?** Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI and Kiro.
+**Which hosts are supported?** Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro and Cline.
 
 ---
 

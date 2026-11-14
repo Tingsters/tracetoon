@@ -394,7 +394,7 @@ the agent hook that routes PRs through Tracetoon
 
 | Option | Description |
 | --- | --- |
-| `--agent <agent>` | claude, codex, antigravity, factory, copilot, cursor, opencode, kilo, kiro (required) |
+| `--agent <agent>` | claude, codex, antigravity, factory, copilot, cursor, opencode, kilo, kiro, cline (required) |
 | `--event <event>` | SessionStart, PreToolUse, PostToolUse or Stop (required) |
 
 ## `tracetoon hook pre-pr`
@@ -403,7 +403,7 @@ called by agents before shell commands; routes PR creation through Tracetoon
 
 | Option | Description |
 | --- | --- |
-| `--agent <agent>` | claude, codex, antigravity, factory, copilot, cursor, opencode, kilo, kiro (required) |
+| `--agent <agent>` | claude, codex, antigravity, factory, copilot, cursor, opencode, kilo, kiro, cline (required) |
 
 ## `tracetoon hook install`
 
@@ -452,6 +452,12 @@ print a link to a prefilled GitHub issue with a redacted doctor summary (never s
 | --- | --- |
 | `--title <title>` | issue title |
 | `--open` | open the link in the browser |
+
+## `tracetoon mcp`
+
+serve Tracetoon to MCP hosts on stdin/stdout: status, prepare and publish tools, and the skill as resources
+
+**Acts outside the machine:** publishes (when a client calls tracetoon_publish_pr with dryRun false).
 
 ## `tracetoon commands`
 

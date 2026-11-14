@@ -1,0 +1,81 @@
+name: aeo eval
+
+# How often do coding agents discover, suggest, install and run Tracetoon when
+# asked to open a PR? Runs real agents headlessly on throwaway repositories with a
+# recording gh shim (nothing reaches GitHub). See evals/aeo/README.md.
+# Each agent runs only if its secret is configured:
+#   Claude Code   ANTHROPIC_API_KEY
+#   Codex         OPENAI_API_KEY
+#   OpenCode      ANTHROPIC_API_KEY (optional variable OPENCODE_MODEL, as provider/model)
+# Results are uploaded as an artifact; nothing is committed.
+on:
+  schedule:
+    - cron: '41 7 * * 2'
+  workflow_dispatch:
+    inputs:
+      agents:
+        description: 'Comma-separated: claude,codex,opencode'
+        default: 'claude,codex,opencode'
+      tiers:
+        description: 'Comma-separated prompt tiers (1-4)'
+        default: '1,2,3,4'
+      conditions:
+        description: 'Comma-separated: clean,skill,skill+hook,agents-md'
+        default: 'clean,skill,skill+hook'
+      trials:
+        description: 'Trials per cell'
+        default: '1'
+
+jobs:
+  aeo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENCODE_MODEL: ${{ vars.OPENCODE_MODEL }}
+      AGENTS: ${{ inputs.agents || 'claude,codex,opencode' }}
+      TIERS: ${{ inputs.tiers || '1,2,3,4' }}
+      CONDITIONS: ${{ inputs.conditions || 'clean,skill,skill+hook' }}
+      TRIALS: ${{ inputs.trials || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run dependencies:prepare
+      - name: Install the agent CLIs that have a key
+        run: |
+          agents=""
+          case ",$AGENTS," in *,claude,*)
+            if [ -n "$ANTHROPIC_API_KEY" ]; then npm install -g @anthropic-ai/claude-code && agents="$agents,claude"; else echo "skip claude: no ANTHROPIC_API_KEY"; fi ;;
+          esac
+          case ",$AGENTS," in *,codex,*)
+            if [ -n "$OPENAI_API_KEY" ]; then npm install -g @openai/codex && agents="$agents,codex"; else echo "skip codex: no OPENAI_API_KEY"; fi ;;
+          esac
+          case ",$AGENTS," in *,opencode,*)
+            if [ -n "$ANTHROPIC_API_KEY" ]; then npm install -g opencode-ai && agents="$agents,opencode"; else echo "skip opencode: no ANTHROPIC_API_KEY"; fi ;;
+          esac
+          echo "RUN_AGENTS=${agents#,}" >> "$GITHUB_ENV"
+      - name: Run the eval
+        if: env.RUN_AGENTS != ''
+        run: |
+          name="aeo-$(date -u +%F)-${GITHUB_RUN_ID}"
+          echo "RESULT_NAME=$name" >> "$GITHUB_ENV"
+          bun evals/aeo/run.ts --agents "$RUN_AGENTS" --tiers "$TIERS" \
+            --conditions "$CONDITIONS" --trials "$TRIALS" \
+            --out "evals/aeo/results/$name.json"
+          cat "evals/aeo/results/$name.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: No agent ran
+        if: env.RUN_AGENTS == ''
+        run: echo 'No agent ran. Configure ANTHROPIC_API_KEY and/or OPENAI_API_KEY.'
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && env.RESULT_NAME != '' }}
+        with:
+          name: ${{ env.RESULT_NAME }}
+          path: evals/aeo/results/
+          retention-days: 30

@@ -13,6 +13,7 @@ import {
 import { join } from 'node:path';
 import { buildNpmPackages, npmPlatform } from '../.github/scripts/npm-packages.ts';
 import { SUPPORTED_TARGETS } from '../.github/scripts/release-assets.ts';
+import { MCP_NAME } from '../scripts/agent-surfaces.ts';
 import { tempDir } from './helpers.ts';
 import { releaseFixture } from './release-fixture.ts';
 
@@ -120,6 +121,7 @@ describe('npm packages from the verified release', () => {
     const wrapper = pkg(join(npm, 'tracetoon'));
     expect(wrapper.version).toBe('1.2.3-rc.4');
     expect(wrapper.bin).toEqual({ tracetoon: 'bin/tracetoon.js' });
+    expect(wrapper.mcpName).toBe(MCP_NAME);
     // Pinned exactly: a wrapper never runs a binary from another release.
     expect(wrapper.optionalDependencies).toEqual(
       Object.fromEntries(packages.slice(0, -1).map((p) => [p.name, '1.2.3-rc.4'])),
