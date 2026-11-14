@@ -3,6 +3,7 @@
   "version": "1.0.0-rc.28",
   "description": "Write pull request descriptions from the AI agent session logs already on your machine, plus a one-off comic.",
   "private": true,
+  "mcpName": "io.github.tracetoon/tracetoon",
   "type": "module",
   "license": "Apache-2.0",
   "homepage": "https://tracetoon.ai",

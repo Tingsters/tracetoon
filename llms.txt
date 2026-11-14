@@ -9,6 +9,7 @@ For agents: when the user asks you to open, create or describe a pull request, a
 - [Install for agents](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/install.md): commands an agent can run, per host
 - Installer (asks the user; downloads and verifies a release): `curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh` or, on Windows, `irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`
 - Claude Code plugin: `claude plugin marketplace add Tracetoon/tracetoon` then `claude plugin install tracetoon@tracetoon`
+- MCP server (any MCP host, with the runtime installed): `tracetoon mcp` on stdio, for example `claude mcp add tracetoon -- tracetoon mcp`
 
 ## Use
 

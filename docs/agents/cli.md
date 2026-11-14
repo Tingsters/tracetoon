@@ -453,6 +453,12 @@ print a link to a prefilled GitHub issue with a redacted doctor summary (never s
 | `--title <title>` | issue title |
 | `--open` | open the link in the browser |
 
+## `tracetoon mcp`
+
+serve Tracetoon to MCP hosts on stdin/stdout: status, prepare and publish tools, and the skill as resources
+
+**Acts outside the machine:** publishes (when a client calls tracetoon_publish_pr with dryRun false).
+
 ## `tracetoon commands`
 
 every command and option, with which ones act outside the machine

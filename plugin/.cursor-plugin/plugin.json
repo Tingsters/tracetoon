@@ -20,5 +20,15 @@
     "provenance",
     "comic"
   ],
-  "logo": "assets/tracetoon.svg"
+  "logo": "assets/tracetoon.svg",
+  "mcpServers": {
+    "tracetoon": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tracetoon@1.0.0-rc.28",
+        "mcp"
+      ]
+    }
+  }
 }

@@ -48,6 +48,58 @@ function skillRows(): { label: string; dir: string; hook: boolean; status: strin
   });
 }
 
+/** The MCP Registry name; package.json `mcpName` must match it for npm validation. */
+export const MCP_NAME = 'io.github.tracetoon/tracetoon';
+/** The MCP Registry caps a server description at 100 characters. */
+export const MCP_DESCRIPTION_MAX = 100;
+
+/** The pitch, or a shorter line when the registry's limit can't take it. */
+export function registryDescription(): string {
+  const full = pitch();
+  return full.length <= MCP_DESCRIPTION_MAX
+    ? full
+    : "Writes GitHub PR descriptions from your coding agents' session logs, checked against them.";
+}
+
+/** server.json for the MCP Registry: the npm package `tracetoon`, run as `tracetoon mcp`. */
+function serverJson(): string {
+  const server = {
+    $schema:
+      'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
+    name: MCP_NAME,
+    title: 'Tracetoon',
+    description: registryDescription(),
+    websiteUrl: 'https://tracetoon.ai',
+    repository: { url: `https://github.com/${REPO}`, source: 'github' },
+    version: pkg.version,
+    packages: [
+      {
+        registryType: 'npm',
+        registryBaseUrl: 'https://registry.npmjs.org',
+        identifier: 'tracetoon',
+        version: pkg.version,
+        runtimeHint: 'npx',
+        transport: { type: 'stdio' },
+        packageArguments: [{ type: 'positional', value: 'mcp' }],
+      },
+    ],
+  };
+  return JSON.stringify(server, null, 2) + '\n';
+}
+
+/**
+ * The MCP server entry for plugin formats that carry an `mcpServers` map but
+ * have no plugin-root variable the skill launcher could be found through
+ * (Cursor, Gemini CLI): the same npm package, version and argument server.json
+ * lists. The Claude Code plugin uses plugin/.mcp.json and the launcher instead.
+ */
+export function mcpServerEntry() {
+  return { command: 'npx', args: ['-y', `tracetoon@${pkg.version}`, 'mcp'] };
+}
+
+/** The MCP lines install.md and llms.txt share. */
+const MCP_ADD = 'claude mcp add tracetoon -- tracetoon mcp';
+
 const INSTALL_HUMAN = `curl -fsSL ${RAW}/install.sh | sh`;
 const INSTALL_HUMAN_WIN = `irm ${RAW}/install.ps1 | iex`;
 
@@ -84,6 +136,7 @@ For agents: when the user asks you to open, create or describe a pull request, a
 - [Install for agents](${links.install}): commands an agent can run, per host
 - Installer (asks the user; downloads and verifies a release): \`${INSTALL_HUMAN}\` or, on Windows, \`${INSTALL_HUMAN_WIN}\`
 - Claude Code plugin: \`claude plugin marketplace add ${REPO}\` then \`claude plugin install tracetoon@tracetoon\`
+- MCP server (any MCP host, with the runtime installed): \`tracetoon mcp\` on stdio, for example \`${MCP_ADD}\`
 
 ## Use
 
@@ -161,6 +214,33 @@ ${INSTALL_HUMAN_WIN}
 \`\`\`
 
 \`TRACETOON_NO_HOOK=1\` skips the PR hook; \`TRACETOON_VERSION=<tag>\` pins a release.
+
+## 4. MCP server (hosts without skills or a shell)
+
+With the runtime installed (route 3, or the plugin), \`tracetoon mcp\` serves
+Tracetoon over MCP on stdio. The Claude Code plugin registers it already. For
+another Claude Code setup:
+
+\`\`\`sh
+${MCP_ADD}
+\`\`\`
+
+Any host that reads an \`mcpServers\` map:
+
+\`\`\`json
+{
+  "mcpServers": {
+    "tracetoon": { "command": "tracetoon", "args": ["mcp"] }
+  }
+}
+\`\`\`
+
+Tools: \`tracetoon_status\` (read-only doctor checks), \`tracetoon_prepare_pr\`
+(evidence brief and drafting guidance; you write \`title.txt\` and \`body.md\`
+in the run folder) and \`tracetoon_publish_pr\` (\`dryRun\` is true unless you
+pass false). The skill and its references are resources under
+\`tracetoon://skill/\`. On Windows, if the host can't start \`tracetoon\`
+directly, use \`cmd /c tracetoon mcp\`.
 
 ## Where each host reads the skill
 
@@ -507,6 +587,7 @@ function cursorPlugin(): string {
     license: 'Apache-2.0',
     keywords: KEYWORDS,
     logo: ICON,
+    mcpServers: { tracetoon: mcpServerEntry() },
   });
 }
 
@@ -535,6 +616,7 @@ function geminiExtension(): string {
     version: pkg.version,
     description: pitch(),
     contextFileName: 'GEMINI.md',
+    mcpServers: { tracetoon: mcpServerEntry() },
   });
 }
 
@@ -592,6 +674,7 @@ export function surfaces(
     ['docs/agents/errors.md', errors],
     ['docs/agents/cli.md', cliMd()],
     ['src/commands/guideText.ts', guideTs(agents)],
+    ['server.json', serverJson()],
     [
       '.claude-plugin/marketplace.json',
       marketplace(read('.claude-plugin/marketplace.json')),

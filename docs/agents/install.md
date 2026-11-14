@@ -53,6 +53,33 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 
 `TRACETOON_NO_HOOK=1` skips the PR hook; `TRACETOON_VERSION=<tag>` pins a release.
 
+## 4. MCP server (hosts without skills or a shell)
+
+With the runtime installed (route 3, or the plugin), `tracetoon mcp` serves
+Tracetoon over MCP on stdio. The Claude Code plugin registers it already. For
+another Claude Code setup:
+
+```sh
+claude mcp add tracetoon -- tracetoon mcp
+```
+
+Any host that reads an `mcpServers` map:
+
+```json
+{
+  "mcpServers": {
+    "tracetoon": { "command": "tracetoon", "args": ["mcp"] }
+  }
+}
+```
+
+Tools: `tracetoon_status` (read-only doctor checks), `tracetoon_prepare_pr`
+(evidence brief and drafting guidance; you write `title.txt` and `body.md`
+in the run folder) and `tracetoon_publish_pr` (`dryRun` is true unless you
+pass false). The skill and its references are resources under
+`tracetoon://skill/`. On Windows, if the host can't start `tracetoon`
+directly, use `cmd /c tracetoon mcp`.
+
 ## Where each host reads the skill
 
 | Host | Personal skill folder | PR hook |
