@@ -89,6 +89,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 | Kiro (IDE and CLI)        | ✅ supported (hook file in `~/.kiro/hooks`)                                  |
 | Cline CLI                 | ✅ supported (hook scripts in `~/.cline/hooks`)                              |
 | Junie (JetBrains CLI)     | ✅ supported (hooks in `~/.junie/config.json`)                               |
+| Devin CLI                 | ✅ supported (routes PRs through the Claude Code hook Devin imports)         |
 | Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
 | Windsurf                  | 🗓️ planned                                                                   |
 
@@ -104,7 +105,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 <p align="center"><a href="https://tracetoon.ai/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
 
 AI-written PRs are usually vague and padded, and they sound sure about tests
-nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline and Junie already keep session logs on
+nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie and Devin already keep session logs on
 your machine. Tracetoon finds the sessions that produced this branch and turns
 them into a redacted evidence brief your agent writes from.
 
@@ -598,7 +599,7 @@ trust the new hook entries in `/hooks`.
   | Copilot        | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Cursor         | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | OpenCode, Kilo | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Cline          | `~/.agents/skills/tracetoon` (shared with Codex)                     |
+  | Cline, Devin   | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Kiro           | `~/.kiro/skills/tracetoon`                                           |
   | Junie          | `~/.junie/skills/tracetoon`                                          |
   | Gemini CLI     | `~/.gemini/skills/tracetoon`                                         |
