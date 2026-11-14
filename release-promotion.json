@@ -1,28 +1,36 @@
 {
   "schema": "tracetoon.release-promotion/v3",
-  "version": "1.0.0-rc.28",
-  "buildId": "2adcb86d8a97cc436ecc61b30a488009a24ad73e035643a44b8845c0f32be6b0",
+  "version": "1.0.0-rc.29",
+  "buildId": "2536d1fd9d4e4a4260ac200802b6ff20224aba1d40829bc0a5131ccd4e5fd74f",
   "artifact": {
-    "runId": 43563362377,
-    "id": 14101841660,
-    "name": "tracetoon-candidate-b18b460c1630a9564958d3ffd4950d9f1ab7daeb-attempt-1",
-    "digest": "sha256:45a565daa04dcad3d97586be2c081da5c6a3cd55e731a692f8c48611a9e3dee9"
+    "runId": 43583157441,
+    "id": 14108889359,
+    "name": "tracetoon-candidate-c731b8cac895d2f996636b6480b25ecaf140ccea-attempt-1",
+    "digest": "sha256:8f4b3d6e86dcb42d6c8d1b1942d3dcfa13c16e3f3f870724cf806f3c9a647558"
   },
   "expected": {
-    "manifestSha256": "ce9b8b31aac9eaf74443d27a6de74cf45e68642489562878327f845af80585a3",
-    "checksumsSha256": "e6c20ce18d6cb3efa3a891f7047c13e94486063b432f0c979b6e739f88b16a3a",
-    "windowsSha256": "c22c55e0301bc8d328323c1916a7ffaf94d1fc8d3f56e98be4d1d36a9d9dfa4f",
-    "bundleSha256": "e3dd7a2a2022d171157e9c48f98b1b799b9ef37232fc6610b5f0c956f7c38feb"
+    "manifestSha256": "789d712418e630c0cac719207e12415629c7595306e1099f1f1bda908d52e0d7",
+    "checksumsSha256": "72fb027ed1ffa7d90a586d0eaabe31bf9b49e4c52a3dd5b7221f62b5a2712593",
+    "windowsSha256": "41c1b3dbdb46404546b54f28f0f4aeac3b5265f32186d8a56112f1d77edbaef7",
+    "bundleSha256": "5ddea11b7c880fea722557a838642de6c891a517d1d55714f78d51b1a1eaeaf5"
   },
   "decision": {
     "kind": "explicit-user-request",
-    "recordedAt": "2026-11-14T06:30:00.000Z",
-    "reason": "The user asked for a release to close out a macOS verification session, so that the fixes merged since rc.27 reach installed copies: the Antigravity CLI 1.5.8 reader, the Claude Code tools-used record, the update eligibility ordering, the images --test readiness report, the no-PR policy signal, the macOS test worker count, and two corrected README claims. The prbench inputs needed for calibration and admission are not available on the release machine, so the CI-tested candidate is released without a benchmark round. No evaluation result or performance gain is claimed."
+    "recordedAt": "2026-11-14T10:15:29.000Z",
+    "reason": "The user asked to merge the follow-up PRs and do the follow-up items, which include releasing them: Tracetoon support for the Cline VS Code extension (#109) and the clearer block message (#111). The retained prbench inputs needed for calibration and admission are not available on the release machine, so the CI-tested candidate is released without a benchmark round. No evaluation result or performance gain is claimed."
   },
   "evaluations": {
-    "calibration": { "status": "not-run" },
-    "admission": { "status": "not-run" },
-    "development": { "status": "not-run" },
-    "heldout": { "status": "not-run" }
+    "calibration": {
+      "status": "not-run"
+    },
+    "admission": {
+      "status": "not-run"
+    },
+    "development": {
+      "status": "not-run"
+    },
+    "heldout": {
+      "status": "not-run"
+    }
   }
 }
