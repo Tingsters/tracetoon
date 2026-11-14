@@ -79,6 +79,12 @@ export interface HookIntegration {
   text?: {
     render(commands: HookCommands): string;
     command(text: string): string | undefined;
+    /**
+     * Further files Tracetoon owns beside the main one, by file name in the same
+     * folder (Cline reads one script per event). Each must be recognized by
+     * `command`, so a file of that name Tracetoon didn't write is never replaced.
+     */
+    siblings?: Record<string, (commands: HookCommands) => string>;
   };
   /** Something to tell the user after installing (a trust or restart step). */
   installNote?(file: string, data: Json): string | undefined;

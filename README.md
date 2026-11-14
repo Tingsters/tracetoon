@@ -87,6 +87,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 | Kilo CLI                  | ✅ supported (hook is a plugin in `~/.config/kilo/plugins`)                  |
 | Kilo Code (VS Code)       | ✅ supported through Kilo CLI, which the extension runs                      |
 | Kiro (IDE and CLI)        | ✅ supported (hook file in `~/.kiro/hooks`)                                  |
+| Cline CLI                 | ✅ supported (hook scripts in `~/.cline/hooks`)                              |
 | Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
 | Windsurf                  | 🗓️ planned                                                                   |
 
@@ -102,7 +103,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 <p align="center"><a href="https://tracetoon.ai/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
 
 AI-written PRs are usually vague and padded, and they sound sure about tests
-nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo and Kiro already keep session logs on
+nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro and Cline already keep session logs on
 your machine. Tracetoon finds the sessions that produced this branch and turns
 them into a redacted evidence brief your agent writes from.
 
@@ -596,6 +597,7 @@ trust the new hook entries in `/hooks`.
   | Copilot        | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Cursor         | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | OpenCode, Kilo | `~/.agents/skills/tracetoon` (shared with Codex)                     |
+  | Cline          | `~/.agents/skills/tracetoon` (shared with Codex)                     |
   | Kiro           | `~/.kiro/skills/tracetoon`                                           |
   | Gemini CLI     | `~/.gemini/skills/tracetoon`                                         |
 
