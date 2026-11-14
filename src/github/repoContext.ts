@@ -1,6 +1,7 @@
 /** What the repo asks of a PR: its template, and any policy on AI contributions. */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
+import { readRepoFile, repoPath } from '../util/repoFiles.ts';
 
 const TEMPLATE_PATHS = [
   '.github/pull_request_template.md',
@@ -57,6 +58,102 @@ export const POLICY_FILES = [
   'docs/internals/contributing/writing-code/submitting-patches.txt',
   'contributing/ai-tools.md',
 ];
+
+/** Other places repos state their rules, read alongside POLICY_FILES. */
+const OTHER_POLICY_FILES = ['README.md', 'README.rst', 'CONTRIBUTING.rst', 'GEMINI.md'];
+/** Folders whose policy-named docs are read without being linked. */
+const POLICY_DIRS = ['.github', 'docs'];
+/** A file name or link text that sounds like rules for contributors. */
+const POLICY_NAME =
+  /contribut|polic(y|ies)|guideline|conduct|governance|(^|[^a-z])ai([^a-z]|$)|agent|pull.?request/i;
+const DOC_FILE = /\.(md|markdown|rst|txt)$/i;
+/** Enough for any real repo's policy docs; bounds the work on huge doc trees. */
+const MAX_POLICY_FILES = 40;
+
+const readText = (root: string, rel: string): string | undefined => {
+  try {
+    return readRepoFile(root, rel).toString('utf8');
+  } catch {
+    return undefined; // missing, unsafe (outside the repo) or unreadable
+  }
+};
+
+/**
+ * A README mostly describes the project, so only its rule sections count:
+ * those under a heading like "Contributing", "AI policy" or "Code of conduct".
+ * Other lines are blanked, so line numbers still point at the file.
+ */
+function ruleSections(text: string): string {
+  const lines = text.split(/\r?\n/);
+  let keep = false;
+  let level = 0;
+  return lines
+    .map((line, i) => {
+      const md = /^(#{1,6})\s+(.*)$/.exec(line);
+      const rstUnder =
+        /^([=\-~^"'`#*+])\1{2,}\s*$/.test(lines[i + 1] ?? '') && line.trim();
+      if (md) {
+        const depth = md[1]!.length;
+        if (POLICY_NAME.test(md[2]!)) [keep, level] = [true, depth];
+        else if (!keep || depth <= level) keep = false;
+      } else if (rstUnder) keep = POLICY_NAME.test(line);
+      return keep ? line : '';
+    })
+    .join('\n');
+}
+
+/** Local doc links in Markdown (`[text](path)`) and reST (`` `text <path>`_ ``). */
+function docLinks(text: string): { text: string; path: string }[] {
+  const out: { text: string; path: string }[] = [];
+  for (const m of text.matchAll(/\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g))
+    out.push({ text: m[1] ?? '', path: m[2] ?? '' });
+  for (const m of text.matchAll(/`([^`<]*)<([^>`]+)>`_/g))
+    out.push({ text: m[1] ?? '', path: m[2] ?? '' });
+  return out;
+}
+
+/**
+ * Every file whose rules Tracetoon reads, with its text: the known policy
+ * files, the README, policy-named docs in .github/ and docs/, and the
+ * policy-looking docs those link to (one hop). Only files inside the repo.
+ */
+export function policyFiles(root: string): { rel: string; text: string }[] {
+  const out: { rel: string; text: string }[] = [];
+  const seen = new Set<string>();
+  const add = (rel: string) => {
+    const key = rel.toLowerCase();
+    if (seen.has(key) || out.length >= MAX_POLICY_FILES || !repoPath(rel)) return;
+    seen.add(key);
+    const text = readText(root, rel);
+    if (text !== undefined)
+      out.push({
+        rel,
+        text: /^readme\./i.test(posix.basename(rel)) ? ruleSections(text) : text,
+      });
+  };
+  for (const rel of [...POLICY_FILES, ...OTHER_POLICY_FILES]) add(rel);
+  for (const dir of POLICY_DIRS) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(join(root, dir));
+    } catch {
+      continue;
+    }
+    for (const name of names.sort())
+      if (DOC_FILE.test(name) && POLICY_NAME.test(name)) add(`${dir}/${name}`);
+  }
+  for (const { rel, text } of [...out]) {
+    for (const link of docLinks(text)) {
+      const path = link.path.split('#')[0] ?? '';
+      if (!path || /^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('/')) continue;
+      if (!DOC_FILE.test(path)) continue;
+      if (!POLICY_NAME.test(path) && !POLICY_NAME.test(link.text)) continue;
+      const target = posix.normalize(posix.join(posix.dirname(rel), path));
+      add(target);
+    }
+  }
+  return out;
+}
 
 const AI_TERMS =
   /\b(AI|A\.I\.|LLM|LLMs|large language model|generative|copilot|chatgpt|claude|gpt|machine[- ]generated|coding assistants?|AI[- ]assisted|agents?)\b/i;
@@ -131,11 +228,9 @@ export function detectAiPolicy(root: string): AiPolicy {
   let assistedBy = false;
   let toolAndUse = false;
   let noPullRequests = false;
-  for (const rel of POLICY_FILES) {
-    const p = join(root, rel);
-    if (!existsSync(p)) continue;
+  for (const { rel, text: content } of policyFiles(root)) {
     const agentFile = /AGENTS\.md|CLAUDE\.md|copilot-instructions/i.test(rel);
-    const lines = readFileSync(p, 'utf8').split(/\r?\n/);
+    const lines = content.split(/\r?\n/);
     lines.forEach((text, i) => {
       const t = text.trim();
       if (agentFile && PR_TEXT.test(t) && t.length > 10)

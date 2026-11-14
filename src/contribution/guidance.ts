@@ -4,7 +4,12 @@ import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readRepoFile, readSubmittedFile, repoPath } from '../util/repoFiles.ts';
 export { repoPath } from '../util/repoFiles.ts';
-import { POLICY_FILES, findPrTemplate, type AiPolicy } from '../github/repoContext.ts';
+import {
+  POLICY_FILES,
+  findPrTemplate,
+  policyFiles,
+  type AiPolicy,
+} from '../github/repoContext.ts';
 import type { PrTruth } from '../git/pr.ts';
 import { readText, writeJson, type Run } from '../run.ts';
 import { git } from '../util/exec.ts';
@@ -106,6 +111,9 @@ export function researchPacket(
     'README.rst',
   ])
     candidates.set(path, '.');
+  // Policy-named docs and the ones the policy files link to.
+  for (const { rel } of policyFiles(truth.toplevel))
+    if (!candidates.has(rel)) candidates.set(rel, '.');
   const template = findPrTemplate(truth.toplevel);
   if (template) candidates.set(template.path, '.');
   for (const file of changedPaths) {

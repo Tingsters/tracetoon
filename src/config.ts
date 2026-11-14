@@ -29,7 +29,10 @@ export interface Config {
   hosting: 'auto' | 'branch' | 'attach';
   /** Image providers the user agreed to send comic prompts to. */
   imageConsent: string[];
-  /** Make a comic: `off`, `allowed` (unless the repo forbids images in PRs), or `always`. */
+  /**
+   * Make a comic: `off`, `allowed` (unless the repo forbids images in PRs), or `always`.
+   * The user's `off` or `always` wins; the user's `allowed` takes the repo's value.
+   */
   comic: ComicMode;
   /** Pin one art style for every comic (a style idea id or any description), or `auto` to vary. */
   style: string;
@@ -100,11 +103,14 @@ export function loadConfig(root?: string): Config {
     updateChannel: _channel,
     ...repo
   } = root ? readJson(repoConfigPath(root)) : {};
+  // The user's comic choice decides: `off` never, `always` every PR. Only
+  // `allowed` (the default) defers to the repo's own `comic` value.
+  const userComic = comicMode(user.comic ?? DEFAULTS.comic);
   return {
     ...DEFAULTS,
     ...user,
     ...repo,
-    comic: comicMode(repo.comic ?? user.comic ?? DEFAULTS.comic),
+    comic: userComic === 'allowed' ? comicMode(repo.comic ?? 'allowed') : userComic,
     imageConsent: user.imageConsent ?? DEFAULTS.imageConsent,
     autoUpdate: oneOf(AUTO_UPDATES, user.autoUpdate, DEFAULTS.autoUpdate),
     updateChannel: oneOf(UPDATE_CHANNELS, user.updateChannel, DEFAULTS.updateChannel),

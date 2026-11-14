@@ -116,3 +116,87 @@ describe('policy classification', () => {
     expect(p).toMatchObject({ verdict: 'none', text: 'none', media: 'none' });
   });
 });
+
+describe('where policies are found', () => {
+  const ban = "Please don't include images or AI-generated art in pull requests.";
+
+  test("a ban in the README's contributing section counts", () => {
+    const p = detectAiPolicy(
+      repoWith({ 'README.md': `# Project\n\nAbout it.\n\n## Contributing\n\n${ban}\n` }),
+    );
+    expect(p.media).toBe('prohibited');
+    expect(p.mediaSource).toMatchObject({ file: 'README.md', line: 7 });
+  });
+
+  test('a README describing image rules outside a rules section is not a ban', () => {
+    const p = detectAiPolicy(
+      repoWith({
+        'README.md': [
+          '# Tool',
+          '',
+          '## Features',
+          '',
+          'Where contributing rules forbid images in PRs, the tool skips the picture.',
+          'It adds an Assisted-by trailer when a repo asks AI users to disclose.',
+          '',
+          '## Contributing',
+          '',
+          'Pull requests welcome.',
+        ].join('\n'),
+      }),
+    );
+    expect(p).toMatchObject({ media: 'none', verdict: 'none' });
+  });
+
+  test('a policy doc the contributing guide links to counts', () => {
+    const p = detectAiPolicy(
+      repoWith({
+        'CONTRIBUTING.md': 'Read our [AI policy](docs/ai-policy.md) first.\n',
+        'docs/ai-policy.md': `# AI\n${ban}\n`,
+      }),
+    );
+    expect(p.media).toBe('prohibited');
+    expect(p.mediaSource).toMatchObject({ file: 'docs/ai-policy.md', line: 2 });
+  });
+
+  test('links are followed by their text too, and relative to the linking file', () => {
+    const p = detectAiPolicy(
+      repoWith({
+        '.github/CONTRIBUTING.md':
+          'See [the rules for contributors](../handbook/rules.md).\n',
+        'handbook/rules.md': ban,
+      }),
+    );
+    expect(p.mediaSource?.file).toBe('handbook/rules.md');
+  });
+
+  test('policy-named docs in .github/ and docs/ count without a link', () => {
+    for (const rel of ['.github/AI_GUIDELINES.md', 'docs/contributor-guidelines.rst']) {
+      const p = detectAiPolicy(repoWith({ [rel]: ban }));
+      expect([rel, p.media]).toEqual([rel, 'prohibited']);
+    }
+  });
+
+  test('unrelated links, outside paths and URLs are not followed', () => {
+    const root = repoWith({
+      'README.md': [
+        'See the [changelog](CHANGELOG.md),',
+        '[policy outside](../outside-policy.md) and',
+        '[hosted policy](https://example.com/policy.md).',
+      ].join('\n'),
+      'CHANGELOG.md': ban,
+    });
+    writeFileSync(join(root, '..', 'outside-policy.md'), ban);
+    expect(detectAiPolicy(root).media).toBe('none');
+  });
+
+  test('README lines that are not PR rules are not bans', () => {
+    const p = detectAiPolicy(
+      repoWith({
+        'README.md':
+          '## Contributing\n\nThis repo contains no binary images.\nScreenshots are welcome in issues.\n',
+      }),
+    );
+    expect(p.media).toBe('none');
+  });
+});

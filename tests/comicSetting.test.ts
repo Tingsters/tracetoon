@@ -45,13 +45,35 @@ describe('loadConfig comic', () => {
     writeFileSync(join(root, '.github', 'tracetoon.json'), '{"comic": false}');
     expect(loadConfig(root).comic).toBe('off');
   });
-  test('user json boolean and repo overlay', () => {
+  test("the user's off beats the repo's always", () => {
     writeFileSync(process.env.TRACETOON_CONFIG!, '{"comic": false}');
     expect(loadConfig().comic).toBe('off');
     const root = tempDir();
     mkdirSync(join(root, '.github'));
     writeFileSync(join(root, '.github', 'tracetoon.json'), '{"comic": "always"}');
-    expect(loadConfig(root).comic).toBe('always');
+    expect(loadConfig(root).comic).toBe('off');
+  });
+  test("the user's choice decides; allowed takes the repo's", () => {
+    const cases: [string | undefined, string, string][] = [
+      ['always', 'off', 'always'],
+      ['allowed', 'off', 'off'],
+      ['allowed', 'always', 'always'],
+      [undefined, 'always', 'always'],
+      [undefined, 'off', 'off'],
+    ];
+    for (const [user, repo, want] of cases) {
+      writeFileSync(
+        process.env.TRACETOON_CONFIG!,
+        user === undefined ? '{}' : JSON.stringify({ comic: user }),
+      );
+      const root = tempDir();
+      mkdirSync(join(root, '.github'));
+      writeFileSync(
+        join(root, '.github', 'tracetoon.json'),
+        JSON.stringify({ comic: repo }),
+      );
+      expect([user, repo, loadConfig(root).comic]).toEqual([user, repo, want]);
+    }
   });
   test('config set stores a mode', () => {
     expect(setUserConfig('comic', 'always').comic).toBe('always');
@@ -147,5 +169,22 @@ describe('comic status', () => {
     clearComicStatus(run);
     expect(existsSync(join(dir, 'comic-status.json'))).toBe(false);
     expect(readComicStatus(run)).toBeUndefined();
+  });
+});
+
+describe('comics follow the repo only when the user leaves it to them', () => {
+  test('a README ban skips the comic for allowed, not for always', () => {
+    const root = tempDir();
+    writeFileSync(
+      join(root, 'README.md'),
+      "## Contributing\n\nPlease don't add images or comics to pull requests.\n",
+    );
+    const policy = detectAiPolicy(root);
+    expect(comicDecision('allowed', policy)).toMatchObject({
+      include: false,
+      state: 'policy',
+    });
+    expect(comicDecision('always', policy).include).toBe(true);
+    expect(comicDecision('off', policy).include).toBe(false);
   });
 });
