@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tracetoon": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/skills/tracetoon/bin/tracetoon",
+      "args": ["mcp"]
+    }
+  }
+}

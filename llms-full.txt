@@ -9,6 +9,7 @@ For agents: when the user asks you to open, create or describe a pull request, a
 - [Install for agents](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/install.md): commands an agent can run, per host
 - Installer (asks the user; downloads and verifies a release): `curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh` or, on Windows, `irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex`
 - Claude Code plugin: `claude plugin marketplace add Tracetoon/tracetoon` then `claude plugin install tracetoon@tracetoon`
+- MCP server (any MCP host, with the runtime installed): `tracetoon mcp` on stdio, for example `claude mcp add tracetoon -- tracetoon mcp`
 
 ## Use
 
@@ -44,6 +45,12 @@ plus a `tracetoon` CLI.
 - **Install:** [docs/agents/install.md](docs/agents/install.md) lists the
   routes an agent can run for each host. With the runtime already present,
   `tracetoon setup --json` copies its skill to every agent and adds the PR hook.
+- **MCP:** `tracetoon mcp` serves the same flow over MCP on stdio for hosts
+  without skills or a shell (`claude mcp add tracetoon -- tracetoon mcp`; the
+  Claude Code plugin registers it). Tools: `tracetoon_status`,
+  `tracetoon_prepare_pr` (brief plus drafting guidance; write `title.txt` and
+  `body.md` in the run folder) and `tracetoon_publish_pr` (`dryRun` defaults
+  to true). The skill and its references are `tracetoon://skill/` resources.
 - **Requirements:** `git`, and the GitHub CLI (`gh`) signed in. Without `gh`
   you can still prepare everything; only publishing needs it.
   `tracetoon doctor --json` lists `checks` with `ok`, `severity` and `fix`.
@@ -114,6 +121,15 @@ bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
   committed to `main`; the `release` branch carries them and is never
   force-pushed.
 - `src/graph/vendor/` is pinned generated code; never edit it.
+- MCP: `src/mcp/server.ts` (hand-rolled JSON-RPC; tools run the CLI commands
+  in-process). The plugin registers it in `plugin/.mcp.json`; `server.json`
+  (MCP Registry) is generated, and the release workflow publishes it only when
+  the repository variable `MCP_REGISTRY_PUBLISH` is set.
+- Claude Code plugin hint: `src/util/claudeHint.ts` can print Claude Code's
+  `<claude-code-hint />` install prompt on stderr. It is off
+  (`CLAUDE_CODE_HINT_ENABLED = false`) because hints only work for plugins in
+  an official Anthropic marketplace. Once Tracetoon is listed, set it to true
+  and `HINT_PLUGIN` to the listed `name@marketplace`.
 - Open PRs with Tracetoon: _"Open a PR for this branch with Tracetoon."_
 
 ---
@@ -172,6 +188,33 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 ```
 
 `TRACETOON_NO_HOOK=1` skips the PR hook; `TRACETOON_VERSION=<tag>` pins a release.
+
+## 4. MCP server (hosts without skills or a shell)
+
+With the runtime installed (route 3, or the plugin), `tracetoon mcp` serves
+Tracetoon over MCP on stdio. The Claude Code plugin registers it already. For
+another Claude Code setup:
+
+```sh
+claude mcp add tracetoon -- tracetoon mcp
+```
+
+Any host that reads an `mcpServers` map:
+
+```json
+{
+  "mcpServers": {
+    "tracetoon": { "command": "tracetoon", "args": ["mcp"] }
+  }
+}
+```
+
+Tools: `tracetoon_status` (read-only doctor checks), `tracetoon_prepare_pr`
+(evidence brief and drafting guidance; you write `title.txt` and `body.md`
+in the run folder) and `tracetoon_publish_pr` (`dryRun` is true unless you
+pass false). The skill and its references are resources under
+`tracetoon://skill/`. On Windows, if the host can't start `tracetoon`
+directly, use `cmd /c tracetoon mcp`.
 
 ## Where each host reads the skill
 

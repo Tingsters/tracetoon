@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.tracetoon/tracetoon",
+  "title": "Tracetoon",
+  "description": "Writes GitHub PR descriptions from your coding agents' session logs, checked against them.",
+  "websiteUrl": "https://tracetoon.ai",
+  "repository": {
+    "url": "https://github.com/Tracetoon/tracetoon",
+    "source": "github"
+  },
+  "version": "1.0.0-rc.27",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "tracetoon",
+      "version": "1.0.0-rc.27",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
