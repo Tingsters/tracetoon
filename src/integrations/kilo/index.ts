@@ -30,6 +30,7 @@ export const integration: Integration = {
   id: 'kilo',
   label: 'Kilo CLI',
   status: 'supported',
+  variants: 'CLI, and Kilo Code for VS Code, which runs it',
   traces: [opencodeStoreAdapter('kilo', 'Kilo CLI', () => dbPath())],
   hook: {
     file: (h, env) => join(configDir(h, env), 'plugins', 'tracetoon.js'),

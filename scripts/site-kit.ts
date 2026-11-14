@@ -62,6 +62,7 @@ export const PAGES: Record<string, string> = {
   'AGENTS.md': 'agents.md',
   'docs/agents/install.md': 'docs/agents/install.md',
   'docs/agents/faq.md': 'docs/agents/faq.md',
+  'docs/agents/support.md': 'docs/agents/support.md',
   'docs/agents/cli.md': 'docs/agents/cli.md',
   'docs/agents/errors.md': 'docs/agents/errors.md',
   'plugin/skills/tracetoon/SKILL.md': 'skill.md',
@@ -75,6 +76,7 @@ export const SITE_LINKS: LlmsLinks = {
   cli: `${SITE}/docs/agents/cli.md`,
   errors: `${SITE}/docs/agents/errors.md`,
   readme: `${SITE}/index.md`,
+  support: `${SITE}/docs/agents/support.md`,
 };
 
 const RAW = 'https://raw.githubusercontent.com/Tracetoon/tracetoon/main/';
@@ -393,6 +395,7 @@ export function siteKit(opts: { skillZip?: string } = {}): Map<string, string | 
       llms,
       out.get('agents.md') as string,
       out.get('docs/agents/install.md') as string,
+      out.get('docs/agents/support.md') as string,
       out.get('docs/agents/faq.md') as string,
       out.get('docs/agents/errors.md') as string,
     ),

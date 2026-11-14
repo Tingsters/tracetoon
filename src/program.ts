@@ -131,19 +131,26 @@ export function buildProgram(cwd: string = process.cwd()): {
           process.stdout.write(`${t.labels.join(', ')}|${t.dir}\n`);
         return;
       }
-      const rows = INTEGRATIONS.map((i) => ({
+      // A retired host is listed only on machines that still have it.
+      const shown = INTEGRATIONS.filter(
+        (i) => i.status !== 'legacy' || i.skill?.(homedir(), process.env).present,
+      );
+      const rows = shown.map((i) => ({
         id: i.id,
         label: i.label,
         status: i.status,
+        variants: i.variants ?? null,
         logs: i.traces.map((t) => t.id),
         hook: !!i.hook,
+        hookVia: i.hookVia ?? null,
         skill: i.skill?.(homedir(), process.env) ?? null,
+        limits: i.limits ?? [],
       }));
       emit(g(), rows, () =>
         rows
           .map(
             (r) =>
-              `${r.label.padEnd(14)} ${r.status.padEnd(10)} logs: ${r.logs.join(', ') || 'none'}; hook: ${r.hook ? 'yes' : 'no'}${r.skill ? `; skill: ${r.skill.dir}${r.skill.present ? '' : ' (agent not found)'}` : ''}`,
+              `${r.label.padEnd(14)} ${r.status.padEnd(10)} logs: ${r.logs.join(', ') || 'none'}; hook: ${r.hook ? 'yes' : r.hookVia ? `via ${r.hookVia}` : 'no'}${r.skill ? `; skill: ${r.skill.dir}${r.skill.present ? '' : ' (agent not found)'}` : ''}${r.limits.map((l) => `\n${' '.repeat(26)}note: ${l}`).join('')}`,
           )
           .join('\n'),
       );

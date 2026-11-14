@@ -61,7 +61,9 @@ describe('site kit', () => {
       'https://github.com/Tracetoon/tracetoon/releases',
     ]);
     for (const link of site)
-      expect(existsSync(join(dir, link.slice(SITE.length)))).toBe(true);
+      expect(existsSync(join(dir, link.slice(SITE.length).split('#')[0] ?? ''))).toBe(
+        true,
+      );
     expect(llms).not.toContain('raw.githubusercontent.com/Tracetoon/tracetoon/main/docs');
     expect(read('llms-full.txt').startsWith(llms.trimEnd())).toBe(true);
   });
@@ -71,7 +73,9 @@ describe('site kit', () => {
       for (const [, link = ''] of read(page).matchAll(/\]\(([^)\s]+)\)/g)) {
         expect(link).toMatch(/^(https?:|#)/);
         if (link.startsWith(SITE))
-          expect(existsSync(join(dir, link.slice(SITE.length)))).toBe(true);
+          expect(existsSync(join(dir, link.slice(SITE.length).split('#')[0] ?? ''))).toBe(
+            true,
+          );
       }
     expect(read('index.md')).not.toContain('<p');
     expect(read('index.md')).toContain('## ⚡ Quick start');

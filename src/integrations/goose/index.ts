@@ -68,6 +68,7 @@ export const integration: Integration = {
   id: 'goose',
   label: 'Goose',
   status: 'supported',
+  variants: 'CLI and desktop app',
   traces: [gooseAdapter],
   hook: {
     file: (h) => join(h, '.agents', 'plugins', 'tracetoon', 'hooks', 'hooks.json'),

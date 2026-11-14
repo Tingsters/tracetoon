@@ -133,12 +133,11 @@ directly, use `cmd /c tracetoon mcp`.
 | Kiro | `~/.kiro/skills/tracetoon` | yes |
 | Cline | `~/.agents/skills/tracetoon` | yes |
 | Junie | `~/.junie/skills/tracetoon` | yes |
-| Devin | `~/.agents/skills/tracetoon` | no |
+| Devin | `~/.agents/skills/tracetoon` | via Claude Code |
 | Goose | `~/.agents/skills/tracetoon` | yes |
 | Qwen Code | `~/.qwen/skills/tracetoon` | yes |
 | Crush | `~/.agents/skills/tracetoon` | yes |
 | Amp | `~/.agents/skills/tracetoon` | yes |
-| Gemini CLI | `~/.gemini/skills/tracetoon` | no (legacy) |
 
 ## Check the install
 

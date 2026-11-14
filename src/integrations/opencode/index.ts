@@ -30,6 +30,7 @@ export const integration: Integration = {
   id: 'opencode',
   label: 'OpenCode',
   status: 'supported',
+  variants: 'CLI',
   traces: [opencodeStoreAdapter('opencode', 'OpenCode', () => dbPath())],
   hook: {
     file: (h, env) => join(configDir(h, env), 'plugins', 'tracetoon.js'),
