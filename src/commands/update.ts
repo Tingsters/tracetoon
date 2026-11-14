@@ -115,6 +115,13 @@ async function update(
     return;
   }
 
+  // Eligibility first: a copy `update` can never replace (a source checkout or a
+  // plugin bundle) needs to hear how to update itself even when its version already
+  // matches the newest release, which is the normal state right after one ships.
+  const layout = installLayout(env, home);
+  const ok = updatable(layout, process.execPath, env);
+  if (!ok.ok) throw new UserError(ok.reason);
+
   // An explicit --to may go backwards (rollback); a plain update never does.
   if (order === 0 || (order < 0 && !opts.to)) {
     emit(
@@ -124,10 +131,6 @@ async function update(
     );
     return;
   }
-
-  const layout = installLayout(env, home);
-  const ok = updatable(layout, process.execPath, env);
-  if (!ok.ok) throw new UserError(ok.reason);
 
   let applied;
   try {

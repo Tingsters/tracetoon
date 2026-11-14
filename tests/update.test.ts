@@ -12,6 +12,7 @@ import {
 import { join } from 'node:path';
 import { applyRelease, stagedBinary } from '../src/update/apply.ts';
 import { installLayout, updatable } from '../src/update/layout.ts';
+import { TOOL_VERSION } from '../src/version.ts';
 import { parseReleases, pickRelease, type Release } from '../src/update/release.ts';
 import { compareVersions, parseVersion } from '../src/update/version.ts';
 import { updateCmd } from '../src/commands/update.ts';
@@ -309,5 +310,22 @@ describe.skipIf(!canRun)('update against a fake release server', () => {
     await expect(updateCmd({ to: '8.8.8' }, m.env, m.home)).rejects.toThrow(
       /No published release/,
     );
+  });
+
+  test('tells a source checkout how to update even when it is at the newest version', async () => {
+    // A checkout's package.json version matches the newest release right after a
+    // release, but the checkout can still be many commits behind main. Reporting
+    // "up to date" there hides the only thing that would actually update it.
+    releases = [
+      {
+        tag_name: `v${TOOL_VERSION}`,
+        published_at: '2026-11-01T00:00:00Z',
+        prerelease: true,
+        body: '',
+      },
+    ];
+    fakeRelease(`v${TOOL_VERSION}`);
+    const m = machine();
+    await expect(updateCmd({}, m.env, m.home)).rejects.toThrow(/source checkout|bundle/);
   });
 });

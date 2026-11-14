@@ -108,7 +108,13 @@ export async function imagesCmd(opts: ImagesOpts): Promise<void> {
     }
   }
 
-  const routes = routeStatuses();
+  // A route that just failed its test is not ready, whatever its probe reported:
+  // `codex login status` still says "logged in" when the token behind it expired.
+  const routes = routeStatuses().map((r) =>
+    tested && !tested.ok && r.id === tested.route
+      ? { ...r, ready: 'not ready' as const, detail: 'the test above failed' }
+      : r,
+  );
   const next = nextStep(routes);
   if (opts.brief) {
     emit(opts, { routes, next }, () =>
