@@ -1,6 +1,8 @@
 ---
 name: tracetoon
 description: Create a GitHub PR with a description and optional comic written from agent session logs. Use for PR creation requests or when a hook redirects PR creation here. Also use when the user explicitly requests Tracetoon to describe or update an existing PR. Ordinary PR edits, coding tasks, planning, questions and mentions of Tracetoon do not start this workflow.
+license: Apache-2.0
+compatibility: Requires git and the GitHub CLI (gh) signed in; macOS, Linux or Windows.
 ---
 
 # Tracetoon: PR descriptions and comics from agent traces
@@ -95,7 +97,8 @@ reviewer separate.
      Reuse unchanged research and art; refresh PR evidence and review when inputs change.
 
 1. **Check.** `tracetoon status`, then `tracetoon doctor --json`. If `gh` is
-   missing or not signed in, tell the user; you can still prepare everything.
+   missing or not signed in (failed `gh` or `gh-auth` in `checks`, with its
+   `fix`), tell the user; you can still prepare everything.
    - If `push.canPush` is false, tell the user now: their gh account can't push
      to this repo, so publishing will fail. They can switch accounts
      (`gh auth switch`) or use a fork.

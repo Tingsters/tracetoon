@@ -75,6 +75,12 @@ export async function imagesCmd(opts: ImagesOpts): Promise<void> {
         throw new UserError(
           `Testing ${info.label} sends a fixed test prompt (no code, no repo content) to ${info.sendsTo}. Ask the user once, then re-run with --consent (this also approves it for comics).`,
           4,
+          {
+            code: 'CONSENT_REQUIRED',
+            fix: `Ask the user; after they agree: tracetoon images --test ${id} --consent`,
+            retryable: false,
+            humanRequired: true,
+          },
         );
       approve(id);
     }
@@ -108,7 +114,13 @@ export async function imagesCmd(opts: ImagesOpts): Promise<void> {
     }
   }
 
-  const routes = routeStatuses();
+  // A route that just failed its test is not ready, whatever its probe reported:
+  // `codex login status` still says "logged in" when the token behind it expired.
+  const routes = routeStatuses().map((r) =>
+    tested && !tested.ok && r.id === tested.route
+      ? { ...r, ready: 'not ready' as const, detail: 'the test above failed' }
+      : r,
+  );
   const next = nextStep(routes);
   if (opts.brief) {
     emit(opts, { routes, next }, () =>

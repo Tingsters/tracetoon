@@ -19,6 +19,7 @@ import {
   uninstallHooks,
 } from '../src/hook/install.ts';
 import { switchState } from '../src/hook/switches.ts';
+import { gooseDataDir } from '../src/integrations/goose/trace.ts';
 import { codexHookHash } from '../src/integrations/codex/trust.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
@@ -439,6 +440,13 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.cursor'), { recursive: true });
     mkdirSync(join(h, '.config', 'opencode'), { recursive: true });
     mkdirSync(join(h, '.config', 'kilo'), { recursive: true });
+    mkdirSync(join(h, '.kiro'), { recursive: true });
+    mkdirSync(join(h, '.cline'), { recursive: true });
+    mkdirSync(join(h, '.junie'), { recursive: true });
+    mkdirSync(gooseDataDir({}, h), { recursive: true });
+    mkdirSync(join(h, '.qwen'), { recursive: true });
+    mkdirSync(join(h, '.config', 'crush'), { recursive: true });
+    mkdirSync(join(h, '.config', 'amp'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -475,9 +483,23 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
+      'unchanged',
+      'unchanged',
+      'unchanged',
+      'unchanged',
+      'unchanged',
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -529,6 +551,65 @@ describe('installing the hook', () => {
     expect(cursor.hooks.beforeShellExecution[0].command).toContain(
       'hook pre-pr --agent cursor',
     );
+    // Cline gets one script per event; the PreToolUse one routes PRs.
+    expect(readFileSync(join(h, '.cline', 'hooks', 'PreToolUse.mjs'), 'utf8')).toContain(
+      'hook pre-pr --agent cline',
+    );
+    expect(readFileSync(join(h, '.cline', 'hooks', 'TaskStart.mjs'), 'utf8')).toContain(
+      '"--event","SessionStart"',
+    );
+    // Junie's config.json takes Claude-style groups; its shell tool is Bash or powershell.
+    const junie = JSON.parse(readFileSync(join(h, '.junie', 'config.json'), 'utf8'));
+    expect(junie.hooks.PreToolUse[0]).toMatchObject({
+      matcher: 'Bash|powershell',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent junie' }],
+    });
+    // Goose gets a plugin folder of its own: a manifest and Claude-style hooks.
+    const goose = JSON.parse(
+      readFileSync(
+        join(h, '.agents', 'plugins', 'tracetoon', 'hooks', 'hooks.json'),
+        'utf8',
+      ),
+    );
+    expect(goose.hooks.PreToolUse[0]).toMatchObject({
+      matcher: '^shell$',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent goose' }],
+    });
+    expect(
+      JSON.parse(
+        readFileSync(join(h, '.agents', 'plugins', 'tracetoon', 'plugin.json'), 'utf8'),
+      ).name,
+    ).toBe('tracetoon');
+    // Qwen Code takes Claude-style groups in settings.json; its shell tool is run_shell_command.
+    const qwen = JSON.parse(readFileSync(join(h, '.qwen', 'settings.json'), 'utf8'));
+    expect(qwen.hooks.PreToolUse[0]).toMatchObject({
+      matcher: 'run_shell_command',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent qwen' }],
+    });
+    // Crush's crush.json takes one flat list of hooks per event.
+    const crush = JSON.parse(
+      readFileSync(join(h, '.config', 'crush', 'crush.json'), 'utf8'),
+    );
+    expect(crush.hooks.PreToolUse[0]).toMatchObject({
+      name: 'tracetoon-pr',
+      matcher: '^bash$',
+      command: '/opt/tracetoon/bin hook pre-pr --agent crush',
+    });
+    expect(crush.hooks.SessionStart[0].matcher).toBeUndefined();
+    // Amp gets a plugin that asks Tracetoon about shell commands.
+    expect(
+      readFileSync(join(h, '.config', 'amp', 'plugins', 'tracetoon.ts'), 'utf8'),
+    ).toContain("'reject-and-continue'");
+    // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
+    const kiro = JSON.parse(
+      readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
+    );
+    expect(kiro.version).toBe('v1');
+    expect(kiro.hooks[0]).toMatchObject({
+      trigger: 'PreToolUse',
+      matcher: 'shell',
+      action: { type: 'command', command: '/opt/tracetoon/bin hook pre-pr --agent kiro' },
+    });
     expect(copilot.version).toBe(1);
     expect(copilot.hooks.preToolUse[0]).toMatchObject({
       matcher: 'bash|powershell',
@@ -548,9 +629,23 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
+      'removed',
+      'removed',
+      'removed',
+      'removed',
+      'removed',
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -567,6 +662,13 @@ describe('installing the hook', () => {
     expect(existsSync(join(h, '.factory', 'hooks.json'))).toBe(false);
     expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
     expect(existsSync(join(h, '.cursor', 'hooks.json'))).toBe(false);
+    expect(existsSync(join(h, '.kiro', 'hooks', 'tracetoon.json'))).toBe(false);
+    expect(existsSync(join(h, '.junie', 'config.json'))).toBe(false);
+    expect(existsSync(join(h, '.agents', 'plugins', 'tracetoon', 'plugin.json'))).toBe(
+      false,
+    );
+    for (const name of ['PreToolUse.mjs', 'PostToolUse.mjs', 'TaskStart.mjs'])
+      expect(existsSync(join(h, '.cline', 'hooks', name))).toBe(false);
     expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
       false,
     );
@@ -576,8 +678,17 @@ describe('installing the hook', () => {
   });
 
   test('upgrades remove only Tracetoon Stop hooks and preserve other settings', () => {
-    // Plugin files (OpenCode, Kilo) are Tracetoon's own and hold no JSON settings.
-    const targets = hookTargets(home(), {}).filter((t) => !t.file.endsWith('.js'));
+    // Plugin files (OpenCode, Kilo) are Tracetoon's own and hold no JSON settings;
+    // Kiro's file is new, so no release ever wrote a Stop hook there.
+    const targets = hookTargets(home(), {}).filter(
+      (t) =>
+        !t.file.endsWith('.js') &&
+        !t.file.endsWith('.mjs') &&
+        t.agent !== 'kiro' &&
+        t.agent !== 'goose' &&
+        t.agent !== 'crush' &&
+        !t.file.endsWith('.ts'),
+    );
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
       const old = {
@@ -646,6 +757,13 @@ describe('installing the hook', () => {
       'not installed',
       'not installed',
       'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
+      'not installed',
     ]);
   });
 
@@ -665,6 +783,31 @@ describe('installing the hook', () => {
 });
 
 describe('hook end to end', () => {
+  test('Kiro, which ignores JSON answers, is blocked by exit status 2 with the reason on stderr', () => {
+    const command = process.env.TRACETOON_TEST_BINARY
+      ? [process.env.TRACETOON_TEST_BINARY]
+      : [process.execPath, CLI];
+    const run = (shell: string) =>
+      spawnSync(command[0]!, [...command.slice(1), 'hook', 'pre-pr', '--agent', 'kiro'], {
+        input: JSON.stringify({
+          session_id: 'sess_1',
+          hook_event_name: 'PreToolUse',
+          cwd: tempDir(),
+          tool_name: 'execute_pwsh',
+          tool_input: { command: shell },
+        }),
+        encoding: 'utf8',
+        env: env(),
+      });
+    const denied = run('gh pr create --fill');
+    expect(denied.status).toBe(2);
+    expect(denied.stdout).toBe('');
+    expect(denied.stderr).toContain('Tracetoon handles PR creation');
+    const allowed = run('git status');
+    expect(allowed.status).toBe(0);
+    expect(allowed.stderr).toBe('');
+  });
+
   test('the CLI reads stdin and answers like an agent hook', () => {
     const command = process.env.TRACETOON_TEST_BINARY
       ? [process.env.TRACETOON_TEST_BINARY]
@@ -822,5 +965,43 @@ describe('hooks that fire together', () => {
     );
     expect(runs).toHaveLength(1);
     for (const answer of answers) expect(answer).toContain(`Task ${runs[0]}`);
+  });
+});
+
+describe('Cline hook files', () => {
+  test("a script of the same name that isn't Tracetoon's is left alone, and uninstall keeps it", () => {
+    const h = tempDir('tracetoon-home-');
+    mkdirSync(join(h, '.cline', 'hooks'), { recursive: true });
+    writeFileSync(join(h, '.cline', 'hooks', 'PostToolUse.mjs'), '// my own hook\n');
+    const targets = hookTargets(h, {}).filter((t) => t.agent === 'cline');
+    expect(installHooks('/x/tracetoon', targets)[0]).toMatchObject({ result: 'skipped' });
+    expect(existsSync(join(h, '.cline', 'hooks', 'PreToolUse.mjs'))).toBe(false);
+    expect(uninstallHooks(targets)[0]).toMatchObject({ result: 'unchanged' });
+    expect(readFileSync(join(h, '.cline', 'hooks', 'PostToolUse.mjs'), 'utf8')).toBe(
+      '// my own hook\n',
+    );
+  });
+
+  test('a PR command is replaced by an echo of the reason, which every shell runs', () => {
+    const answer = JSON.parse(
+      decide(
+        'cline',
+        {
+          hookName: 'tool_call',
+          taskId: 't',
+          sessionContext: { rootSessionId: 's' },
+          workspaceRoots: [tempDir()],
+          tool_call: {
+            name: 'run_commands',
+            input: { commands: ['git push', 'gh pr create --fill'] },
+          },
+        },
+        env(), // CI turns Tracetoon off unless the test clears it
+      )!,
+    );
+    expect(answer.errorMessage).toBe(DENY_REASON);
+    expect(answer.cancel).toBeUndefined(); // cancel would stop the whole run
+    const [echo] = answer.overrideInput.commands;
+    expect(echo).toMatch(/^echo 'Blocked by Tracetoon\. [^'‘’‚‛]*'$/);
   });
 });

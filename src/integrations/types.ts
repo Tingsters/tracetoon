@@ -65,6 +65,12 @@ export interface HookIntegration {
   /** The answer that blocks the tool call, in this host's format. */
   deny(reason: string): string;
   /**
+   * For a host that ignores a JSON answer and blocks on the hook's exit status
+   * (Kiro): the status to exit with. The `deny` text then goes to stderr, which
+   * is what such hosts show the agent, instead of stdout.
+   */
+  blockExitCode?: number;
+  /**
    * For a host whose hook is a source file Tracetoon owns outright (OpenCode's
    * plugins) rather than a JSON config: the whole file, and the pre-pr command a
    * written file runs. With `text`, the engine writes and removes the file
@@ -73,6 +79,12 @@ export interface HookIntegration {
   text?: {
     render(commands: HookCommands): string;
     command(text: string): string | undefined;
+    /**
+     * Further files Tracetoon owns beside the main one, by file name in the same
+     * folder (Cline reads one script per event). Each must be recognized by
+     * `command`, so a file of that name Tracetoon didn't write is never replaced.
+     */
+    siblings?: Record<string, (commands: HookCommands) => string>;
   };
   /** Something to tell the user after installing (a trust or restart step). */
   installNote?(file: string, data: Json): string | undefined;

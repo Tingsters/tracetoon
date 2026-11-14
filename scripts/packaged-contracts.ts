@@ -36,12 +36,62 @@ export const EVIDENCE_GRAPH_CONTRACT: PackagedContract = {
   pattern: 'digest links files to prompts and checks, and names later edits',
   minimum: 1,
 };
+/** The agent-facing CLI contract (tests/cli-contract.test.ts), including the embedded guide. */
+export const CLI_CONTRACTS: PackagedContract[] = [
+  {
+    id: 'cli-usage-error-envelope',
+    file: 'tests/cli-contract.test.ts',
+    pattern: 'usage errors print a JSON envelope and exit 2',
+    minimum: 1,
+  },
+  {
+    id: 'cli-schema-version-and-guide',
+    file: 'tests/cli-contract.test.ts',
+    pattern: 'JSON objects carry schemaVersion; arrays stay arrays',
+    minimum: 1,
+  },
+  {
+    id: 'cli-command-list',
+    file: 'tests/cli-contract.test.ts',
+    pattern: 'commands --json lists every command',
+    minimum: 1,
+  },
+  {
+    id: 'publish-dry-run',
+    file: 'tests/cli-contract.test.ts',
+    pattern: 'publish --dry-run reports what it would post',
+    minimum: 1,
+  },
+  {
+    id: 'setup-shipped-skill',
+    file: 'tests/cli-contract.test.ts',
+    pattern: 'setup installs the shipped skill',
+    minimum: 1,
+  },
+];
+/** `tracetoon mcp` (tests/mcp.test.ts): the stdio protocol, tools and skill resources. */
+export const MCP_CONTRACTS: PackagedContract[] = [
+  {
+    id: 'mcp-tools-and-resources',
+    file: 'tests/mcp.test.ts',
+    pattern: 'mcp server lists its tools and skill resources and answers status',
+    minimum: 1,
+  },
+  {
+    id: 'mcp-dry-run-publish',
+    file: 'tests/mcp.test.ts',
+    pattern: 'mcp prepare and dry-run publish post nothing',
+    minimum: 1,
+  },
+];
 export const NATIVE_CONTRACTS = [
   EVIDENCE_GRAPH_CONTRACT,
   PUBLICATION_CONTRACT,
   PASSIVE_CREATION_CONTRACT,
   PREPARATION_CONTRACT,
   CHECK_PROGRESS_CONTRACT,
+  ...CLI_CONTRACTS,
+  ...MCP_CONTRACTS,
 ];
 export const BUNDLE_CONTRACTS: PackagedContract[] = [
   EVIDENCE_GRAPH_CONTRACT,
@@ -51,7 +101,8 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
     // Needs the generated build.json and bundle, which aren't committed.
     id: 'launcher-runtime-selection',
     file: 'tests/runtime.test.ts',
-    pattern: 'skips an executable from another build and runs the matching shipped bundle',
+    pattern:
+      'skips an executable from another build and runs the matching shipped bundle',
     minimum: 1,
   },
   {
@@ -114,6 +165,8 @@ export const BUNDLE_CONTRACTS: PackagedContract[] = [
   },
   PUBLICATION_CONTRACT,
   PASSIVE_CREATION_CONTRACT,
+  ...CLI_CONTRACTS,
+  ...MCP_CONTRACTS,
 ];
 export const contractPattern = (cases: PackagedContract[]) =>
   cases.map((c) => `(?:${c.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`).join('|');

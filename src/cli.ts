@@ -1,597 +1,67 @@
 #!/usr/bin/env bun
-import { homedir } from 'node:os';
 import { writeFileSync } from 'node:fs';
-import { Command } from 'commander';
-import {
-  loadConfig,
-  setUserConfig,
-  COMIC_MODES,
-  AUTO_UPDATES,
-  UPDATE_CHANNELS,
-  comicMode,
-  DEFAULTS,
-  userConfigPath,
-  type Config,
-} from './config.ts';
-import { doctor } from './commands/doctor.ts';
-import { guidanceCheckCmd } from './commands/guidance.ts';
-import { imagesCmd } from './commands/images.ts';
-import {
-  contextCmd,
-  digestCmd,
-  expandCmd,
-  scanCmd,
-  prepareCmd,
-} from './commands/digest.ts';
-import { sourceCmd } from './commands/source.ts';
-import { queryCmd, ROW_CAP } from './commands/query.ts';
-import { emit, exitCodeOf, UserError } from './commands/output.ts';
-import { publishCmd, renderCmd } from './commands/publish.ts';
-import { reviewImportCmd, reviewMergeCmd, reviewPacketCmd } from './commands/review.ts';
-import { reviewRunCmd } from './commands/reviewRun.ts';
-import {
-  comicArtCmd,
-  comicRerollCmd,
-  comicCheckCmd,
-  comicPromptsCmd,
-  comicRenderCmd,
-} from './commands/comic.ts';
-import { exportCmd } from './commands/export.ts';
-import {
-  hookInstallCmd,
-  hookUninstallCmd,
-  setEnabledCmd,
-  statusCmd,
-} from './commands/switch.ts';
-import { runPrHook } from './hook/prHook.ts';
-import { HOOK_IDS, INTEGRATIONS, skillTargets } from './integrations/registry.ts';
-import { TOOL_VERSION, BUILD_INFO } from './version.ts';
-import { taskCmd, checkCmd } from './commands/workflow.ts';
-import { runLifecycle, type LifecycleEvent } from './hook/lifecycle.ts';
-import { assertRunOwner, findRun } from './run.ts';
+import { argvWantsJson, buildProgram } from './program.ts';
+import { errorEnvelope, exitCodeOf } from './commands/output.ts';
+import { findRun } from './run.ts';
 import { repository } from './workflow/state.ts';
 import { recordTiming } from './workflow/publication.ts';
 import { saveProfile } from './util/profile.ts';
-import { updateCmd } from './commands/update.ts';
+import { claudeCodeHint } from './util/claudeHint.ts';
 
-const list = (v: string) =>
-  v
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
 const cwd = process.cwd();
 
-const program = new Command()
-  .name('tracetoon')
-  .description(
-    'Write PR descriptions from the agent session logs already on your machine.',
-  )
-  .version(TOOL_VERSION)
-  .option('--json', 'print machine-readable JSON');
+// Claude Code's plugin-install hint (off until Tracetoon is in an official marketplace).
+// stderr only, on its own line, so --json stdout is never touched.
+const hint = claudeCodeHint(process.argv.slice(2));
+if (hint) process.stderr.write(hint);
 
-const g = () => program.opts<{ json?: boolean }>();
-let timedAction: { name: string; run?: string; started: number } | undefined;
-program.hook('preAction', (_command, action) => {
-  if (
-    action.opts().run &&
-    ['render', 'publish', 'art', 'reroll', 'prompts'].includes(action.name())
-  ) {
-    const repo = repository(cwd);
-    assertRunOwner(findRun(repo.gitDir, action.opts().run), repo.root, repo.branch);
-  }
-  timedAction = {
-    name: action.name(),
-    run: action.opts().run,
-    started: performance.now(),
-  };
-});
-
-program
-  .command('build-info')
-  .description('runtime identity and supported workflow capabilities')
-  .action(() => emit(g(), BUILD_INFO, () => JSON.stringify(BUILD_INFO)));
-program
-  .command('integrations')
-  .description('the agents Tracetoon supports, and where each gets the skill')
-  .option(
-    '--skill-targets',
-    'print "<agents>|<skill folder>" for each present agent (used by the installers)',
-  )
-  .action((o: { skillTargets?: boolean }) => {
-    if (o.skillTargets) {
-      for (const t of skillTargets())
-        process.stdout.write(`${t.labels.join(', ')}|${t.dir}\n`);
-      return;
-    }
-    const rows = INTEGRATIONS.map((i) => ({
-      id: i.id,
-      label: i.label,
-      status: i.status,
-      logs: i.traces.map((t) => t.id),
-      hook: !!i.hook,
-      skill: i.skill?.(homedir(), process.env) ?? null,
-    }));
-    emit(g(), rows, () =>
-      rows
-        .map(
-          (r) =>
-            `${r.label.padEnd(14)} ${r.status.padEnd(10)} logs: ${r.logs.join(', ') || 'none'}; hook: ${r.hook ? 'yes' : 'no'}${r.skill ? `; skill: ${r.skill.dir}${r.skill.present ? '' : ' (agent not found)'}` : ''}`,
-        )
-        .join('\n'),
-    );
-  });
-const task = program
-  .command('task')
-  .description('register and finish a cohesive local change');
-for (const action of ['begin', 'complete', 'defer', 'block'] as const) {
-  task
-    .command(action)
-    .option('--run <id>', 'resume this task')
-    .option('--base <ref>', 'PR base')
-    .option('--session <id>', 'actual host session id')
-    .option('--transcript <path>', 'active host transcript')
-    .option('--reason <text>', 'reason work is unfinished')
-    .option('--checks <names>', 'comma-separated applicable check names')
-    .option('--no-checks <reason>', 'explain why no local checks apply')
-    .action((o) => taskCmd(cwd, action, { ...g(), ...o }));
-}
-program
-  .command('check')
-  .description('run validation and record exact tested content')
-  .requiredOption('--run <id>', 'task run')
-  .option('--name <name>', 'check name')
-  .option('--cwd <path>', 'directory inside the repository')
-  .option('--skip <reason>', 'explicit CI-only or unavailable check')
-  .option('--force', 'rerun even if unchanged')
-  .option(
-    '--input <path>',
-    'also fingerprint an ignored generated artifact (repeatable)',
-    (value: string, previous: string[]) => [...previous, value],
-    [],
-  )
-  .argument('[command...]', 'program and arguments after --')
-  .action((command, o) => checkCmd(cwd, command, { ...g(), ...o }));
-program
-  .command('images')
-  .description(
-    'image routes for comics: which can draw, which are approved, and what to do next',
-  )
-  .option(
-    '--approve <route>',
-    'record the user agreed to send comic prompts to this route',
-  )
-  .option(
-    '--test [route]',
-    'draw one small test picture (no repo content) with this route',
-  )
-  .option('--consent', 'with --test: the user agreed to this route')
-  .option('--brief', 'one line, for the installers')
-  .action((o) => imagesCmd({ ...g(), ...o }));
-
-program
-  .command('update')
-  .description(
-    'check for a newer release and install it in place (skill, runtime, hooks)',
-  )
-  .option('--check', 'only report whether a newer release exists')
-  .option('--exit-code', `with --check: exit 10 when an update is available`)
-  .option('--to <version>', 'install this release (also how to roll back)')
-  .option('--channel <channel>', 'stable (releases only) or latest (includes candidates)')
-  .option('--quiet', 'print nothing (used by background checks)')
-  .option('--auto', 'install in the background, only when autoUpdate is install')
-  .action((o) => updateCmd({ ...g(), ...o }));
-
-program
-  .command('doctor')
-  .description('check git, gh and which agent logs are on this machine')
-  .option('--probe', 'also list record types the log readers do not recognize')
-  .option('--strict', 'with --probe: exit 5 if any are found')
-  .action((o) => doctor(cwd, { ...g(), ...o }));
-
-program
-  .command('scan')
-  .description('list agent sessions that match the current branch, with scores')
-  .option('--base <ref>', 'base branch (default: the PR base or the repo default)')
-  .option('--offline', 'do not ask GitHub for an existing PR')
-  .action((o) => scanCmd(cwd, { ...g(), ...o }));
-
-program
-  .command('digest')
-  .description('start a run: build the redacted trace digest for this branch')
-  .option('--run <id>', 'refresh an existing run, preserving its description and comic')
-  .option(
-    '--base <ref>',
-    'base branch, or <remote>/<branch> for one only another remote has',
-  )
-  .option('--include <ids>', 'session refs or ids to include', list)
-  .option('--exclude <ids>', 'session refs or ids to leave out', list)
-  .option('--budget <tokens>', 'approximate token budget', Number)
-  .option('--offline', 'do not ask GitHub for an existing PR')
-  .action((o) => {
-    digestCmd(cwd, { ...g(), ...o });
-  });
-
-program
-  .command('expand <refs...>')
-  .description(
-    'print full redacted evidence for a session, S/D/P/R/V fact or commit:<sha>',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .action((ref, o) => expandCmd(cwd, ref, { ...g(), ...o }));
-
-program
-  .command('query [words...]')
-  .description(
-    "ask this run's evidence graph: a named query (brief, outline, why <path|H#>, verified, unverified, unexplained, turn <S#>, stale <R#>, dead-ends, pushback, schema) or --cypher",
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--cypher <query>', 'a read-only Cypher query (MATCH ... RETURN ...)')
-  .option('--params <json>', 'parameters for --cypher, as a JSON object')
-  .option('--all', `print every row (default: at most ${ROW_CAP} per section)`)
-  .option(
-    '--layout <layout>',
-    'brief only: toon, neighborhood or neighborhood-wide (default: the layout prepare chose for the run)',
-  )
-  .action((words, o) => queryCmd(cwd, words ?? [], { ...g(), ...o }));
-
-program
-  .command('prepare')
-  .description('prepare digest and contribution context from one repository snapshot')
-  .option('--run <id>', 'refresh an existing run')
-  .option(
-    '--base <ref>',
-    'base branch, or <remote>/<branch> for one only another remote has',
-  )
-  .option('--include <ids>', 'session refs or ids to include', list)
-  .option('--exclude <ids>', 'session refs or ids to exclude', list)
-  .option('--budget <tokens>', 'approximate digest token budget', Number)
-  .option('--offline', 'disable GitHub lookups and external contributor research')
-  .option(
-    '--layout <layout>',
-    'evidence brief layout for this run: toon (default), neighborhood or neighborhood-wide; later commands use it',
-  )
-  .option(
-    '--graph-search <mode>',
-    'search links in the evidence graph (SKILL "Graph search:"): fulltext (default; bm25 is an alias) or none; refreshes of the run keep it',
-  )
-  .option(
-    '--review-passes <n>',
-    'review plan (SKILL "Review passes:"): fresh reviewer passes from distinct reviewer agents that publish requires (default 1)',
-  )
-  .option(
-    '--review-lenses <list>',
-    'review plan (SKILL "Review lenses:"): a, b, c or none; one reviewer pass per lens',
-  )
-  .option(
-    '--reviewer-model <name>',
-    'review plan (SKILL "Reviewer model:"): every pass must record this model; "same" or omitted for none',
-  )
-  .option(
-    '--reviewer-effort <level>',
-    'review plan (SKILL "Reviewer effort:"): low, medium, high, xhigh, max or default; every pass must record it',
-  )
-  .option(
-    '--reviewer-runner <runner>',
-    'review plan (SKILL "Reviewer runner:"): agent (the drafter starts the reviewer) or tracetoon (tracetoon review run starts it with the model pinned; publish requires that)',
-  )
-  .option(
-    '--review-recheck <mode>',
-    'review plan (SKILL "Review recheck:"): once (each reviewer confirms the correction round), contested (only reviewers whose findings were rejected) or none; publish never requires a recheck',
-  )
-  .action((o) => {
-    prepareCmd(cwd, { ...g(), ...o });
-  });
-
-program
-  .command('source <paths...>')
-  .description('snapshot base/head source files and emit immutable review references')
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--revision <revision>', 'prepared base or head', 'head')
-  .action((paths, o) => sourceCmd(cwd, paths, { ...g(), ...o }));
-
-program
-  .command('context')
-  .description(
-    'prepare contributor research, the submitted diff, template, policy and PR context',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--offline', 'disable GitHub lookups and require offline contributor research')
-  .action((o) => {
-    contextCmd(cwd, { ...g(), ...o });
-  });
-
-program
-  .command('guidance')
-  .description('contributor research handoffs')
-  .command('check')
-  .description('validate guidance.json citations, discovery chains and local snapshots')
-  .option('--run <id>', 'run id (default: latest)')
-  .action((o) => guidanceCheckCmd(cwd, { ...g(), ...o }));
-
-program
-  .command('render')
-  .description(
-    'freeze body.md into the final PR body, scan it, and report the review results',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option(
-    '--allow-findings',
-    'post even though the leak scan found something (only when the user says it is fine)',
-  )
-  .option('--no-comic', 'leave the comic out even if one was rendered')
-  .option('--retitle', 'replace a title a person chose (only after the user agrees)')
-  .option(
-    '--lean',
-    'lean brief path: drafted inline from the evidence brief, no separate reviewer needed to publish',
-  )
-  .option(
-    '--check',
-    'brief path: check the draft against the evidence brief before the slim review',
-  )
-  .option(
-    '--reviewed',
-    'reviewed brief path: drafted inline from the evidence brief, then checked by one slim reviewer (reviewer-notes.md)',
-  )
-  .action((o) => {
-    o.noComic = o.comic === false;
-    renderCmd(cwd, { ...g(), ...o });
-  });
-
-program
-  .command('review-packet')
-  .description(
-    'write review-packet.md for the lean reviewer: numbered body, brief rows, hunk owners and the diff',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--lean', 'the lean packet (the only one)')
-  .option(
-    '--lens <a|b|c>',
-    'a lens reviewer packet (review-packet-<lens>.md): the lens checklist first, unused brief rows left out',
-  )
-  .action((o) => reviewPacketCmd(cwd, { ...g(), ...o }));
-
-const review = program.command('review').description('lean reviewer handoffs');
-
-review
-  .command('run')
-  .description(
-    "run the lean reviewer as a codex exec session pinned to the review plan's reviewer model, verify the model from its rollout, and import its findings",
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option(
-    '--lens <a|b|c>',
-    'run the lens reviewer (review-packet-<lens>.md, reviewer-lens-<lens>.md)',
-  )
-  .option(
-    '--recheck',
-    'confirmation round: resume the same reviewer session with the changed body lines and its previous findings',
-  )
-  .option(
-    '--model <name>',
-    'reviewer model when the review plan names none (must equal the plan otherwise)',
-  )
-  .option(
-    '--effort <level>',
-    'reviewer effort when the review plan names none (must equal the plan otherwise)',
-  )
-  .option(
-    '--all',
-    'run every pass the review plan requires (one per lens plus the general passes) in parallel, import each, and write one merged list (review-findings-merged.md); with --recheck, recheck them',
-  )
-  .option('--fresh', 'with --all: rerun passes already imported for the current body too')
-  .option(
-    '--note <text>',
-    'with --recheck: your rejections and the diff lines behind them, passed to the reviewer',
-  )
-  .action(async (o) => reviewRunCmd(cwd, { ...g(), ...o }));
-
-review
-  .command('merge')
-  .description(
-    'merge the findings of every imported reviewer pass into one deduplicated, ordered list (review-findings-merged.md), capped at 12 lines',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .action((o) => reviewMergeCmd(cwd, { ...g(), ...o }));
-
-review
-  .command('import')
-  .description(
-    "turn the lean reviewer's review-findings.json into review.json v2 for the current render",
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--findings <path>', 'findings file (default: <run>/review-findings.json)')
-  .option('--agent-id <id>', "the reviewer's real host agent id (overrides the file)")
-  .option(
-    '--reviewer-model <name>',
-    'the model the reviewer ran on (SKILL "Reviewer model:" line); recorded as reviewer.model',
-  )
-  .option(
-    '--reviewer-effort <level>',
-    'the effort the reviewer ran at (SKILL "Reviewer effort:" line); recorded on the pass',
-  )
-  .option(
-    '--pass <n>',
-    "which reviewer pass this is (default: this reviewer's earlier pass with the same lens, else the next)",
-  )
-  .option(
-    '--lens <a|b|c>',
-    'the lens this reviewer checked (default findings file: review-findings-<lens>.json)',
-  )
-  .option(
-    '--rebind',
-    'rebuild review.json for the current render from the passes already imported (claims whose quote is gone count as fixed)',
-  )
-  .action((o) => reviewImportCmd(cwd, { ...g(), ...o }));
-
-program
-  .command('publish')
-  .description('create or update the PR with exactly what was rendered')
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--push', 'push the branch if GitHub does not have the rendered revision')
-  .option('--no-push', 'require the rendered revision to already be on the remote')
-  .option('--draft', 'open the PR as a draft')
-  .option('--hosting <how>', 'where the comic image goes: auto, branch or attach')
-  .option(
-    '--no-review',
-    'publish a checked brief-path draft without the slim review (only when the user asked for the cheapest run; recorded)',
-  )
-  .option(
-    '--accept-open',
-    'publish although the last render listed sentences to fix or brief rows to cover (recorded)',
-  )
-  .action((o) => publishCmd(cwd, { ...g(), ...o, noReview: o.review === false }));
-
-const comic = program.command('comic').description("make this PR's comic");
-comic
-  .command('check')
-  .description('check comic.json before any art is made')
-  .option('--run <id>', 'run id (default: latest)')
-  .action((o) => comicCheckCmd(cwd, { ...g(), ...o }));
-comic
-  .command('prompts')
-  .description("print the page (or panel) prompts for the host agent's own image tool")
-  .option('--run <id>', 'run id (default: latest)')
-  .option(
-    '--lettering <how>',
-    'model (one whole page, default) or overlay (text-free panels)',
-  )
-  .action((o) => comicPromptsCmd(cwd, { ...g(), ...o }));
-comic
-  .command('art')
-  .description(
-    'make the comic art with Codex, Antigravity, OpenAI or Gemini, after consent (exit code 5: no approved route)',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option('--provider <name>', 'auto, codex, antigravity, openai or gemini', 'auto')
-  .option('--consent', 'the user agreed to send comic prompts to this provider')
-  .option('--force', 'redraw panels that already exist')
-  .option(
-    '--lettering <how>',
-    'model (the image model letters the page) or overlay (Tracetoon draws bubbles)',
-  )
-  .action((o) => comicArtCmd(cwd, { ...g(), ...o }));
-comic
-  .command('reroll')
-  .description(
-    'redraw the page in a different style (or the one given), keeping the story',
-  )
-  .option('--run <id>', 'run id (default: latest)')
-  .option(
-    '--style <style>',
-    'use this style (an idea id or any description) instead of a fresh one',
-  )
-  .option('--format <id>', 'also switch to this format')
-  .option(
-    '--palette <name>',
-    'also switch the palette: full-color, bw-accent, duotone, limited',
-  )
-  .action((o) => comicRerollCmd(cwd, { ...g(), ...o }));
-comic
-  .command('render')
-  .description('lay out panels and speech bubbles into out/comic.png')
-  .option('--run <id>', 'run id (default: latest)')
-  .action((o) => comicRenderCmd(cwd, { ...g(), ...o }));
-
-program
-  .command('export')
-  .description('write the PR attribution as an Agent Trace record (agent-trace.dev)')
-  .option('--agent-trace', 'Agent Trace JSON (the only format today)', true)
-  .option('--base <ref>', 'base branch')
-  .option('--offline', 'do not ask GitHub for an existing PR')
-  .action((o) => exportCmd(cwd, { ...g(), ...o }));
-
-program
-  .command('status')
-  .description(
-    'is Tracetoon on here, which setting decided, and which agents have the PR hook',
-  )
-  .action(() => statusCmd(cwd, g()));
-for (const [name, on] of [
-  ['on', true],
-  ['off', false],
-] as const) {
-  program
-    .command(name)
-    .description(`turn Tracetoon ${name} for your PRs (default: everywhere for you)`)
-    .option('--repo', 'for everyone in this repo (.github/tracetoon.json)')
-    .option('--local', 'for this repo on this machine only (git config)')
-    .action((o) => setEnabledCmd(cwd, on, { ...g(), ...o }));
-}
-
-const hook = program
-  .command('hook')
-  .description('the agent hook that routes PRs through Tracetoon');
-hook
-  .command('lifecycle')
-  .requiredOption('--agent <agent>', HOOK_IDS.join(', '))
-  .requiredOption('--event <event>', 'SessionStart, PreToolUse, PostToolUse or Stop')
-  .action(async (o) => {
-    if (
-      !HOOK_IDS.includes(o.agent) ||
-      !['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop'].includes(o.event)
-    )
-      throw new UserError('Unknown host lifecycle event.');
-    await runLifecycle(o.agent, o.event as LifecycleEvent);
-  });
-hook
-  .command('pre-pr')
-  .description(
-    'called by agents before shell commands; routes PR creation through Tracetoon',
-  )
-  .requiredOption('--agent <agent>', HOOK_IDS.join(', '))
-  .action(async (o) => runPrHook(o.agent));
-hook
-  .command('install')
-  .description('register the PR hook with every agent that supports one')
-  .option('--program <path>', 'program the hook should run (default: this one)')
-  .action((o) => hookInstallCmd({ ...g(), ...o }));
-hook
-  .command('uninstall')
-  .description('remove the PR hook from every agent')
-  .action(() => hookUninstallCmd(g()));
-
-const config = program.command('config').description('show or change settings');
-config.command('get [key]').action((key?: keyof Config) => {
-  const c = loadConfig();
-  emit(g(), key ? { [key]: c[key] } : c, () =>
-    key ? String(c[key]) : `${userConfigPath()}\n${JSON.stringify(c, null, 2)}`,
-  );
-});
-config.command('set <key> <value>').action((key: string, value: string) => {
-  if (!(key in DEFAULTS))
-    throw new UserError(
-      `Unknown setting "${key}". Known: ${Object.keys(DEFAULTS).join(', ')}`,
-    );
-  if (key === 'comic' && ![...COMIC_MODES, 'true', 'false'].includes(value))
-    throw new UserError('comic is off, allowed or always.');
-  if (key === 'autoUpdate' && !(AUTO_UPDATES as readonly string[]).includes(value))
-    throw new UserError(`autoUpdate is ${AUTO_UPDATES.join(', ')}.`);
-  if (key === 'updateChannel' && !(UPDATE_CHANNELS as readonly string[]).includes(value))
-    throw new UserError(`updateChannel is ${UPDATE_CHANNELS.join(' or ')}.`);
-  const c = setUserConfig(
-    key as keyof Config,
-    key === 'comic'
-      ? comicMode(value === 'true' ? true : value === 'false' ? false : value)
-      : value,
-  );
-  emit(g(), c, () => `${key} = ${String(c[key as keyof Config])}`);
-});
+const { program, state } = buildProgram(cwd);
 
 // A test harness may name a file to receive the exit code just before exit (see
 // tests/spawn-guard.ts). Cleared now, so nothing this process starts inherits it.
 const exitFile = process.env.TRACETOON_EXIT_FILE;
 delete process.env.TRACETOON_EXIT_FILE;
 
+/** Commander's own outcomes that are not usage errors. */
+const COMMANDER_EXITS = [
+  'commander.helpDisplayed',
+  'commander.help',
+  'commander.version',
+];
+
 try {
   await program.parseAsync(process.argv);
 } catch (e) {
-  const err = e as Error & { exitCode?: number };
-  if (g().json) process.stdout.write(JSON.stringify({ error: err.message }) + '\n');
-  else process.stderr.write(`tracetoon: ${err.message}\n`);
-  process.exitCode = exitCodeOf(err);
+  const err = e as Error & { exitCode?: number; code?: unknown };
+  const json = !!program.opts().json || argvWantsJson(process.argv);
+  if (typeof err.code === 'string' && err.code.startsWith('commander.')) {
+    if (COMMANDER_EXITS.includes(err.code))
+      // --help, --version, or a command group run alone (which prints its help).
+      process.exitCode = err.exitCode ?? 0;
+    else {
+      // A usage error. Commander has already printed it, unless --json asked for JSON.
+      if (json)
+        process.stdout.write(
+          JSON.stringify({
+            ...errorEnvelope(err),
+            error: err.message.replace(/^error:\s*/, ''),
+            errorCode: 'USAGE',
+            fix: 'tracetoon commands --json',
+          }) + '\n',
+        );
+      // Hosts read a hook's exit 2 as "block the tool call", so hook commands keep 1.
+      const first = process.argv.slice(2).find((a) => !a.startsWith('-'));
+      process.exitCode = first === 'hook' ? 1 : 2;
+    }
+  } else {
+    if (json) process.stdout.write(JSON.stringify(errorEnvelope(err)) + '\n');
+    else process.stderr.write(`tracetoon: ${err.message}\n`);
+    process.exitCode = exitCodeOf(err);
+  }
 } finally {
+  const timed = state.timedAction;
   if (
-    timedAction &&
+    timed &&
     [
       'digest',
       'prepare',
@@ -603,12 +73,12 @@ try {
       'publish',
       'art',
       'check',
-    ].includes(timedAction.name)
+    ].includes(timed.name)
   ) {
     try {
-      const run = findRun(repository(cwd).gitDir, timedAction.run);
-      recordTiming(run, timedAction.name, performance.now() - timedAction.started);
-      saveProfile(run, timedAction.name);
+      const run = findRun(repository(cwd).gitDir, timed.run);
+      recordTiming(run, timed.name, performance.now() - timed.started);
+      saveProfile(run, timed.name);
     } catch {
       /* timing must not break the workflow */
     }

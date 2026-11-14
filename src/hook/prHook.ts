@@ -10,6 +10,7 @@ import { leadingCd } from '../trace/pathMatch.ts';
 import { splitCommands } from '../util/shell.ts';
 import { otherPrWrite, commandWords, ghCreatesPr } from './prCommands.ts';
 import { resolveHookHost } from '../integrations/registry.ts';
+import type { Integration } from '../integrations/types.ts';
 
 /** The id a host's hook passes as `--agent` (see src/integrations). */
 export type HookAgent = string;
@@ -39,6 +40,8 @@ export function decide(
   agent: HookAgent,
   payload: unknown,
   env: NodeJS.ProcessEnv = process.env,
+  /** Told which host the answer blocks for, so it can be written the way that host reads it. */
+  onDeny?: (host: Integration) => void,
 ): string | undefined {
   const resolved = resolveHookHost(agent, payload);
   if (!resolved) return undefined;
@@ -47,7 +50,22 @@ export function decide(
   const effectiveCwd = leadingCd(command, cwd ?? process.cwd()) ?? cwd ?? process.cwd();
   if (!switchState(effectiveCwd, env).enabled) return undefined;
   if (!writesPr(command)) return undefined;
+  onDeny?.(resolved.host);
   return resolved.host.hook!.deny(DENY_REASON);
+}
+
+/**
+ * Write a hook's answer. A block for a host that reads exit status (Kiro) goes
+ * to stderr with that status; everything else is printed for the host to parse.
+ */
+export function writeAnswer(answer: string, blockedFor?: Integration): void {
+  const code = blockedFor?.hook?.blockExitCode;
+  if (code === undefined) {
+    process.stdout.write(answer + '\n');
+    return;
+  }
+  process.stderr.write(answer + '\n');
+  process.exitCode = code;
 }
 
 /** Read stdin with a time limit; an empty result means "allow". */
@@ -72,8 +90,11 @@ export async function readStdin(timeoutMs = 2000): Promise<string> {
 export async function runPrHook(agent: HookAgent): Promise<void> {
   try {
     const raw = await readStdin();
-    const answer = raw ? decide(agent, JSON.parse(raw)) : undefined;
-    if (answer) process.stdout.write(answer + '\n');
+    let blockedFor: Integration | undefined;
+    const answer = raw
+      ? decide(agent, JSON.parse(raw), process.env, (h) => (blockedFor = h))
+      : undefined;
+    if (answer) writeAnswer(answer, blockedFor);
   } catch {
     /* fail open */
   }

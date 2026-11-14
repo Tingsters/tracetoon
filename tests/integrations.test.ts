@@ -104,6 +104,75 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     args: { command },
     directory: cwd,
   }),
+  // Recorded from Cline CLI 3.0.74 (the shell tool takes a list of commands).
+  cline: (command, cwd) => ({
+    clineVersion: '',
+    timestamp: '2026-11-14T01:20:39.174Z',
+    taskId: 'conv_1794619235211_eapht52',
+    sessionContext: { rootSessionId: '1794619234824_5dvqy' },
+    workspaceRoots: [cwd],
+    userId: 'unknown',
+    agent_id: 'agent_1',
+    parent_agent_id: null,
+    hookName: 'tool_call',
+    iteration: 1,
+    tool_call: { id: 'call_1', name: 'run_commands', input: { commands: [command] } },
+  }),
+  // Recorded from Junie 26.11.1 on Windows (cwd is Junie's folder; the repo is project_path).
+  junie: (command, cwd) => ({
+    hook_event_name: 'PreToolUse',
+    session_id: 'session-261113-174344-4lpz',
+    cwd: 'C:\Users\me\.junie',
+    project_path: cwd,
+    tool_name: 'powershell',
+    tool_input: { command, timeout: 30 },
+  }),
+  // Recorded from Goose 1.58.1 (the shell tool is `shell`).
+  goose: (command, cwd) => ({
+    event: 'PreToolUse',
+    session_id: '20261114_3',
+    tool_name: 'shell',
+    tool_input: { command },
+    working_dir: cwd,
+  }),
+  // Qwen Code speaks Claude Code's protocol (shell tool: run_shell_command).
+  qwen: (command, cwd) => ({
+    session_id: 'be6aeb9e-ee90-49ee-926c-d5d2e27f7809',
+    hook_event_name: 'PreToolUse',
+    cwd,
+    tool_name: 'run_shell_command',
+    tool_input: { command, is_background: false },
+  }),
+  // Crush sends Claude-style payloads (shell tool: bash).
+  crush: (command, cwd) => ({
+    hook_event_name: 'PreToolUse',
+    session_id: '923d3c49-2fe3-4fee-9c30-51890c104ee3',
+    cwd,
+    tool_name: 'bash',
+    tool_input: { command, working_dir: cwd },
+  }),
+  // What Tracetoon's Amp plugin sends (the OpenCode plugin shape, host amp).
+  amp: (command, cwd) => ({
+    source: 'tracetoon-plugin',
+    host: 'amp',
+    sessionID: 'T-01a1d813',
+    tool: 'Bash',
+    args: { command },
+    directory: cwd,
+  }),
+  // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
+  kiro: (command, cwd) => ({
+    session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',
+    hook_event_name: 'PreToolUse',
+    cwd,
+    tool_name: 'execute_pwsh',
+    tool_input: {
+      command,
+      description: 'Create GitHub PR',
+      cwd,
+      run_in_background: false,
+    },
+  }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
     transcriptPath: '/t.jsonl',
@@ -180,11 +249,15 @@ describe('hook contract', () => {
     const hook = i.hook!;
     test(`${i.label}: install is idempotent and uninstall restores the config`, () => {
       if (hook.text) {
-        // A file Tracetoon owns: rendering is stable and names the pre-pr command.
+        // Files Tracetoon owns: rendering is stable and names the pre-pr command.
         const text = hook.text.render(commands);
         expect(hook.text.render(commands)).toBe(text);
         expect(hook.text.command(text)).toBe(commands.prePr);
         expect(hook.text.command('// another plugin')).toBeUndefined();
+        // Each extra file must be recognized as Tracetoon's, so install and
+        // uninstall never mistake it for someone else's.
+        for (const render of Object.values(hook.text.siblings ?? {}))
+          expect(hook.text.command(render(commands))).toBeTruthy();
         return;
       }
       const once = hook.apply(foreign, commands);
@@ -203,7 +276,9 @@ describe('hook contract', () => {
       const p = hook.parse(make!('gh pr create', tempDir()));
       expect(p?.command).toBe('gh pr create');
       expect(p?.sessionId).toBeTruthy();
-      expect(() => JSON.parse(hook.deny('no'))).not.toThrow();
+      // Hosts that block on exit status get the reason itself (on stderr).
+      if (hook.blockExitCode !== undefined) expect(hook.deny('no')).toContain('no');
+      else expect(() => JSON.parse(hook.deny('no'))).not.toThrow();
       expect(hook.parse('nonsense')).toBeUndefined();
       expect(hook.parse({})).toBeUndefined();
     });

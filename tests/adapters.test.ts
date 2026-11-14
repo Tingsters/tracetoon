@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
 import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
+import { parseDevinChain } from '../src/integrations/devin/trace.ts';
+import { parseGooseMessages } from '../src/integrations/goose/trace.ts';
+import { commandOutput, parseQwenLines } from '../src/integrations/qwen/trace.ts';
+import { parseCrushMessages } from '../src/integrations/crush/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
@@ -8,6 +13,13 @@ import {
 import { linesFromUnifiedDiff, parseApplyPatch } from '../src/trace/diffLines.ts';
 import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
 import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/trace.ts';
+import { parseKiroLines } from '../src/integrations/kiro/trace.ts';
+import { parseClineMessages } from '../src/integrations/cline/trace.ts';
+import {
+  changedLines,
+  juniePrompts,
+  parseJunieEvents,
+} from '../src/integrations/junie/trace.ts';
 import {
   parseCopilotCliLines,
   parseVscodeChat,
@@ -357,6 +369,74 @@ describe('Antigravity adapter', () => {
       cmd: 'npm test',
       cwd: '/repo',
       isError: false,
+    });
+  });
+
+  test('CLI 1.5.8 write_file edits are captured without a CODE_ACTION record', () => {
+    // Antigravity CLI 1.5.8 renamed the tool to `write_file` with `Path`/`Content`,
+    // and its transcripts carry no CODE_ACTION record to confirm the edit against.
+    const s = session();
+    s.agent = 'antigravity-cli';
+    parseAntigravityLines(
+      jsonl([
+        {
+          step_index: 0,
+          type: 'USER_INPUT',
+          created_at: T(0),
+          content: 'Create agy.py that prints agy, then run it.',
+        },
+        {
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(1),
+          source: 'MODEL',
+          tool_calls: [
+            {
+              name: 'write_file',
+              args: { Path: '/repo/agy.py', Content: 'print("agy")\n' },
+            },
+          ],
+        },
+        {
+          step_index: 2,
+          type: 'GENERIC',
+          created_at: T(2),
+          source: 'MODEL',
+          status: 'DONE',
+          content: 'Created At: x\nCompleted At: y\nCreated file.',
+        },
+        {
+          step_index: 3,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(3),
+          source: 'MODEL',
+          tool_calls: [{ name: 'run_command', args: { CommandLine: 'python3 agy.py' } }],
+        },
+        {
+          step_index: 4,
+          type: 'GENERIC',
+          created_at: T(4),
+          source: 'MODEL',
+          status: 'DONE',
+          content:
+            'Created At: x\nCompleted At: y\nCommand exited with code 0.\n\nCommand output:\nagy\r\n',
+        },
+      ]),
+      s,
+      { history: [] },
+    );
+    const edits = s.records.filter((r) => r.kind === 'edit') as any[];
+    expect(
+      edits.map((e) => [
+        e.file.replace(/\\/g, '/').replace(/^[A-Z]:/, ''),
+        e.added,
+        e.created,
+      ]),
+    ).toEqual([['/repo/agy.py', ['print("agy")'], true]]);
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'python3 agy.py',
+      isError: false,
+      output: 'agy',
     });
   });
 
@@ -734,5 +814,833 @@ describe('Cursor adapter', () => {
       '2026-11-13T06:35:00.000Z',
     );
     expect(cursorTimestamp('no time here')).toBeUndefined();
+  });
+});
+
+describe('Kiro adapter', () => {
+  // Shapes recorded from Kiro CLI 3.3.0 (paths scrubbed).
+  const line = (timestamp: string, payload: Record<string, unknown>) => ({
+    id: 'x',
+    timestamp,
+    payload,
+  });
+  test('reads prompts, fs_write and str_replace edits, shell commands and their exit codes', () => {
+    const s = session('sess_1');
+    parseKiroLines(
+      jsonl([
+        line('2026-11-13T23:54:55.000Z', {
+          type: 'agent_note',
+          content: '<session_context>',
+        }),
+        line('2026-11-13T23:54:55.100Z', { type: 'user', content: 'Create calc.py' }),
+        line('2026-11-13T23:54:56.000Z', {
+          type: 'assistant',
+          content: '...',
+          operationType: 'Reasoning',
+        }),
+        line('2026-11-13T23:54:57.000Z', {
+          type: 'tool_call',
+          toolCallId: 't1',
+          toolName: 'fs_write',
+          args: { path: '/repo/calc.py', text: 'def add(a, b):\n    return a + b\n' },
+          status: 'approved',
+          actionType: 'create',
+        }),
+        line('2026-11-13T23:54:58.000Z', {
+          type: 'tool_call',
+          toolCallId: 't2',
+          toolName: 'str_replace',
+          args: {
+            path: '/repo/calc.py',
+            oldStr: '    return a + b',
+            newStr: '    return int(a) + int(b)',
+          },
+          status: 'approved',
+        }),
+        line('2026-11-13T23:54:59.000Z', {
+          type: 'tool_call',
+          toolCallId: 't3',
+          toolName: 'execute_pwsh',
+          args: { command: 'git commit -m calc', cwd: '/repo' },
+          status: 'completed',
+        }),
+        line('2026-11-13T23:54:59.500Z', {
+          type: 'tool_result',
+          toolCallId: 't3',
+          content: 'Output:\n[feature 72105a1] calc\n\n\nExit Code: 0',
+          success: true,
+        }),
+        line('2026-11-13T23:55:00.000Z', {
+          type: 'tool_call',
+          toolCallId: 't4',
+          toolName: 'execute_pwsh',
+          args: { command: 'npm test', cwd: '/repo' },
+          status: 'failed',
+        }),
+        line('2026-11-13T23:55:01.000Z', {
+          type: 'tool_result',
+          toolCallId: 't4',
+          content: 'Output:\n1 failing\n\n\nExit Code: 1',
+          success: false,
+        }),
+        line('2026-11-13T23:55:02.000Z', {
+          type: 'tool_call',
+          toolCallId: 't5',
+          toolName: 'execute_pwsh',
+          args: { command: 'gh pr create --fill', cwd: '/repo' },
+          status: 'denied',
+        }),
+        line('2026-11-13T23:55:02.100Z', {
+          type: 'ContextualHookInvoked',
+          name: 'tracetoon-pr',
+        }),
+        line('2026-11-13T23:55:03.000Z', {
+          type: 'assistant',
+          content: 'Done.',
+          operationType: 'Say',
+        }),
+        line('2026-11-13T23:55:04.000Z', { type: 'brand_new_event' }),
+      ]),
+      s,
+      '/repo',
+    );
+    const kinds = s.records.map((r) => r.kind);
+    expect(kinds).toEqual(['prompt', 'edit', 'edit', 'command', 'command', 'assistant']);
+    expect(s.records[1]).toMatchObject({
+      kind: 'edit',
+      created: true,
+      added: ['def add(a, b):', '    return a + b'],
+      removed: [],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({ cmd: 'git commit -m calc', cwd: '/repo' });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[3]).not.toHaveProperty('pending');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    // The refused gh pr create never ran, so it isn't a command.
+    expect(s.records.some((r) => r.kind === 'command' && r.cmd.includes('gh pr'))).toBe(
+      false,
+    );
+    expect(s.unknownTypes).toEqual({ brand_new_event: 1 });
+  });
+});
+
+describe('Cline adapter', () => {
+  // Shapes recorded from Cline CLI 3.0.74 (paths scrubbed).
+  test('reads the prompt, editor edits and run_commands results, skipping Cline nudges', () => {
+    const s = session('1794619105708_aut90');
+    const msg = (role: string, ts: number, content: unknown[]) => ({
+      id: 'm',
+      role,
+      ts,
+      content,
+    });
+    parseClineMessages(
+      JSON.stringify({
+        version: 1,
+        sessionId: '1794619105708_aut90',
+        messages: [
+          msg('user', 1794619106156, [
+            { type: 'text', text: '<user_input mode="yolo">Create calc.py</user_input>' },
+          ]),
+          msg('user', 1794619106160, [
+            {
+              type: 'text',
+              text: '[SYSTEM] This run is not complete until you call submit_and_exit.',
+            },
+          ]),
+          msg('assistant', 1794619110454, [
+            { type: 'thinking', thinking: '' },
+            { type: 'text', text: 'I will create calc.py.' },
+            {
+              type: 'tool_use',
+              id: 'c1',
+              name: 'editor',
+              input: {
+                path: '/repo/calc.py',
+                new_text: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+          ]),
+          msg('user', 1794619111000, [
+            { type: 'tool_result', tool_use_id: 'c1', name: 'editor', content: '{}' },
+          ]),
+          msg('assistant', 1794619112000, [
+            {
+              type: 'tool_use',
+              id: 'c2',
+              name: 'editor',
+              input: {
+                path: '/repo/calc.py',
+                old_text: '    return a + b\n',
+                new_text: '    return a + b\n\n\ndef sub(a, b):\n    return a - b\n',
+              },
+            },
+            {
+              type: 'tool_use',
+              id: 'c3',
+              name: 'run_commands',
+              input: { commands: ['git commit -m calc', 'npm test'] },
+            },
+            { type: 'tool_use', id: 'c4', name: 'read_files', input: { files: [] } },
+          ]),
+          msg('user', 1794619113000, [
+            {
+              type: 'tool_result',
+              tool_use_id: 'c3',
+              name: 'run_commands',
+              content: [
+                {
+                  query: 'git commit -m calc',
+                  result: '[feature 4822154] calc',
+                  success: true,
+                },
+                { query: 'npm test', result: '1 failing', success: false },
+              ],
+            },
+          ]),
+          msg('assistant', 1794619114000, [{ type: 'image', source: {} }]),
+        ],
+      }),
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'assistant',
+      'edit',
+      'edit',
+      'command',
+      'command',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T01:18:26.156Z',
+    });
+    expect(s.records[2]).toMatchObject({ created: true, removed: [] });
+    expect(s.records[3]).toMatchObject({ removed: ['    return a + b'] });
+    expect(s.records[3]).not.toHaveProperty('created');
+    expect(s.records[4]).toMatchObject({
+      cmd: 'git commit -m calc',
+      output: '[feature 4822154] calc',
+    });
+    expect(s.records[4]).not.toHaveProperty('pending');
+    expect(s.records[5]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ image: 1 });
+  });
+
+  test('reads the single-command execute_command tool and its plain-text result', () => {
+    const s = session('x');
+    parseClineMessages(
+      JSON.stringify({
+        messages: [
+          {
+            role: 'assistant',
+            ts: 1,
+            content: [
+              {
+                type: 'tool_use',
+                id: 'e1',
+                name: 'execute_command',
+                input: { command: 'npm test' },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            ts: 2,
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'e1',
+                content: '2 failing',
+                is_error: true,
+              },
+            ],
+          },
+        ],
+      }),
+      s,
+      '/repo',
+    );
+    expect(s.records).toEqual([
+      expect.objectContaining({
+        kind: 'command',
+        cmd: 'npm test',
+        isError: true,
+        output: '2 failing',
+      }),
+    ]);
+    expect(s.records[0]).not.toHaveProperty('pending');
+  });
+});
+
+describe('Junie adapter', () => {
+  // Shapes recorded from Junie 26.11.1 (paths scrubbed).
+  const ev = (ms: number, agentEvent: Record<string, unknown>) => ({
+    kind: 'SessionA2uxEvent',
+    event: {
+      state: 'IN_PROGRESS',
+      agentEvent: { agent: { kind: 'MainAgent' }, ...agentEvent },
+    },
+    timestampMs: ms,
+  });
+  test('keeps the last completed version of each step: edits, commands and the result', () => {
+    const s = session('session-1');
+    const created = {
+      afterContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n',
+      },
+      afterAbsolutePath: '/repo/calc.py',
+    };
+    const edited = {
+      beforeContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n',
+      },
+      afterContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n',
+      },
+      afterAbsolutePath: '/repo/calc.py',
+    };
+    parseJunieEvents(
+      jsonl([
+        { kind: 'TaskStartedEvent', taskId: 't', timestampMs: 1794620500888 },
+        ev(1794620501588, { kind: 'LlmResponseMetadataEvent', modelUsage: [] }),
+        ev(1794620505457, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'IN_PROGRESS',
+          changes: [created],
+        }),
+        ev(1794620505500, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'COMPLETED',
+          changes: [created],
+        }),
+        ev(1794620506000, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'b',
+          status: 'COMPLETED',
+          changes: [edited],
+        }),
+        ev(1794620514854, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'c',
+          status: 'IN_PROGRESS',
+          command: 'git commit -m calc',
+        }),
+        ev(1794620515000, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'c',
+          status: 'COMPLETED',
+          command: 'git commit -m calc',
+          output: '[feature 6e3ec0c] calc',
+          exitCode: 0,
+        }),
+        ev(1794620516000, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'd',
+          status: 'COMPLETED',
+          command: 'npm test',
+          exitCode: 1,
+        }),
+        ev(1794620525389, {
+          kind: 'ResultBlockUpdatedEvent',
+          stepId: 'r',
+          cancelled: false,
+          result: 'Created calc.py.',
+        }),
+        // Junie repeats finished blocks at the end of the log.
+        ev(1794620526000, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'COMPLETED',
+          changes: [created],
+        }),
+        ev(1794620526100, { kind: 'BrandNewEvent' }),
+        { kind: 'TaskState', state: 'COMPLETED', timestampMs: 1794620525453 },
+      ]),
+      s,
+      '/repo',
+      ['Create calc.py with add and sub.'],
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py with add and sub.',
+      ts: '2026-11-14T01:41:40.888Z',
+    });
+    expect(s.records[1]).toMatchObject({
+      created: true,
+      added: ['def add(a, b):', '    return a + b'],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: [],
+      added: ['', 'def sub(a, b):', '    return a - b'],
+    });
+    expect(s.records[3]).toMatchObject({
+      cmd: 'git commit -m calc',
+      output: '[feature 6e3ec0c] calc',
+    });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ BrandNewEvent: 1 });
+  });
+
+  test('reads the prompts from the state blob, oldest first', () => {
+    const blob = JSON.stringify({
+      previousPromptDescriptions: ['First ask.'],
+      lastAgentState: { issue: { name: 'Issue Task', description: 'Second ask.' } },
+    });
+    expect(juniePrompts(JSON.stringify({ event: { agentEvent: { blob } } }))).toEqual([
+      'First ask.',
+      'Second ask.',
+    ]);
+    expect(juniePrompts('not json')).toEqual([]);
+  });
+
+  test('changedLines keeps only the lines between the shared start and end', () => {
+    expect(changedLines('a\nb\nc\n', 'a\nB\nc\n')).toEqual({
+      removed: ['b'],
+      added: ['B'],
+    });
+    expect(changedLines('', 'x\n')).toEqual({ removed: [], added: ['x'] });
+  });
+});
+
+describe('Devin adapter', () => {
+  // Shapes recorded from Devin CLI 3000.12.57 (paths scrubbed).
+  test('walks the main chain: the prompt, write/edit calls and exec results', () => {
+    const s = session('picayune-door');
+    const meta = (created_at: string, extra: Record<string, unknown> = {}) => ({
+      created_at,
+      ...extra,
+    });
+    parseDevinChain(
+      [
+        {
+          role: 'system',
+          content: 'You are Devin.',
+          metadata: meta('2026-11-14T02:24:55Z'),
+        },
+        {
+          role: 'user',
+          content: 'Create calc.py',
+          metadata: meta('2026-11-14T02:24:56Z', { is_user_input: true }),
+        },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'w',
+              name: 'write',
+              arguments: {
+                file_path: '/repo/calc.py',
+                content: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+            { id: 'r', name: 'read', arguments: { file_path: '/repo/calc.py' } },
+          ],
+          metadata: meta('2026-11-14T02:24:58Z'),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'w',
+          content: 'File created successfully',
+          metadata: meta('2026-11-14T02:24:59Z'),
+        },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'e',
+              name: 'edit',
+              arguments: {
+                file_path: '/repo/calc.py',
+                old_string: '    return a + b\n',
+                new_string: '    return int(a) + int(b)\n',
+              },
+            },
+            {
+              id: 'x',
+              name: 'exec',
+              arguments: { command: 'git commit -m calc', workdir: '/repo' },
+            },
+            {
+              id: 'y',
+              name: 'exec',
+              arguments: { command: 'npm test', workdir: '/repo' },
+            },
+            { id: 'z', name: 'teleport', arguments: {} },
+          ],
+          metadata: meta('2026-11-14T02:25:01Z'),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'x',
+          content: 'Output from command:\n[feature 170f343] calc\n\n\nExit code: 0',
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'y',
+          content: 'Output from command:\n1 failing\n\n\nExit code: 1',
+        },
+        {
+          role: 'assistant',
+          content: 'Done.',
+          tool_calls: [],
+          metadata: meta('2026-11-14T02:25:14Z'),
+        },
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T02:24:56Z',
+    });
+    expect(s.records[1]).toMatchObject({ file: resolve('/repo/calc.py'), removed: [] });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({ cmd: 'git commit -m calc', cwd: '/repo' });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+  });
+});
+
+describe('Goose adapter', () => {
+  // Shapes recorded from Goose 1.58.1 (paths scrubbed).
+  const row = (role: string, s: number, blocks: unknown[]) => ({
+    role,
+    created_timestamp: s,
+    content_json: JSON.stringify(blocks),
+  });
+  const request = (id: string, name: string, args: Record<string, unknown>) => ({
+    type: 'toolRequest',
+    id,
+    toolCall: { status: 'success', value: { name, arguments: args } },
+  });
+  const response = (id: string, text: string, extra: Record<string, unknown> = {}) => ({
+    type: 'toolResponse',
+    id,
+    toolResult: {
+      status: 'success',
+      value: { content: [{ type: 'text', text }], isError: false, ...extra },
+    },
+  });
+  test('reads the prompt, write and edit calls, and shell results with their exit codes', () => {
+    const s = session('20261114_2');
+    parseGooseMessages(
+      [
+        row('user', 1794624069, [{ type: 'text', text: 'Create calc.py' }]),
+        row('user', 1794624071, [
+          {
+            type: 'text',
+            text: '<turn-context>\n<current-time>now</current-time>\n</turn-context>',
+          },
+        ]),
+        row('assistant', 1794624073, [request('k', 'load_skill', { name: 'tracetoon' })]),
+        row('assistant', 1794624079, [
+          request('w', 'write', {
+            path: 'calc.py',
+            content: 'def add(a, b):\n    return a + b\n',
+          }),
+        ]),
+        row('assistant', 1794624081, [
+          request('e', 'edit', {
+            path: 'calc.py',
+            before: '    return a + b\n',
+            after: '    return int(a) + int(b)\n',
+          }),
+        ]),
+        row('assistant', 1794624083, [
+          request('c', 'shell', { command: 'git commit -m "calc"' }),
+        ]),
+        row('user', 1794624084, [
+          response('c', '[feature fe2df56] calc', {
+            structuredContent: { exit_code: 0 },
+          }),
+        ]),
+        row('assistant', 1794624085, [request('t', 'shell', { command: 'npm test' })]),
+        row('user', 1794624086, [
+          response('t', '1 failing', { structuredContent: { exit_code: 1 } }),
+        ]),
+        row('assistant', 1794624090, [
+          { type: 'text', text: 'Done.' },
+          { type: 'image', data: '' },
+        ]),
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T02:41:09.000Z',
+    });
+    expect(s.records[1]).toMatchObject({
+      file: resolve('/repo', 'calc.py'),
+      removed: [],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({
+      cmd: 'git commit -m "calc"',
+      output: '[feature fe2df56] calc',
+    });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ image: 1 });
+  });
+});
+
+describe('Qwen Code adapter', () => {
+  // Shapes recorded from Qwen Code 0.27.3 (paths scrubbed).
+  const line = (type: string, parts: unknown[], extra: Record<string, unknown> = {}) => ({
+    timestamp: '2026-11-14T02:57:14.961Z',
+    type,
+    cwd: '/repo',
+    gitBranch: 'feature',
+    message: { parts },
+    ...extra,
+  });
+  test('reads real prompts, file writes and edits, and shell results without Qwen\u2019s wrapper', () => {
+    const s = session('be6aeb9e');
+    parseQwenLines(
+      jsonl([
+        line('user', [{ text: 'Create calc.py' }], { provenance: 'real_user' }),
+        line('system', [{ text: 'memory' }], { subtype: 'memory_catalog_snapshot' }),
+        line('assistant', [
+          { text: 'thinking…', thought: true },
+          { text: 'I will create it.' },
+          {
+            functionCall: {
+              id: 'w',
+              name: 'write_file',
+              args: {
+                file_path: '/repo/calc.py',
+                content: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+          },
+          {
+            functionCall: {
+              id: 'r',
+              name: 'read_file',
+              args: { file_path: '/repo/calc.py' },
+            },
+          },
+        ]),
+        line('assistant', [
+          {
+            functionCall: {
+              id: 'e',
+              name: 'edit',
+              args: {
+                file_path: '/repo/calc.py',
+                old_string: '    return a + b',
+                new_string: '    return int(a) + int(b)',
+              },
+            },
+          },
+          {
+            functionCall: {
+              id: 'c',
+              name: 'run_shell_command',
+              args: { command: 'git commit -am "calc"', directory: '/repo' },
+            },
+          },
+          {
+            functionCall: {
+              id: 'g',
+              name: 'run_shell_command',
+              args: { command: 'gh pr create --fill' },
+            },
+          },
+          { functionCall: { id: 'x', name: 'teleport', args: {} } },
+        ]),
+        line(
+          'tool_result',
+          [
+            {
+              functionResponse: {
+                id: 'c',
+                name: 'run_shell_command',
+                response: {
+                  output:
+                    'Command: git commit -am "calc"\nDirectory: /repo\nOutput: [feature 23f37ea] calc\n 1 file changed\nError: (none)\nExit Code: 0',
+                },
+              },
+            },
+          ],
+          { toolCallResult: { status: 'success' } },
+        ),
+        line(
+          'tool_result',
+          [
+            {
+              functionResponse: {
+                id: 'g',
+                name: 'run_shell_command',
+                response: { error: 'Tracetoon handles PR creation' },
+              },
+            },
+          ],
+          { toolCallResult: { status: 'error' } },
+        ),
+      ]),
+      s,
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'assistant',
+      'edit',
+      'edit',
+      'command',
+      'command',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      cwd: '/repo',
+      branch: 'feature',
+    });
+    expect(s.records[4]).toMatchObject({
+      cmd: 'git commit -am "calc"',
+      output: '[feature 23f37ea] calc\n 1 file changed',
+    });
+    expect(s.records[4]).not.toHaveProperty('isError');
+    expect(s.records[5]).toMatchObject({ cmd: 'gh pr create --fill', isError: true });
+    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+  });
+
+  test('commandOutput keeps plain output as it is', () => {
+    expect(commandOutput('plain text')).toBe('plain text');
+    expect(commandOutput(undefined)).toBeUndefined();
+  });
+});
+
+describe('Crush adapter', () => {
+  // Shapes recorded from Crush 0.101.0 (paths scrubbed).
+  const row = (role: string, s: number, parts: unknown[]) => ({
+    role,
+    created_at: s,
+    parts: JSON.stringify(parts),
+  });
+  const call = (id: string, name: string, input: Record<string, unknown>) => ({
+    type: 'tool_call',
+    data: {
+      id,
+      name,
+      input: JSON.stringify(input),
+      provider_executed: false,
+      finished: true,
+    },
+  });
+  const result = (id: string, name: string, content: string, is_error = false) => ({
+    type: 'tool_result',
+    data: { tool_call_id: id, name, content, is_error },
+  });
+  test('reads the prompt, write/edit/multiedit calls and bash results without the cwd note', () => {
+    const s = session('923d3c49');
+    parseCrushMessages(
+      [
+        row('user', 1794625635, [{ type: 'text', data: { text: '\n\nCreate calc.py' } }]),
+        row('assistant', 1794625642, [
+          { type: 'reasoning', data: { thinking: 'plan' } },
+          call('w', 'write', {
+            file_path: '/repo/calc.py',
+            content: 'def add(a, b):\n    return a + b\n',
+          }),
+          call('v', 'view', { file_path: '/repo/calc.py' }),
+        ]),
+        row('assistant', 1794625659, [
+          call('e', 'edit', {
+            file_path: '/repo/calc.py',
+            old_string: '    return a + b',
+            new_string: '    return int(a) + int(b)',
+          }),
+          call('m', 'multiedit', {
+            file_path: '/repo/calc.py',
+            edits: [{ old_string: 'a', new_string: 'b' }],
+          }),
+          call('c', 'bash', { command: 'git commit -m "calc"', working_dir: '/repo' }),
+          call('g', 'bash', { command: 'gh pr create --fill', working_dir: '/repo' }),
+        ]),
+        row('tool', 1794625681, [
+          result(
+            'c',
+            'bash',
+            '[feature 63024de] calc\n 1 file changed\n\n\n<cwd>/repo</cwd>',
+          ),
+          result(
+            'g',
+            'bash',
+            '\nGraphQL: Could not resolve\n\nExit code 1\n\n<cwd>/repo</cwd>',
+          ),
+        ]),
+        row('assistant', 1794625690, [
+          { type: 'text', data: { text: 'Done.' } },
+          { type: 'finish', data: { reason: 'stop' } },
+          { type: 'image', data: {} },
+        ]),
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T03:07:15.000Z',
+    });
+    expect(s.records[5]).toMatchObject({ cmd: 'gh pr create --fill', isError: true });
+    expect(s.records[4]).toMatchObject({
+      cmd: 'git commit -m "calc"',
+      output: '[feature 63024de] calc\n 1 file changed',
+    });
+    expect(s.records[4]).not.toHaveProperty('isError');
+    expect(s.unknownTypes).toEqual({ image: 1 });
   });
 });

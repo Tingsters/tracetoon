@@ -1,0 +1,6 @@
+{"type":"step_start","timestamp":1,"sessionID":"ses_oc1","part":{"type":"step-start"}}
+{"type":"tool_use","timestamp":2,"sessionID":"ses_oc1","part":{"type":"tool","tool":"websearch","state":{"status":"completed","input":{"query":"tool PR description from coding agent session logs"},"output":"Tracetoon - write pull request descriptions from agent session logs"}}}
+{"type":"text","timestamp":3,"sessionID":"ses_oc1","part":{"type":"text","text":"Tracetoon does this. Installing it."}}
+{"type":"tool_use","timestamp":4,"sessionID":"ses_oc1","part":{"type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh"},"output":"installed"}}}
+{"type":"tool_use","timestamp":5,"sessionID":"ses_oc1","part":{"type":"tool","tool":"bash","state":{"status":"error","input":{"command":"tracetoon digest --json"},"error":"no sessions"}}}
+{"type":"step_finish","timestamp":6,"sessionID":"ses_oc1","part":{"type":"step-finish","tokens":{"input":800,"output":120,"reasoning":30,"cache":{"read":100,"write":0}},"cost":0.012}}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "tracetoon",
+  "version": "1.0.0-rc.28",
+  "description": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush and Amp, and an optional one-off comic.",
+  "author": {
+    "name": "Tracetoon",
+    "url": "https://tracetoon.ai"
+  },
+  "homepage": "https://tracetoon.ai",
+  "repository": "https://github.com/Tracetoon/tracetoon",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pull request",
+    "pr description",
+    "open a pr",
+    "create a pr",
+    "gh pr create",
+    "github",
+    "code review",
+    "session logs",
+    "tracetoon"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Tracetoon",
+        "shortDescription": "PRs written from agent logs",
+        "longDescription": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush and Amp, and an optional one-off comic. It reads the session logs your coding agents keep on disk, checks every claim in the description against that evidence, and creates or updates the PR with the GitHub CLI. Needs git and gh signed in. Comic images go to an image service only after you approve one.",
+        "developerName": "Tracetoon",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Interactive",
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://tracetoon.ai",
+        "defaultPrompt": [
+          "Open a PR for this branch with Tracetoon."
+        ],
+        "brandColor": "#C2410C",
+        "brandColorDark": "#FFD84A",
+        "composerIcon": "./assets/tracetoon.svg",
+        "logo": "./assets/tracetoon.svg"
+      }
+    }
+  }
+}

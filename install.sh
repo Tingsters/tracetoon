@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI), caches the matching prebuilt binary so nothing
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush, Amp, Gemini CLI), caches the matching prebuilt binary so nothing
 # else (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -73,6 +73,33 @@ targets() {
       printf '%s|%s\n' "${oc%%:*}" "$HOME/.agents/skills/tracetoon"
     fi
   done
+  if [ -d "$HOME/.cline" ] || command -v cline >/dev/null 2>&1; then
+    printf 'Cline|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  if command -v goose >/dev/null 2>&1 || [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/goose" ]; then
+    printf 'Goose|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  if command -v devin >/dev/null 2>&1; then
+    printf 'Devin|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  if command -v amp >/dev/null 2>&1 || [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/amp" ]; then
+    printf 'Amp|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  if command -v crush >/dev/null 2>&1 || [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/crush" ]; then
+    printf 'Crush|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
+  qwen_home="${QWEN_DATA_DIR:-$HOME/.qwen}"
+  if [ -d "$qwen_home" ] || command -v qwen >/dev/null 2>&1; then
+    printf 'Qwen Code|%s\n' "$qwen_home/skills/tracetoon"
+  fi
+  junie_home="${JUNIE_HOME:-$HOME/.junie}"
+  if [ -d "$junie_home" ] || command -v junie >/dev/null 2>&1; then
+    printf 'Junie|%s\n' "$junie_home/skills/tracetoon"
+  fi
+  kiro_home="${KIRO_HOME:-$HOME/.kiro}"
+  if [ -d "$kiro_home" ] || command -v kiro-cli >/dev/null 2>&1 || command -v kiro >/dev/null 2>&1; then
+    printf 'Kiro|%s\n' "$kiro_home/skills/tracetoon"
+  fi
   if command -v gemini >/dev/null 2>&1; then
     printf 'Gemini CLI|%s\n' "$gemini_home/skills/tracetoon"
   fi
@@ -126,7 +153,7 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   exit 0
 fi
 
-[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI)"
+[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush, Amp, Gemini CLI)"
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)
@@ -235,3 +262,4 @@ printf '{\n  "method": "installer",\n  "version": "%s",\n  "tag": "%s",\n  "path
 # Comics need an image route: say what's there and what to do next.
 "$stable" images --brief 2>/dev/null || true
 say "Done. Restart your agent, then ask it to open a PR."
+say "For agents: install routes and checks are in https://github.com/Tracetoon/tracetoon/blob/main/docs/agents/install.md"
