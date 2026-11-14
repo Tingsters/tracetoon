@@ -31,6 +31,12 @@ and caveats.</sub>
 
 </div>
 
+> [!NOTE]
+> **For AI agents:** start with [AGENTS.md](AGENTS.md) (how to run Tracetoon,
+> exit codes, which commands publish) and
+> [docs/agents/install.md](docs/agents/install.md) (install routes an agent can
+> run, per host). [llms.txt](llms.txt) indexes both.
+
 **Contents:** [Quick start](#-quick-start) ·
 [Better PRs](#-better-prs-judged-blind-picked-almost-every-time) ·
 [Evidence graph](#%EF%B8%8F-evidence-graph-every-sentence-has-a-receipt) ·
@@ -60,6 +66,18 @@ curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh
 # Windows PowerShell
 irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 ```
+
+Or let your agent install it. Agent sandboxes often block piping a download
+into a shell, so these routes work better from inside an agent:
+
+```sh
+# Claude Code plugin
+claude plugin marketplace add Tracetoon/tracetoon
+claude plugin install tracetoon@tracetoon
+```
+
+Any other host: ask your agent to follow
+[docs/agents/install.md](docs/agents/install.md).
 
 **2. Restart your agent.** Then, on any branch with your work, ask:
 
@@ -183,7 +201,7 @@ tracetoon query outline          # changed units, their requests and checks
 tracetoon query why src/foo.ts   # which request and which runs are behind this file (or a hunk: H3)
 tracetoon query unverified       # changes no run saw after their last edit
 tracetoon query stale R2         # what changed after run R2
-tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.path LIMIT 5'   # read-only Cypher
+tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.file LIMIT 5'   # read-only Cypher
 ```
 
 Named queries also include `verified`, `unexplained`, `turn <S#>`, `dead-ends`,
@@ -350,11 +368,11 @@ add `export OPENAI_API_KEY="<key>"` to your shell profile.
 ### The PR hook
 
 The installer adds a small hook to each agent. When an agent tries to open a PR,
-or rewrite a PR's title or body, the hook points it to Tracetoon instead.
+the hook points it to Tracetoon instead.
 
 | Redirected to Tracetoon                                                                    | Left alone                                                                         |
 | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `gh pr create`, `gh pr edit` and gh aliases for them                                       | `git push` (branches for CI, tags, release commits)                                |
+| `gh pr create` and gh aliases for it                                                        | `git push` (branches for CI, tags, release commits), `gh pr edit`                  |
 | `hub pull-request`, git-extras `git pull-request`, Git Town `git town propose`             | Stacking tools: Graphite, git-spice                                                |
 | Writes to GitHub's pulls API through `gh api`, `hub api`, curl, wget, HTTPie or PowerShell | API reads, state-only changes (closing a PR), other forges                         |
 | GraphQL `createPullRequest`, and the GitHub connector tools agents use                     | Calls made inside a script, or a GraphQL mutation read from a file (can't be seen) |

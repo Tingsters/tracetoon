@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","session_id":"sess-claude-2","cwd":"<fixture>/repo","tools":["Bash"],"skills":["tracetoon"]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"git push -u origin feature/greeting"}}]},"session_id":"sess-claude-2"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"branch 'feature/greeting' set up to track 'origin/feature/greeting'."}]},"session_id":"sess-claude-2"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"gh pr create --title \"Add greet helper\" --body \"Adds greet() with tests.\""}}]},"session_id":"sess-claude-2"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"https://github.com/acme/demo/pull/1"}]},"session_id":"sess-claude-2"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Created https://github.com/acme/demo/pull/1."}]},"session_id":"sess-claude-2"}
+{"type":"result","subtype":"success","is_error":false,"num_turns":3,"total_cost_usd":0.05,"usage":{"input_tokens":10,"output_tokens":100},"session_id":"sess-claude-2"}

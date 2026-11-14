@@ -372,6 +372,74 @@ describe('Antigravity adapter', () => {
     });
   });
 
+  test('CLI 1.5.8 write_file edits are captured without a CODE_ACTION record', () => {
+    // Antigravity CLI 1.5.8 renamed the tool to `write_file` with `Path`/`Content`,
+    // and its transcripts carry no CODE_ACTION record to confirm the edit against.
+    const s = session();
+    s.agent = 'antigravity-cli';
+    parseAntigravityLines(
+      jsonl([
+        {
+          step_index: 0,
+          type: 'USER_INPUT',
+          created_at: T(0),
+          content: 'Create agy.py that prints agy, then run it.',
+        },
+        {
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(1),
+          source: 'MODEL',
+          tool_calls: [
+            {
+              name: 'write_file',
+              args: { Path: '/repo/agy.py', Content: 'print("agy")\n' },
+            },
+          ],
+        },
+        {
+          step_index: 2,
+          type: 'GENERIC',
+          created_at: T(2),
+          source: 'MODEL',
+          status: 'DONE',
+          content: 'Created At: x\nCompleted At: y\nCreated file.',
+        },
+        {
+          step_index: 3,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(3),
+          source: 'MODEL',
+          tool_calls: [{ name: 'run_command', args: { CommandLine: 'python3 agy.py' } }],
+        },
+        {
+          step_index: 4,
+          type: 'GENERIC',
+          created_at: T(4),
+          source: 'MODEL',
+          status: 'DONE',
+          content:
+            'Created At: x\nCompleted At: y\nCommand exited with code 0.\n\nCommand output:\nagy\r\n',
+        },
+      ]),
+      s,
+      { history: [] },
+    );
+    const edits = s.records.filter((r) => r.kind === 'edit') as any[];
+    expect(
+      edits.map((e) => [
+        e.file.replace(/\\/g, '/').replace(/^[A-Z]:/, ''),
+        e.added,
+        e.created,
+      ]),
+    ).toEqual([['/repo/agy.py', ['print("agy")'], true]]);
+    expect(s.records.find((r) => r.kind === 'command')).toMatchObject({
+      cmd: 'python3 agy.py',
+      isError: false,
+      output: 'agy',
+    });
+  });
+
   test('helpers', () => {
     expect(cleanUserContent('<USER_REQUEST>hi</USER_REQUEST>')).toBe('hi');
     expect(unwrapArg('"\\"C:\\\\\\\\x\\""')).toBe('"C:\\\\x"');

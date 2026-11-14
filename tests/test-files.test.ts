@@ -6,9 +6,29 @@ import {
   readTestTimes,
   runTestFiles,
   sourceTestFiles,
+  workersFor,
   writeTestTimes,
 } from '../scripts/test-files.ts';
 import { makeRepo, tempDir } from './helpers.ts';
+
+test('worker count follows the machine, leaving CI runners as they were', () => {
+  // A CI macOS runner has 3-4 cores; it keeps the one-at-a-time behaviour the
+  // pinned Bun's subprocess-heavy suites needed. A developer Mac has cores to
+  // spare and runs them in parallel like Linux.
+  expect(workersFor('darwin', 3, {})).toBe(1);
+  expect(workersFor('darwin', 4, {})).toBe(1);
+  expect(workersFor('darwin', 10, {})).toBe(4);
+  // Linux and Windows are unchanged.
+  expect(workersFor('linux', 4, {})).toBe(4);
+  expect(workersFor('linux', 2, {})).toBe(4);
+  expect(workersFor('win32', 16, {})).toBe(2);
+  // An explicit override wins everywhere, so a flake can be pinned to one.
+  expect(workersFor('darwin', 10, { TRACETOON_TEST_WORKERS: '1' })).toBe(1);
+  expect(workersFor('linux', 4, { TRACETOON_TEST_WORKERS: '8' })).toBe(8);
+  // Nonsense values fall back to the computed count rather than breaking the run.
+  expect(workersFor('darwin', 10, { TRACETOON_TEST_WORKERS: '0' })).toBe(4);
+  expect(workersFor('darwin', 10, { TRACETOON_TEST_WORKERS: 'many' })).toBe(4);
+});
 
 test('each test file gets a new process even when there is only one worker slot', async () => {
   const root = tempDir('tracetoon-test-processes-');
