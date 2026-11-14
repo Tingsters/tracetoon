@@ -11,6 +11,11 @@ import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/tr
 import { parseKiroLines } from '../src/integrations/kiro/trace.ts';
 import { parseClineMessages } from '../src/integrations/cline/trace.ts';
 import {
+  changedLines,
+  juniePrompts,
+  parseJunieEvents,
+} from '../src/integrations/junie/trace.ts';
+import {
   parseCopilotCliLines,
   parseVscodeChat,
   replayChatSession,
@@ -997,5 +1002,148 @@ describe('Cline adapter', () => {
       }),
     ]);
     expect(s.records[0]).not.toHaveProperty('pending');
+  });
+});
+
+describe('Junie adapter', () => {
+  // Shapes recorded from Junie 26.11.1 (paths scrubbed).
+  const ev = (ms: number, agentEvent: Record<string, unknown>) => ({
+    kind: 'SessionA2uxEvent',
+    event: {
+      state: 'IN_PROGRESS',
+      agentEvent: { agent: { kind: 'MainAgent' }, ...agentEvent },
+    },
+    timestampMs: ms,
+  });
+  test('keeps the last completed version of each step: edits, commands and the result', () => {
+    const s = session('session-1');
+    const created = {
+      afterContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n',
+      },
+      afterAbsolutePath: '/repo/calc.py',
+    };
+    const edited = {
+      beforeContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n',
+      },
+      afterContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n',
+      },
+      afterAbsolutePath: '/repo/calc.py',
+    };
+    parseJunieEvents(
+      jsonl([
+        { kind: 'TaskStartedEvent', taskId: 't', timestampMs: 1794620500888 },
+        ev(1794620501588, { kind: 'LlmResponseMetadataEvent', modelUsage: [] }),
+        ev(1794620505457, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'IN_PROGRESS',
+          changes: [created],
+        }),
+        ev(1794620505500, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'COMPLETED',
+          changes: [created],
+        }),
+        ev(1794620506000, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'b',
+          status: 'COMPLETED',
+          changes: [edited],
+        }),
+        ev(1794620514854, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'c',
+          status: 'IN_PROGRESS',
+          command: 'git commit -m calc',
+        }),
+        ev(1794620515000, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'c',
+          status: 'COMPLETED',
+          command: 'git commit -m calc',
+          output: '[feature 6e3ec0c] calc',
+          exitCode: 0,
+        }),
+        ev(1794620516000, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'd',
+          status: 'COMPLETED',
+          command: 'npm test',
+          exitCode: 1,
+        }),
+        ev(1794620525389, {
+          kind: 'ResultBlockUpdatedEvent',
+          stepId: 'r',
+          cancelled: false,
+          result: 'Created calc.py.',
+        }),
+        // Junie repeats finished blocks at the end of the log.
+        ev(1794620526000, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'COMPLETED',
+          changes: [created],
+        }),
+        ev(1794620526100, { kind: 'BrandNewEvent' }),
+        { kind: 'TaskState', state: 'COMPLETED', timestampMs: 1794620525453 },
+      ]),
+      s,
+      '/repo',
+      ['Create calc.py with add and sub.'],
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py with add and sub.',
+      ts: '2026-11-14T01:41:40.888Z',
+    });
+    expect(s.records[1]).toMatchObject({
+      created: true,
+      added: ['def add(a, b):', '    return a + b'],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: [],
+      added: ['', 'def sub(a, b):', '    return a - b'],
+    });
+    expect(s.records[3]).toMatchObject({
+      cmd: 'git commit -m calc',
+      output: '[feature 6e3ec0c] calc',
+    });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ BrandNewEvent: 1 });
+  });
+
+  test('reads the prompts from the state blob, oldest first', () => {
+    const blob = JSON.stringify({
+      previousPromptDescriptions: ['First ask.'],
+      lastAgentState: { issue: { name: 'Issue Task', description: 'Second ask.' } },
+    });
+    expect(juniePrompts(JSON.stringify({ event: { agentEvent: { blob } } }))).toEqual([
+      'First ask.',
+      'Second ask.',
+    ]);
+    expect(juniePrompts('not json')).toEqual([]);
+  });
+
+  test('changedLines keeps only the lines between the shared start and end', () => {
+    expect(changedLines('a\nb\nc\n', 'a\nB\nc\n')).toEqual({
+      removed: ['b'],
+      added: ['B'],
+    });
+    expect(changedLines('', 'x\n')).toEqual({ removed: [], added: ['x'] });
   });
 });

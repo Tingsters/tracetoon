@@ -118,6 +118,15 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     iteration: 1,
     tool_call: { id: 'call_1', name: 'run_commands', input: { commands: [command] } },
   }),
+  // Recorded from Junie 26.11.1 on Windows (cwd is Junie's folder; the repo is project_path).
+  junie: (command, cwd) => ({
+    hook_event_name: 'PreToolUse',
+    session_id: 'session-261113-174344-4lpz',
+    cwd: 'C:\Users\me\.junie',
+    project_path: cwd,
+    tool_name: 'powershell',
+    tool_input: { command, timeout: 30 },
+  }),
   // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
   kiro: (command, cwd) => ({
     session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',
