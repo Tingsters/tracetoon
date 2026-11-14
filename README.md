@@ -310,9 +310,10 @@ mascots and no recurring cast.
 - **Proofread.** An image model you choose draws the whole page, lettering
   included. `comic render` prints every word for the agent to proofread, and
   adds a small "made with Tracetoon" footer bar.
-- **It respects the repo.** Where contributing rules forbid images in PRs,
-  Tracetoon skips the comic and tells you why. `comic always` overrides that;
-  `comic off` turns comics off.
+- **It respects the repo.** With the default `comic allowed`, Tracetoon
+  follows the repo's own `comic` setting and skips the comic where its
+  contributing rules forbid images in PRs, saying why. Your `comic always`
+  overrides the repo; your `comic off` turns comics off everywhere.
 - **Never a blocker.** Without an approved image route, or if drawing fails,
   the PR is created without a comic, and the message after the PR says why.
 
@@ -403,12 +404,11 @@ Any "off" wins:
 
 `tracetoon status` shows whether it's on here and which setting decided.
 
-Just the comics: `tracetoon config set comic off` for you everywhere, or
-`"comic": "off"` in `.github/tracetoon.json` for everyone in this repo. Unlike
-the switches above, a repo's `comic` setting replaces yours either way. For a
-single PR, ask your agent to skip the comic. To bring them back, use `allowed`
-(the default: a comic unless the repo's rules forbid images in PRs) or
-`always`.
+Just the comics: your setting decides. `tracetoon config set comic off` means
+never and `always` means every PR. `allowed` (the default) does what each repo
+asks: its `"comic"` value in `.github/tracetoon.json`, and otherwise no comic
+where its rules forbid images in PRs. For a single PR, ask your agent to skip
+the comic.
 
 ---
 
@@ -659,7 +659,7 @@ Windows; override with `TRACETOON_CONFIG`). A repo can set shared defaults in
 | Key             | Default       | Meaning                                                                                                   |
 | --------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
 | `enabled`       | `true`        | Use Tracetoon for PRs (also `tracetoon on`/`off`)                                                         |
-| `comic`         | `allowed`     | `off`, `allowed` (unless the repo forbids images in PRs) or `always`. `true`/`false` mean `allowed`/`off` |
+| `comic`         | `allowed`     | `off`, `allowed` (follow the repo) or `always`; yours beats the repo's unless `allowed`. `true`/`false` mean `allowed`/`off` |
 | `style`         | `auto`        | Pin one art style for every comic (an idea from `references/styles.md` or any description)                |
 | `promptQuoting` | `paraphrase`  | `verbatim` quotes your prompts in the PR                                                                  |
 | `disclosure`    | `assisted-by` | Disclosure style (a repo's AI policy can ask for another)                                                 |
