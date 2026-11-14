@@ -403,6 +403,11 @@ Any "off" wins:
 
 `tracetoon status` shows whether it's on here and which setting decided.
 
+Just the comics: `tracetoon config set comic off` for you everywhere, or
+`"comic": "off"` in `.github/tracetoon.json` for everyone in this repo (the
+repo setting wins). For a single PR, ask your agent to skip the comic.
+`allowed` (the default) or `always` turns them back on.
+
 ---
 
 ## 🔧 Under the hood: from session logs to a reviewed PR
