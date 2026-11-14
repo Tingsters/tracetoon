@@ -1,6 +1,8 @@
 ---
 name: tracetoon
 description: Create a GitHub PR with a description and optional comic written from agent session logs. Use for PR creation requests or when a hook redirects PR creation here. Also use when the user explicitly requests Tracetoon to describe or update an existing PR. Ordinary PR edits, coding tasks, planning, questions and mentions of Tracetoon do not start this workflow.
+license: Apache-2.0
+compatibility: Requires git and the GitHub CLI (gh) signed in; macOS, Linux or Windows.
 ---
 
 # Tracetoon: PR descriptions and comics from agent traces
