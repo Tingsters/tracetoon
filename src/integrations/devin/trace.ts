@@ -22,6 +22,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 import { openReadOnly } from '../../util/sqlite.ts';
 
 type Obj = Record<string, any>;
@@ -93,6 +94,8 @@ export function parseDevinChain(
     for (const call of Array.isArray(m.tool_calls) ? m.tool_calls.filter(isObj) : []) {
       const args = isObj(call.arguments) ? call.arguments : {};
       const name = str(call.name) ?? '';
+
+      sawToolCall(into);
       const file = str(args.file_path) ?? str(args.path);
       const at = (f: string) => resolve(cwd ?? '.', f);
       if (name === 'exec' && str(args.command)) {
@@ -124,8 +127,7 @@ export function parseDevinChain(
           cwd,
         });
       } else if (!QUIET.has(name)) {
-        const t = `tool:${name || '?'}`;
-        into.unknownTypes[t] = (into.unknownTypes[t] ?? 0) + 1;
+        sawUnknownTool(into, name);
       }
     }
   }

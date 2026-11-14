@@ -24,6 +24,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 import { openReadOnly } from '../../util/sqlite.ts';
 
 type Obj = Record<string, any>;
@@ -103,6 +104,8 @@ export function parseCrushMessages(
           /* a partial call */
         }
         const name = str(d.name) ?? '';
+
+        sawToolCall(into);
         const file = str(input.file_path);
         const at = (f: string) => resolve(cwd ?? '.', f);
         if (name === 'bash' && str(input.command)) {
@@ -144,8 +147,7 @@ export function parseCrushMessages(
               cwd,
             });
         } else if (!QUIET.has(name)) {
-          const t = `tool:${name || '?'}`;
-          into.unknownTypes[t] = (into.unknownTypes[t] ?? 0) + 1;
+          sawUnknownTool(into, name);
         }
       } else if (p.type === 'tool_result') {
         const record = str(d.tool_call_id) ? pending.get(d.tool_call_id) : undefined;
