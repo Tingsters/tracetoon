@@ -21,6 +21,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type Obj = Record<string, any>;
 type CommandRecord = Extract<TraceRecord, { kind: 'command' }>;
@@ -117,6 +118,8 @@ export function parseQwenLines(content: string, into: TraceSession): void {
       const call = p.functionCall;
       if (!isObj(call)) continue;
       const name = str(call.name) ?? '';
+
+      sawToolCall(into);
       const args = isObj(call.args) ? call.args : {};
       const file = str(args.file_path) ?? str(args.path);
       const at = (f: string) => resolve(cwd ?? '.', f);
@@ -152,8 +155,7 @@ export function parseQwenLines(content: string, into: TraceSession): void {
           branch,
         });
       } else if (!QUIET.has(name)) {
-        const t = `tool:${name || '?'}`;
-        into.unknownTypes[t] = (into.unknownTypes[t] ?? 0) + 1;
+        sawUnknownTool(into, name);
       }
     }
   }

@@ -63,21 +63,76 @@ function atLeast(v: string | undefined, min: string): boolean {
   return true;
 }
 
-/** Unknown record types in each agent's most recent sessions: early warning of format changes. */
-function probe(limit = 15): Record<string, Record<string, number>> {
-  const out: Record<string, Record<string, number>> = {};
+/**
+ * Tool calls an adapter must have converted before silence means anything. Below
+ * this, a corpus of short or read-only sessions says nothing either way.
+ */
+export const DRIFT_MIN_TOOL_CALLS = 10;
+
+/**
+ * Whether an adapter stopped turning tool use into evidence.
+ *
+ * Both kinds must be missing, not either: a session that only ran tests makes no
+ * edits, and one that only wrote files runs no commands. Requiring both to be
+ * zero, over a corpus rather than a single session, is what separates a reader
+ * that broke from a user who happened to be reading code.
+ */
+export function readerLostEvidence(p: {
+  toolCalls: number;
+  edits: number;
+  commands: number;
+}): boolean {
+  return p.toolCalls >= DRIFT_MIN_TOOL_CALLS && !p.edits && !p.commands;
+}
+
+export interface ProbeResult {
+  /** Record types this adapter did not recognize, with counts. */
+  unknownTypes: Record<string, number>;
+  /** Tool calls the adapter walked past across the sampled sessions. */
+  toolCalls: number;
+  edits: number;
+  commands: number;
+  /** Names of tool calls no branch converted. Diagnostic; see drift below. */
+  unknownTools: Record<string, number>;
+  /**
+   * The adapter saw real tool use and turned none of it into evidence. A host
+   * renaming a tool looks exactly like this, and unlike a list of known names it
+   * cannot go stale as hosts add tools.
+   */
+  drift: boolean;
+}
+
+/** What each agent's most recent sessions say about the reader: early warning of format changes. */
+function probe(limit = 15): Record<string, ProbeResult> {
+  const out: Record<string, ProbeResult> = {};
   for (const a of ADAPTERS) {
     if (!a.home()) continue;
     const refs = a
       .discover({ roots: [], sinceMs: 0, all: true })
       .sort((x, y) => y.mtimeMs - x.mtimeMs)
       .slice(0, limit);
-    const unknown: Record<string, number> = {};
+    const r: ProbeResult = {
+      unknownTypes: {},
+      toolCalls: 0,
+      edits: 0,
+      commands: 0,
+      unknownTools: {},
+      drift: false,
+    };
     for (const ref of refs) {
-      for (const [k, v] of Object.entries(a.read(ref).unknownTypes))
-        unknown[k] = (unknown[k] ?? 0) + v;
+      const s = a.read(ref);
+      for (const [k, v] of Object.entries(s.unknownTypes))
+        r.unknownTypes[k] = (r.unknownTypes[k] ?? 0) + v;
+      for (const [k, v] of Object.entries(s.unknownTools ?? {}))
+        r.unknownTools[k] = (r.unknownTools[k] ?? 0) + v;
+      r.toolCalls += s.toolCalls ?? 0;
+      for (const rec of s.records) {
+        if (rec.kind === 'edit') r.edits++;
+        else if (rec.kind === 'command') r.commands++;
+      }
     }
-    out[a.id] = unknown;
+    r.drift = readerLostEvidence(r);
+    out[a.id] = r;
   }
   return out;
 }
@@ -252,7 +307,7 @@ type Found = {
   prHook: { label: string; installed: boolean; problem?: string }[];
   update: { available: boolean; latest: string | null };
   evidenceGraph: { ok: boolean; reason?: string };
-  unknownRecordTypes?: Record<string, Record<string, number>>;
+  unknownRecordTypes?: Record<string, ProbeResult>;
 };
 
 /** The pass/fail list agents read from `doctor --json`, built from what doctor found. */
@@ -368,9 +423,8 @@ function doctorChecks(
       : `evidence graph unavailable: ${report.evidenceGraph.reason ?? 'unknown reason'}`,
   });
   if (report.unknownRecordTypes) {
-    const unknown = Object.entries(report.unknownRecordTypes).filter(
-      ([, t]) => Object.keys(t).length,
-    );
+    const entries = Object.entries(report.unknownRecordTypes);
+    const unknown = entries.filter(([, p]) => Object.keys(p.unknownTypes).length);
     add({
       id: 'record-types',
       ok: !unknown.length,
@@ -378,6 +432,20 @@ function doctorChecks(
       message: unknown.length
         ? `unknown log record types for ${unknown.map(([a]) => a).join(', ')}`
         : 'all log record types recognized',
+    });
+    const drifted = entries.filter(([, p]) => p.drift);
+    add({
+      id: 'reader-evidence',
+      ok: !drifted.length,
+      severity: 'warn',
+      message: drifted.length
+        ? `no edits or commands read from recent sessions for ${drifted
+            .map(([a]) => a)
+            .join(', ')}; the host may have renamed a tool`
+        : 'readers turned recent tool use into evidence',
+      fix: drifted.length
+        ? 'Compare a recent session against the adapter in src/integrations/<host>/trace.ts.'
+        : undefined,
     });
   }
   return checks;
@@ -410,11 +478,21 @@ export function doctor(
       ),
     ];
     if (report.unknownRecordTypes) {
-      for (const [agent, types] of Object.entries(report.unknownRecordTypes)) {
-        const list = Object.entries(types).map(([k, v]) => `${k} x${v}`);
+      for (const [agent, p] of Object.entries(report.unknownRecordTypes)) {
+        const list = Object.entries(p.unknownTypes).map(([k, v]) => `${k} x${v}`);
         lines.push(
           `  ${agent}: ${list.length ? `unknown record types: ${list.join(', ')}` : 'all record types recognized'}`,
         );
+        if (p.drift) {
+          const suspects = Object.entries(p.unknownTools)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 4)
+            .map(([k, v]) => `${k} x${v}`);
+          lines.push(
+            `  ${agent}: ${p.toolCalls} tool calls but no edits or commands; the host may have renamed a tool` +
+              (suspects.length ? ` (unconverted: ${suspects.join(', ')})` : ''),
+          );
+        }
       }
     }
     lines.push(
@@ -472,7 +550,10 @@ export function doctor(
   });
   const unknown = report.unknownRecordTypes ?? {};
   if (opts.probe) {
-    if (opts.strict && Object.values(unknown).some((t) => Object.keys(t).length))
+    if (
+      opts.strict &&
+      Object.values(unknown).some((p) => Object.keys(p.unknownTypes).length || p.drift)
+    )
       process.exitCode = 5;
   } else if (opts.strict && !full.ok) process.exitCode = DOCTOR_STRICT_EXIT;
 }

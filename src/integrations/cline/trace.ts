@@ -21,6 +21,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type Obj = Record<string, any>;
 type CommandRecord = Extract<TraceRecord, { kind: 'command' }>;
@@ -89,6 +90,8 @@ export function parseClineMessages(
       } else if (b.type === 'tool_use' && isObj(b.input)) {
         const input = b.input;
         const name = str(b.name) ?? '';
+
+        sawToolCall(into);
         if (name === 'editor' && str(input.path)) {
           const file = resolve(cwd ?? '.', input.path);
           const created = !str(input.old_text);
@@ -130,8 +133,7 @@ export function parseClineMessages(
           into.records.push(record);
           if (str(b.id)) pending.set(b.id, [record]);
         } else if (!QUIET.has(name)) {
-          into.unknownTypes[`tool:${name}`] =
-            (into.unknownTypes[`tool:${name}`] ?? 0) + 1;
+          sawUnknownTool(into, name);
         }
       } else if (b.type === 'tool_result') {
         const records = str(b.tool_use_id) ? pending.get(b.tool_use_id) : undefined;

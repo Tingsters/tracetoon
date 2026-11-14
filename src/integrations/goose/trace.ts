@@ -22,6 +22,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 import { openReadOnly } from '../../util/sqlite.ts';
 
 type Obj = Record<string, any>;
@@ -96,6 +97,8 @@ export function parseGooseMessages(
         const call = b.toolCall?.value;
         if (!isObj(call)) continue;
         const name = str(call.name) ?? '';
+
+        sawToolCall(into);
         const args = isObj(call.arguments) ? call.arguments : {};
         const file = str(args.path);
         const at = (f: string) => resolve(cwd ?? '.', f);
@@ -128,8 +131,7 @@ export function parseGooseMessages(
             cwd,
           });
         } else if (!QUIET.has(name)) {
-          const t = `tool:${name || '?'}`;
-          into.unknownTypes[t] = (into.unknownTypes[t] ?? 0) + 1;
+          sawUnknownTool(into, name);
         }
       } else if (b.type === 'toolResponse') {
         const record = str(b.id) ? pending.get(b.id) : undefined;

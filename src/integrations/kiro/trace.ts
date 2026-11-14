@@ -24,6 +24,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type CommandRecord = Extract<TraceRecord, { kind: 'command' }>;
 
@@ -87,6 +88,7 @@ export function parseKiroLines(content: string, into: TraceSession, cwd?: string
       }
       case 'tool_call': {
         const name = str(p.toolName) ?? '';
+        sawToolCall(into);
         const args = isObj(p.args) ? p.args : {};
         // A call the user or a hook refused never ran.
         if (p.status === 'denied' || p.status === 'rejected') break;
@@ -121,6 +123,8 @@ export function parseKiroLines(content: string, into: TraceSession, cwd?: string
             ts,
             cwd,
           });
+        } else {
+          sawUnknownTool(into, name);
         }
         break;
       }

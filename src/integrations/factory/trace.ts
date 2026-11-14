@@ -15,6 +15,7 @@ import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
 import { headTail, parseApplyPatch, splitLines } from '../../trace/diffLines.ts';
 import { discoveryIndex } from '../../trace/discovery.ts';
 import type { SessionRef, TraceAdapter, TraceSession } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj =>
@@ -131,9 +132,15 @@ export function parseFactoryLines(content: string, into: TraceSession): void {
       }
       if (p.type === 'tool_result' && str(p.tool_use_id)) {
         const call = calls.get(str(p.tool_use_id)!);
-        if (!call || SKIPPED_TOOLS.has(call.name)) continue;
+        if (!call) continue;
+        sawToolCall(into);
+        if (SKIPPED_TOOLS.has(call.name)) continue;
         calls.delete(str(p.tool_use_id)!);
+        // A call this adapter still maps produces at least one record; one that
+        // produces none is either a failure or a tool whose shape moved.
+        const had = into.records.length;
         record(into, call, p, cwd);
+        if (into.records.length === had) sawUnknownTool(into, call.name);
       }
     }
   }

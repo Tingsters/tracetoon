@@ -440,6 +440,70 @@ describe('Antigravity adapter', () => {
     });
   });
 
+  test('a renamed write tool leaves tool calls with no evidence behind them', () => {
+    // The shape that shipped broken: Antigravity CLI 1.5.8 renamed write_to_file
+    // to write_file, so this adapter built nothing from a session that plainly
+    // wrote a file. Record types alone looked fine, which is why it went unseen.
+    // The counters are what make that visible without knowing any tool name.
+    const s = session();
+    s.agent = 'antigravity-cli';
+    parseAntigravityLines(
+      jsonl([
+        { step_index: 0, type: 'USER_INPUT', created_at: T(0), content: 'Write a file' },
+        {
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(1),
+          source: 'MODEL',
+          tool_calls: [
+            {
+              name: 'some_future_write_tool',
+              args: { Path: '/repo/a.py', Content: 'x' },
+            },
+          ],
+        },
+      ]),
+      s,
+      { history: [] },
+    );
+    expect(s.toolCalls).toBe(1);
+    expect(s.unknownTools).toEqual({ some_future_write_tool: 1 });
+    // No record type was unrecognised, so the old signal stays silent.
+    expect(s.unknownTypes).toEqual({});
+    expect(s.records.some((r) => r.kind === 'edit' || r.kind === 'command')).toBe(false);
+  });
+
+  test('a handled tool still counts, and reports nothing unconverted', () => {
+    const s = session();
+    s.agent = 'antigravity-cli';
+    parseAntigravityLines(
+      jsonl([
+        {
+          step_index: 0,
+          type: 'PLANNER_RESPONSE',
+          created_at: T(0),
+          source: 'MODEL',
+          tool_calls: [
+            { name: 'write_file', args: { Path: '/repo/a.py', Content: 'x' } },
+          ],
+        },
+        {
+          step_index: 1,
+          type: 'GENERIC',
+          created_at: T(1),
+          source: 'MODEL',
+          status: 'DONE',
+          content: 'Created file.',
+        },
+      ]),
+      s,
+      { history: [] },
+    );
+    expect(s.toolCalls).toBe(1);
+    expect(s.unknownTools ?? {}).toEqual({});
+    expect(s.records.filter((r) => r.kind === 'edit')).toHaveLength(1);
+  });
+
   test('helpers', () => {
     expect(cleanUserContent('<USER_REQUEST>hi</USER_REQUEST>')).toBe('hi');
     expect(unwrapArg('"\\"C:\\\\\\\\x\\""')).toBe('"C:\\\\x"');
@@ -1374,7 +1438,10 @@ describe('Devin adapter', () => {
     expect(s.records[3]).toMatchObject({ cmd: 'git commit -m calc', cwd: '/repo' });
     expect(s.records[3]).not.toHaveProperty('isError');
     expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
-    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+    // An unhandled tool name is diagnostic now, not an unknown record type:
+    // a host adding a tool must not read as log-format drift.
+    expect(s.unknownTypes).toEqual({});
+    expect(s.unknownTools).toEqual({ teleport: 1 });
   });
 });
 
@@ -1589,7 +1656,10 @@ describe('Qwen Code adapter', () => {
     });
     expect(s.records[4]).not.toHaveProperty('isError');
     expect(s.records[5]).toMatchObject({ cmd: 'gh pr create --fill', isError: true });
-    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+    // An unhandled tool name is diagnostic now, not an unknown record type:
+    // a host adding a tool must not read as log-format drift.
+    expect(s.unknownTypes).toEqual({});
+    expect(s.unknownTools).toEqual({ teleport: 1 });
   });
 
   test('commandOutput keeps plain output as it is', () => {
