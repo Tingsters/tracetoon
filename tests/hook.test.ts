@@ -441,6 +441,7 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.config', 'kilo'), { recursive: true });
     mkdirSync(join(h, '.kiro'), { recursive: true });
     mkdirSync(join(h, '.cline'), { recursive: true });
+    mkdirSync(join(h, '.junie'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -479,9 +480,11 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -542,6 +545,12 @@ describe('installing the hook', () => {
     expect(readFileSync(join(h, '.cline', 'hooks', 'TaskStart.mjs'), 'utf8')).toContain(
       '"--event","SessionStart"',
     );
+    // Junie's config.json takes Claude-style groups; its shell tool is Bash or powershell.
+    const junie = JSON.parse(readFileSync(join(h, '.junie', 'config.json'), 'utf8'));
+    expect(junie.hooks.PreToolUse[0]).toMatchObject({
+      matcher: 'Bash|powershell',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent junie' }],
+    });
     // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
     const kiro = JSON.parse(
       readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
@@ -573,9 +582,11 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -595,6 +606,7 @@ describe('installing the hook', () => {
     expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
     expect(existsSync(join(h, '.cursor', 'hooks.json'))).toBe(false);
     expect(existsSync(join(h, '.kiro', 'hooks', 'tracetoon.json'))).toBe(false);
+    expect(existsSync(join(h, '.junie', 'config.json'))).toBe(false);
     for (const name of ['PreToolUse.mjs', 'PostToolUse.mjs', 'TaskStart.mjs'])
       expect(existsSync(join(h, '.cline', 'hooks', name))).toBe(false);
     expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
@@ -672,6 +684,7 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
       'not installed',
       'not installed',
       'not installed',
