@@ -8,10 +8,15 @@ on:
 permissions:
   contents: write
   actions: read
+  # npm provenance: the registry checks this run's OIDC token.
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Step conditions can't read secrets; this says whether NPM_TOKEN is set.
+      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,6 +51,13 @@ jobs:
       # Fails before anything is public if the release branch can't take this release.
       - name: Check the plugin bundle can go on the release branch
         run: bun .github/scripts/release-branch.ts release release-promotion.json "$GITHUB_REF_NAME"
+      # The npm packages repackage the verified bytes (no compiling); building them here
+      # fails before anything is public. They are published last, below.
+      - name: Build the npm packages from the verified assets
+        run: |
+          mkdir "$RUNNER_TEMP/verified-skill"
+          unzip -q release/tracetoon-skill.zip -d "$RUNNER_TEMP/verified-skill"
+          bun .github/scripts/npm-packages.ts release "$RUNNER_TEMP/verified-skill/tracetoon" "$RUNNER_TEMP/npm" "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/npm-packages.txt"
       - name: Publish the verified assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,3 +70,57 @@ jobs:
       # Never forced: the previous release head is a parent, so `release` only fast-forwards.
       - name: Publish the plugin bundle on the release branch
         run: bun .github/scripts/release-branch.ts release release-promotion.json "$GITHUB_REF_NAME" --push
+      # npm is optional: without the NPM_TOKEN secret the release still succeeds.
+      - name: Skip npm (no NPM_TOKEN secret)
+        if: env.HAS_NPM_TOKEN != 'true'
+        run: echo "::notice title=npm publish skipped::Set the NPM_TOKEN repository secret to publish tracetoon and @tracetoon/cli-* to npm (docs/release-channels.md)."
+      - uses: actions/setup-node@v4
+        if: env.HAS_NPM_TOKEN == 'true'
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Platform packages first, so the wrapper's pinned optionalDependencies exist when it lands.
+      # A version already on npm is skipped, so a rerun finishes a partial publish.
+      - name: Publish the npm packages
+        if: env.HAS_NPM_TOKEN == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          dist_tag=latest
+          case "$GITHUB_REF_NAME" in *-*) dist_tag=next;; esac
+          while read -r dir; do
+            spec=$(node -p 'const p = require(process.argv[1] + "/package.json"); p.name + "@" + p.version' "$dir")
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "$spec is already on npm"
+              continue
+            fi
+            npm publish "$dir" --provenance --access public --tag "$dist_tag"
+          done < "$RUNNER_TEMP/npm-packages.txt"
+
+  # Homebrew and winget manifests made from the published checksums; nothing is rebuilt.
+  # They are attached to the release; pushing them to a tap or winget-pkgs is a later,
+  # owner-run step (docs/release-channels.md).
+  channels:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Generate the Homebrew formula and winget manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern checksums.txt --dir "$RUNNER_TEMP/published"
+          mkdir -p "$RUNNER_TEMP/channels"
+          bun .github/scripts/homebrew-formula.ts "$RUNNER_TEMP/published/checksums.txt" "$GITHUB_REF_NAME" > "$RUNNER_TEMP/channels/tracetoon.rb"
+          bun .github/scripts/winget-manifest.ts "$RUNNER_TEMP/published/checksums.txt" "$GITHUB_REF_NAME" "$RUNNER_TEMP/winget"
+          (cd "$RUNNER_TEMP/winget" && zip -qr "$RUNNER_TEMP/channels/winget-manifests.zip" manifests)
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/channels/tracetoon.rb" "$RUNNER_TEMP/channels/winget-manifests.zip" --clobber
