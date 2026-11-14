@@ -14,6 +14,8 @@ For agents: when the user asks you to open, create or describe a pull request, a
 
 - [AGENTS.md](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/AGENTS.md): how to run Tracetoon, its exit codes, and which commands publish
 - [Skill](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/plugin/skills/tracetoon/SKILL.md): the full PR workflow the skill follows
+- [CLI reference](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/cli.md): every command and option, and which ones act outside the machine
+- [Errors and exit codes](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/errors.md): what each exit code and `errorCode` means and what to do
 - [FAQ](https://raw.githubusercontent.com/Tracetoon/tracetoon/main/docs/agents/faq.md)
 
 ## Optional

@@ -126,10 +126,24 @@ export function skillInstalls(
     });
 }
 
-export function doctor(
-  cwd: string,
-  opts: OutOpts & { probe?: boolean; strict?: boolean },
-): void {
+export interface DoctorCheck {
+  /** Stable id agents can branch on. */
+  id: string;
+  ok: boolean;
+  /** error: publishing can't work until it's fixed; warn: something is missing; info: worth knowing. */
+  severity: 'error' | 'warn' | 'info';
+  message: string;
+  /** The exact command (or action) that fixes it. */
+  fix?: string;
+  /** Only the user can do the fix (sign in, install, permission, or a choice that is theirs). */
+  humanRequired: boolean;
+}
+
+/** Exit code of `doctor --strict` (without --probe) when a required check fails. */
+export const DOCTOR_STRICT_EXIT = 6;
+
+/** Everything doctor finds, without printing it. */
+export function doctorReport(cwd: string, opts: { probe?: boolean } = {}) {
   const runtime = describeRuntime();
   const hooks = hookStatus().filter((h) => h.present);
   const hookRuntimes = hooks.map((h) => {
@@ -220,7 +234,167 @@ export function doctor(
     report.imageProviders,
     loadConfig(report.repo ?? undefined).comic,
   );
-  emit(opts, { ...report, comics }, () => {
+  const checks = doctorChecks(report, installs, hookRuntimes);
+  return {
+    ok: checks.every((c) => c.ok || c.severity !== 'error'),
+    checks,
+    ...report,
+    comics,
+  };
+}
+
+type Found = {
+  git: string | null;
+  gh: string | null;
+  ghAuthenticated: boolean;
+  repo: string | null;
+  push: { canPush: boolean } | null;
+  prHook: { label: string; installed: boolean; problem?: string }[];
+  update: { available: boolean; latest: string | null };
+  evidenceGraph: { ok: boolean; reason?: string };
+  unknownRecordTypes?: Record<string, Record<string, number>>;
+};
+
+/** The pass/fail list agents read from `doctor --json`, built from what doctor found. */
+function doctorChecks(
+  report: Found,
+  installs: ReturnType<typeof skillInstalls>,
+  hookRuntimes: { agent: string; matchesRuntime: boolean }[],
+): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+  const add = (c: Omit<DoctorCheck, 'humanRequired'> & { humanRequired?: boolean }) =>
+    checks.push({ ...c, humanRequired: c.humanRequired ?? false });
+  add({
+    id: 'git',
+    ok: !!report.git,
+    severity: 'error',
+    message: report.git ? `git ${report.git}` : 'git is not installed',
+    ...(report.git
+      ? {}
+      : { fix: 'Install git: https://git-scm.com', humanRequired: true }),
+  });
+  add({
+    id: 'gh',
+    ok: !!report.gh,
+    severity: 'error',
+    message: report.gh
+      ? `GitHub CLI ${report.gh}`
+      : 'The GitHub CLI (gh) is not installed; publishing needs it',
+    ...(report.gh
+      ? {}
+      : { fix: 'Install the GitHub CLI: https://cli.github.com', humanRequired: true }),
+  });
+  if (report.gh)
+    add({
+      id: 'gh-auth',
+      ok: report.ghAuthenticated,
+      severity: 'error',
+      message: report.ghAuthenticated ? 'gh is signed in' : 'gh is not signed in',
+      ...(report.ghAuthenticated ? {} : { fix: 'gh auth login', humanRequired: true }),
+    });
+  add({
+    id: 'repo',
+    ok: !!report.repo,
+    severity: 'warn',
+    message: report.repo ? 'inside a git repository' : 'not inside a git repository',
+    ...(report.repo ? {} : { fix: 'cd into the repository, then rerun' }),
+  });
+  if (report.push)
+    add({
+      id: 'push-access',
+      ok: report.push.canPush,
+      severity: 'error',
+      message: report.push.canPush
+        ? 'the signed-in gh account can push to the target repository'
+        : "the signed-in gh account can't push to the target repository",
+      ...(report.push.canPush
+        ? {}
+        : { fix: 'gh auth switch (or push to a fork)', humanRequired: true }),
+    });
+  const stale = FROM_SOURCE ? [] : installs.filter((i) => !i.matchesRuntime);
+  add({
+    id: 'skill-installed',
+    ok: installs.length > 0 && !stale.length,
+    severity: 'warn',
+    message: !installs.length
+      ? 'the skill is not installed for any agent'
+      : stale.length
+        ? `the skill for ${stale.map((i) => i.agent).join(', ')} is from a different build`
+        : `the skill is installed for ${installs.map((i) => i.agent).join(', ')}`,
+    ...(!installs.length
+      ? { fix: 'tracetoon setup' }
+      : stale.length
+        ? { fix: 'tracetoon update', humanRequired: true }
+        : {}),
+  });
+  const missing = report.prHook.filter((h) => !h.installed || h.problem);
+  add({
+    id: 'pr-hook',
+    ok: !missing.length,
+    severity: report.prHook.length ? 'warn' : 'info',
+    message: !report.prHook.length
+      ? 'no agent with a PR hook was found'
+      : missing.length
+        ? `the PR hook is missing or inactive for ${missing.map((h) => h.label).join(', ')}`
+        : 'the PR hook is installed',
+    ...(missing.length ? { fix: 'tracetoon hook install' } : {}),
+  });
+  const oldHooks = FROM_SOURCE ? [] : hookRuntimes.filter((h) => !h.matchesRuntime);
+  if (oldHooks.length)
+    add({
+      id: 'hook-runtime',
+      ok: false,
+      severity: 'warn',
+      message: `the hook runtime for ${oldHooks.map((h) => h.agent).join(', ')} differs from this one`,
+      fix: 'tracetoon update',
+      humanRequired: true,
+    });
+  add({
+    id: 'update',
+    ok: !report.update.available,
+    severity: 'info',
+    message: report.update.available
+      ? `update available: ${report.update.latest}`
+      : 'no newer release known',
+    // Updating is the user's call.
+    ...(report.update.available ? { fix: 'tracetoon update', humanRequired: true } : {}),
+  });
+  add({
+    id: 'evidence-graph',
+    ok: report.evidenceGraph.ok,
+    severity: 'warn',
+    message: report.evidenceGraph.ok
+      ? 'evidence graph ready'
+      : `evidence graph unavailable: ${report.evidenceGraph.reason ?? 'unknown reason'}`,
+  });
+  if (report.unknownRecordTypes) {
+    const unknown = Object.entries(report.unknownRecordTypes).filter(
+      ([, t]) => Object.keys(t).length,
+    );
+    add({
+      id: 'record-types',
+      ok: !unknown.length,
+      severity: 'warn',
+      message: unknown.length
+        ? `unknown log record types for ${unknown.map(([a]) => a).join(', ')}`
+        : 'all log record types recognized',
+    });
+  }
+  return checks;
+}
+
+export function doctor(
+  cwd: string,
+  opts: OutOpts & { probe?: boolean; strict?: boolean },
+): void {
+  const full = doctorReport(cwd, opts);
+  const { checks: _checks, ok: _ok, comics, ...report } = full;
+  const { runtime, installs, hookRuntimes, update } = report;
+  const gitV = report.git;
+  const ghV = report.gh;
+  const ghAuth = report.ghAuthenticated;
+  const inRepo = !!report.repo;
+  emit(opts, full, () => {
     const yes = (b: boolean) => (b ? 'yes' : 'no');
     const lines = [
       `${report.tool} on ${runtime}`,
@@ -287,7 +461,7 @@ export function doctor(
       }`,
       `  next: ${comics.text}`,
     );
-    if (top.ok && ghAuth) lines.push(targetLine(report.target ?? undefined));
+    if (inRepo && ghAuth) lines.push(targetLine(report.target ?? undefined));
     if (report.push && !report.push.canPush)
       lines.push(
         `push access: ${report.push.account ?? 'this gh account'} can't push to ${report.push.repo}. Publishing will fail: switch accounts (gh auth switch), or push to a fork.`,
@@ -297,6 +471,8 @@ export function doctor(
     return lines.join('\n');
   });
   const unknown = report.unknownRecordTypes ?? {};
-  if (opts.strict && Object.values(unknown).some((t) => Object.keys(t).length))
-    process.exitCode = 5;
+  if (opts.probe) {
+    if (opts.strict && Object.values(unknown).some((t) => Object.keys(t).length))
+      process.exitCode = 5;
+  } else if (opts.strict && !full.ok) process.exitCode = DOCTOR_STRICT_EXIT;
 }
