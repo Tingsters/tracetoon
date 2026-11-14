@@ -62,8 +62,10 @@ bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
 
 - Layout and how to add an agent host: [CONTRIBUTING.md](CONTRIBUTING.md).
 - `src/integrations/registry.ts` is the single list of hosts. The agent
-  surfaces (`llms.txt`, `docs/agents/`, plugin manifests) are generated from
-  it; `tests/agent-surface.test.ts` fails when they are stale.
+  surfaces (`llms.txt`, `docs/agents/`, `GEMINI.md`, the plugin and catalog
+  manifests) are generated from it; `tests/agent-surface.test.ts` fails when
+  they are stale. `docs/agents/listings.md` tracks where each manifest is
+  submitted.
 - Tests fake external tools through environment variables
   (`TRACETOON_GH_SCRIPT=tests/fake-gh.ts`, `tests/fake-codex.ts`); never call
   the real GitHub from tests.
