@@ -171,3 +171,20 @@ describe('comic status', () => {
     expect(readComicStatus(run)).toBeUndefined();
   });
 });
+
+describe('comics follow the repo only when the user leaves it to them', () => {
+  test('a README ban skips the comic for allowed, not for always', () => {
+    const root = tempDir();
+    writeFileSync(
+      join(root, 'README.md'),
+      "## Contributing\n\nPlease don't add images or comics to pull requests.\n",
+    );
+    const policy = detectAiPolicy(root);
+    expect(comicDecision('allowed', policy)).toMatchObject({
+      include: false,
+      state: 'policy',
+    });
+    expect(comicDecision('always', policy).include).toBe(true);
+    expect(comicDecision('off', policy).include).toBe(false);
+  });
+});
