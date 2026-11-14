@@ -57,6 +57,8 @@ describe('agent surfaces', () => {
       'AGENTS.md',
       'docs/agents/install.md',
       'docs/agents/faq.md',
+      'docs/agents/errors.md',
+      'docs/agents/cli.md',
     ];
     for (const file of files) {
       const text = read(file);

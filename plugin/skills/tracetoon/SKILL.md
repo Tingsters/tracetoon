@@ -97,7 +97,8 @@ reviewer separate.
      Reuse unchanged research and art; refresh PR evidence and review when inputs change.
 
 1. **Check.** `tracetoon status`, then `tracetoon doctor --json`. If `gh` is
-   missing or not signed in, tell the user; you can still prepare everything.
+   missing or not signed in (failed `gh` or `gh-auth` in `checks`, with its
+   `fix`), tell the user; you can still prepare everything.
    - If `push.canPush` is false, tell the user now: their gh account can't push
      to this repo, so publishing will fail. They can switch accounts
      (`gh auth switch`) or use a fork.

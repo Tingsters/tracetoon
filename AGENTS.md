@@ -15,11 +15,18 @@ plus a `tracetoon` CLI.
   `tracetoon prepare --json` → draft `body.md` → `tracetoon render --json` →
   review → `tracetoon publish --run <id>`.
 - **Install:** [docs/agents/install.md](docs/agents/install.md) lists the
-  routes an agent can run for each host.
+  routes an agent can run for each host. With the runtime already present,
+  `tracetoon setup --json` copies its skill to every agent and adds the PR hook.
 - **Requirements:** `git`, and the GitHub CLI (`gh`) signed in. Without `gh`
   you can still prepare everything; only publishing needs it.
-- Every command accepts `--json`. Errors under `--json` print
-  `{"error": "<message>"}` on stdout.
+  `tracetoon doctor --json` lists `checks` with `ok`, `severity` and `fix`.
+- **Discover:** `tracetoon commands --json` lists every command and option
+  ([docs/agents/cli.md](docs/agents/cli.md)); `tracetoon guide` prints this
+  section; `tracetoon publish --dry-run --json` shows what publishing would do.
+- Every command accepts `--json`. JSON objects carry `schemaVersion`. Errors
+  under `--json` print `{"error": "<message>", "errorCode", "fix",
+  "retryable", "humanRequired"}` on stdout
+  ([docs/agents/errors.md](docs/agents/errors.md)).
 
 ### Commands that act outside the machine
 
@@ -28,20 +35,29 @@ plus a `tracetoon` CLI.
 | `tracetoon publish` | Pushes the branch and creates or updates the PR |
 | `tracetoon comic art` | Sends the comic prompt to an image service; needs the user's consent (`--consent`) |
 | `tracetoon images --approve <route> --test` | Approves an image route and makes one test image (may cost money) |
+| `tracetoon review run` | Runs a reviewer through the Codex CLI (sends the review packet; may cost money) |
 | `tracetoon update` | Downloads and installs a release; only when the user asks |
+| `tracetoon setup`, `tracetoon hook install` | Write the skill and hooks into the agents' own folders |
 
 Everything else reads local logs and writes into the run folder.
 
 ### Exit codes
 
+<!-- exit-codes:start (generated from src/commands/exitCodes.ts) -->
 | Code | Meaning | What to do |
 | --- | --- | --- |
-| 0 | Success | |
-| 1 | Error (message says why) | Read the message; fix and rerun |
+| 0 | Success |  |
+| 1 | Error (the message says why) | Read `errorCode` and `fix`; fix and rerun |
+| 2 | Unknown command or option, or a missing argument | Check `tracetoon commands --json`, then rerun |
 | 3 | Launcher found no runtime | Ask the user, then rerun with `TRACETOON_ALLOW_DOWNLOAD=1` |
 | 4 | Image route needs consent | Ask the user; add `--consent` only after they agree |
 | 5 | No approved image route, or `doctor --probe --strict` found unknown log records | Offer the printed options, or skip the comic |
+| 6 | Only the user can fix it (install or sign in to `gh`, grant access), or `doctor --strict` found a failed required check | Show the user `fix`; rerun after they act |
+| 7 | GitHub or the network failed or rate-limited the request | Wait a little, then rerun the same command |
 | 10 | `update --check --exit-code`: a newer release exists | Tell the user; update only if they ask |
+
+Error codes and fixes: [docs/agents/errors.md](docs/agents/errors.md).
+<!-- exit-codes:end -->
 
 ### Rules
 
