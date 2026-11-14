@@ -254,4 +254,25 @@ describe('CLI contract', () => {
     expect(allAgain.json.installed.length).toBeGreaterThan(0);
     for (const i of allAgain.json.installed) expect(i.action).toBe('unchanged');
   });
+
+  test('setup installs the skill named by TRACETOON_SKILL_DIR (the npm wrapper sets it)', () => {
+    // The npm wrapper's binary sits in a platform package, away from the skill it ships.
+    const shipped = join(tempDir(), 'skill', 'tracetoon');
+    mkdirSync(join(shipped, 'references'), { recursive: true });
+    writeFileSync(join(shipped, 'SKILL.md'), '# Shipped by the npm wrapper\n');
+    writeFileSync(join(shipped, 'references', 'marker.md'), 'npm wrapper copy\n');
+    env.TRACETOON_SKILL_DIR = shipped;
+    mkdirSync(env.CLAUDE_CONFIG_DIR!, { recursive: true });
+    const r = cli(tempDir(), '--json', 'setup', '--agent', 'claude', '--no-hook');
+    expect(r.json.error).toBeUndefined();
+    expect(r.code).toBe(0);
+    const target = join(env.CLAUDE_CONFIG_DIR!, 'skills', 'tracetoon');
+    expect(r.json.installed).toEqual([
+      { agents: ['Claude Code'], dir: target, action: 'installed' },
+    ]);
+    expect(readFileSync(join(target, 'SKILL.md'), 'utf8')).toBe(
+      '# Shipped by the npm wrapper\n',
+    );
+    expect(existsSync(join(target, 'references', 'marker.md'))).toBe(true);
+  });
 });
