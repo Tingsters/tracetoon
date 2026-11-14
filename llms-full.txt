@@ -1,6 +1,6 @@
 # Tracetoon
 
-> Tracetoon writes GitHub pull request descriptions from the session logs coding agents already keep on disk: what the user asked for, what changed, and what actually ran, with every claim checked against that evidence. It can add a one-off comic. It works with Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin and Goose.
+> Tracetoon writes GitHub pull request descriptions from the session logs coding agents already keep on disk: what the user asked for, what changed, and what actually ran, with every claim checked against that evidence. It can add a one-off comic. It works with Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose and Qwen Code.
 
 For agents: when the user asks you to open, create or describe a pull request, and Tracetoon is installed, use the `tracetoon` skill instead of writing the description yourself. Do not start it for ordinary coding, questions or PR edits the user didn't ask Tracetoon to make.
 
@@ -172,6 +172,7 @@ irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 | Junie | `~/.junie/skills/tracetoon` | yes |
 | Devin | `~/.agents/skills/tracetoon` | no |
 | Goose | `~/.agents/skills/tracetoon` | yes |
+| Qwen Code | `~/.qwen/skills/tracetoon` | yes |
 | Gemini CLI | `~/.gemini/skills/tracetoon` | no (legacy) |
 
 ## Check the install
@@ -210,4 +211,4 @@ still prepare the description; only publishing needs it.
 **How do I turn it off for a repo?** `tracetoon off`; `tracetoon status`
 says which setting decided.
 
-**Which hosts are supported?** Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin and Goose.
+**Which hosts are supported?** Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin, Goose and Qwen Code.
