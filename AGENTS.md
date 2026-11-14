@@ -58,6 +58,7 @@ bun install
 bun run typecheck
 bun run test                   # each tests/*.test.ts in its own process
 bun scripts/agent-surfaces.ts  # regenerate llms.txt, docs/agents and manifests
+bun scripts/site-kit.ts        # build site-kit/ (agent files for tracetoon.ai)
 ```
 
 - Layout and how to add an agent host: [CONTRIBUTING.md](CONTRIBUTING.md).
