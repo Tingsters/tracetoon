@@ -10,9 +10,9 @@ import {
   workFingerprint,
 } from '../workflow/state.ts';
 import { readHost, rememberRepository } from '../workflow/hostSession.ts';
-import { readStdin, type HookAgent, BYPASS_RE } from './prHook.ts';
+import { readStdin, type HookAgent, BYPASS_RE, writeAnswer } from './prHook.ts';
 import { integration, resolveHookHost } from '../integrations/registry.ts';
-import type { HookPayload } from '../integrations/types.ts';
+import type { HookPayload, Integration } from '../integrations/types.ts';
 import { switchState } from './switches.ts';
 import { leadingCd } from '../trace/pathMatch.ts';
 import type { Approval } from '../commands/publish.ts';
@@ -82,6 +82,8 @@ export function lifecycle(
   event: LifecycleEvent,
   raw: unknown,
   env: NodeJS.ProcessEnv = process.env,
+  /** Told which host an answer blocks for (see writeAnswer). */
+  onDeny?: (host: Integration) => void,
 ): string | undefined {
   if (event === 'Stop') return;
   // A payload no host recognizes is observed as empty under the registered host:
@@ -92,7 +94,10 @@ export function lifecycle(
     (registered?.hook ? { host: registered, payload: EMPTY_PAYLOAD } : undefined);
   if (!resolved) return;
   const { host: sender, payload: p } = resolved;
-  const deny = (reason: string) => sender.hook!.deny(reason);
+  const deny = (reason: string) => {
+    onDeny?.(sender);
+    return sender.hook!.deny(reason);
+  };
   const cwd = p.cwd ?? p.workspaceRoots[0] ?? process.cwd();
   const state = switchState(cwd, env);
   if (
@@ -194,8 +199,11 @@ export function lifecycle(
 export async function runLifecycle(agent: HookAgent, event: LifecycleEvent) {
   try {
     const raw = await readStdin();
-    const answer = raw ? lifecycle(agent, event, JSON.parse(raw)) : undefined;
-    if (answer) process.stdout.write(answer + '\n');
+    let blockedFor: Integration | undefined;
+    const answer = raw
+      ? lifecycle(agent, event, JSON.parse(raw), process.env, (h) => (blockedFor = h))
+      : undefined;
+    if (answer) writeAnswer(answer, blockedFor);
   } catch (e) {
     // Observation failures never interrupt work; diagnostics are available in doctor.
     try {

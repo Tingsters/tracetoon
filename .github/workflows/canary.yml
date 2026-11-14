@@ -11,6 +11,7 @@ name: drift canary
 #   Cursor CLI    CURSOR_API_KEY
 #   OpenCode      ANTHROPIC_API_KEY (optional variable OPENCODE_MODEL, as provider/model)
 #   Kilo CLI      ANTHROPIC_API_KEY (optional variable KILO_MODEL, as provider/model)
+#   Kiro CLI      KIRO_API_KEY (an API key from Kiro, for headless mode)
 on:
   schedule:
     - cron: '17 6 * * 1'
@@ -25,6 +26,7 @@ jobs:
       FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
       OPENCODE_MODEL: ${{ vars.OPENCODE_MODEL }}
       KILO_MODEL: ${{ vars.KILO_MODEL }}
     steps:
@@ -96,6 +98,14 @@ jobs:
           npm install -g @kilocode/cli
           kilo run --auto ${KILO_MODEL:+--model "$KILO_MODEL"} "Create kilo.py that prints kilo."
           echo "kilo:kilo.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Kiro CLI session
+        if: ${{ !cancelled() && env.KIRO_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          curl -fsSL https://cli.kiro.dev/install | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          kiro-cli chat --no-interactive --trust-all-tools --trust-workspace "Create kiro.py that prints kiro."
+          echo "kiro:kiro.py" >> "$RUNNER_TEMP/expect.txt"
       - name: Find each session and its edit
         if: ${{ !cancelled() }}
         run: |

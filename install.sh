@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI), caches the matching prebuilt binary so nothing
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Gemini CLI), caches the matching prebuilt binary so nothing
 # else (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -73,6 +73,10 @@ targets() {
       printf '%s|%s\n' "${oc%%:*}" "$HOME/.agents/skills/tracetoon"
     fi
   done
+  kiro_home="${KIRO_HOME:-$HOME/.kiro}"
+  if [ -d "$kiro_home" ] || command -v kiro-cli >/dev/null 2>&1 || command -v kiro >/dev/null 2>&1; then
+    printf 'Kiro|%s\n' "$kiro_home/skills/tracetoon"
+  fi
   if command -v gemini >/dev/null 2>&1; then
     printf 'Gemini CLI|%s\n' "$gemini_home/skills/tracetoon"
   fi
@@ -126,7 +130,7 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   exit 0
 fi
 
-[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Gemini CLI)"
+[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Gemini CLI)"
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)

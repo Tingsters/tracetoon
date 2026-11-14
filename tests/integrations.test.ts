@@ -104,6 +104,19 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     args: { command },
     directory: cwd,
   }),
+  // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
+  kiro: (command, cwd) => ({
+    session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',
+    hook_event_name: 'PreToolUse',
+    cwd,
+    tool_name: 'execute_pwsh',
+    tool_input: {
+      command,
+      description: 'Create GitHub PR',
+      cwd,
+      run_in_background: false,
+    },
+  }),
   antigravity: (command, cwd) => ({
     conversationId: 'c1',
     transcriptPath: '/t.jsonl',
@@ -203,7 +216,9 @@ describe('hook contract', () => {
       const p = hook.parse(make!('gh pr create', tempDir()));
       expect(p?.command).toBe('gh pr create');
       expect(p?.sessionId).toBeTruthy();
-      expect(() => JSON.parse(hook.deny('no'))).not.toThrow();
+      // Hosts that block on exit status get the reason itself (on stderr).
+      if (hook.blockExitCode !== undefined) expect(hook.deny('no')).toContain('no');
+      else expect(() => JSON.parse(hook.deny('no'))).not.toThrow();
       expect(hook.parse('nonsense')).toBeUndefined();
       expect(hook.parse({})).toBeUndefined();
     });
