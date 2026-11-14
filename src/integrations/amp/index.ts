@@ -19,7 +19,12 @@ const present = (h: string, env: Env) =>
 export const integration: Integration = {
   id: 'amp',
   label: 'Amp',
-  status: 'supported',
+  status: 'partial',
+  variants: 'CLI',
+  limits: [
+    "Amp keeps its threads on Amp's servers, so the PR is written from the diff and git history, not session logs.",
+    'Only PR commands run in the shell are redirected to Tracetoon.',
+  ],
   traces: [],
   hook: {
     file: (h, env) => join(configDir(h, env), 'plugins', 'tracetoon.ts'),

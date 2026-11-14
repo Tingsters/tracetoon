@@ -102,6 +102,7 @@ export const integration: Integration = {
   id: 'antigravity',
   label: 'Antigravity',
   status: 'supported',
+  variants: 'CLI and IDE',
   traces: [antigravityCliAdapter, antigravityIdeAdapter],
   hook: {
     file: (h, env) => join(gemini(h, env), 'config', 'hooks.json'),

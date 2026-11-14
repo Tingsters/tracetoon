@@ -35,6 +35,7 @@ export const integration: Integration = {
   id: 'crush',
   label: 'Crush',
   status: 'supported',
+  variants: 'CLI',
   traces: [crushAdapter],
   hook: {
     file: (h, env) => join(configDir(h, env), 'crush.json'),

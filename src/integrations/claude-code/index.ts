@@ -17,6 +17,7 @@ export const integration: Integration = {
   id: 'claude',
   label: 'Claude Code',
   status: 'supported',
+  variants: 'CLI, IDE extensions and desktop app',
   traces: [claudeAdapter],
   hook: {
     file: (h, env) => join(home(h, env), 'settings.json'),

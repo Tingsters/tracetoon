@@ -5,6 +5,7 @@ import { INTEGRATIONS } from '../src/integrations/registry.ts';
 import {
   MCP_DESCRIPTION_MAX,
   MCP_NAME,
+  listedIntegrations,
   pitch,
   root,
   stale,
@@ -58,6 +59,35 @@ describe('agent surfaces', () => {
     expect(supportedLabels().length).toBe(
       INTEGRATIONS.filter((i) => i.status === 'supported').length,
     );
+  });
+
+  test('every listed host is in the support page, the installers and the keywords', () => {
+    const support = read('docs/agents/support.md');
+    const installers = [read('install.sh'), read('install.ps1')];
+    const slug = (l: string) => l.toLowerCase().replace(/ cli$/, '').replace(/ /g, '-');
+    for (const i of listedIntegrations()) {
+      expect(support).toContain(`| ${i.label} `);
+      for (const text of installers) expect(text).toContain(i.label.replace(/ CLI$/, ''));
+      expect(pkg.keywords).toContain(slug(i.label));
+      // A gap is disclosed wherever the host is listed.
+      for (const limit of i.limits ?? []) expect(support).toContain(limit);
+      if (!i.traces.length) expect(pitch()).not.toContain(i.label);
+    }
+  });
+
+  test('retired hosts are never named in what people and catalogs read', () => {
+    const files = [
+      'README.md',
+      'llms.txt',
+      'llms-full.txt',
+      'docs/agents/support.md',
+      'docs/agents/install.md',
+      'docs/agents/faq.md',
+      '.claude-plugin/marketplace.json',
+      'plugin/plugin.json',
+    ];
+    for (const i of INTEGRATIONS.filter((i) => i.status === 'legacy'))
+      for (const file of files) expect(read(file)).not.toContain(i.label);
   });
 
   test('links in llms.txt and docs/agents point at files in this repository', () => {
