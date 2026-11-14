@@ -83,6 +83,12 @@ const MEDIA_ANY =
 const ABOUT_PRS = /\b(contribut\w*|pull requests?|PR descriptions?)\b/i;
 const PR_TEXT = /\b(pull requests?|PRs?\b|commit messages?)/i;
 const NO_PR = /\bnever (create|open|submit) (an? )?(issue|pr|pull request)/i;
+/**
+ * Agent instructions are markdown, so the rule is usually emphasised and often
+ * punctuated: `**Never**: open a PR`. Drop emphasis marks and the punctuation
+ * between words before matching, so the wording is what decides, not the styling.
+ */
+const plain = (text: string) => text.replace(/[*_`~]/g, '').replace(/\s*[:;,-]\s+/g, ' ');
 
 export type PolicyVerdict = 'prohibited' | 'disclosure-required' | 'mentioned' | 'none';
 
@@ -134,7 +140,7 @@ export function detectAiPolicy(root: string): AiPolicy {
       const t = text.trim();
       if (agentFile && PR_TEXT.test(t) && t.length > 10)
         prInstructions.push({ file: rel, line: i + 1, text: t.slice(0, 300) });
-      if (NO_PR.test(t)) noPullRequests = true;
+      if (NO_PR.test(plain(t))) noPullRequests = true;
       const here = { file: rel, line: i + 1, text: t.slice(0, 300) };
       // Pictures banned from PRs or contributions, whether or not AI is named.
       // Rules about code assets ("no binary images in the repo") don't count.
@@ -152,7 +158,7 @@ export function detectAiPolicy(root: string): AiPolicy {
         if (!excerpts.some((e) => e.file === rel && e.line === i + 1))
           excerpts.push(here);
       }
-      if (!AI_TERMS.test(t) && !(agentFile && NO_PR.test(t))) return;
+      if (!AI_TERMS.test(t) && !(agentFile && NO_PR.test(plain(t)))) return;
       if (!excerpts.some((e) => e.file === rel && e.line === i + 1)) excerpts.push(here);
       const bans = PROHIBIT.test(t);
       if (bans && MEDIA.test(t)) {

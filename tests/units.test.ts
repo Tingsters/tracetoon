@@ -91,6 +91,19 @@ describe('Claude adapter', () => {
     expect(kinds.filter((k) => k === 'usage').length).toBeGreaterThan(0);
   });
 
+  test('metadata-only records Claude Code writes are skipped, not reported as drift', () => {
+    // Claude Code 2.1.x writes `tools-used` when a session is started with
+    // --allowedTools. It carries no evidence, so it is skipped like `mode` and
+    // `agent-name` rather than counted as an unrecognized record type.
+    const log = new ClaudeLog('/repo')
+      .prompt('Add a greeting function')
+      .raw({ type: 'tools-used', tools: ['Write', 'Bash'], sessionId: 's1' });
+    const s = emptySession();
+    parseClaudeLines(log.text(), s);
+    expect(s.unknownTypes).toEqual({});
+    expect(s.records.some((r) => r.kind === 'prompt')).toBe(true);
+  });
+
   test('marks subagent prompts as delegated and skips failed edits', () => {
     const log = new ClaudeLog('/repo').prompt('research X');
     const s = emptySession();
