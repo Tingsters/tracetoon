@@ -18,6 +18,7 @@ import { readSubmittedFile, repoPath } from '../util/repoFiles.ts';
 import { readLocal, writeLocal } from '../util/localJson.ts';
 import { findRun, newRun, type Run } from '../run.ts';
 import { defaultBase, gitIdentity } from '../git/pr.ts';
+import { codedError } from '../commands/output.ts';
 
 export type TaskState = 'working' | 'preparing' | 'blocked' | 'deferred' | 'published';
 export interface Task {
@@ -52,7 +53,7 @@ export function repository(cwd: string): {
 } {
   // One process; an unborn branch still reports "HEAD" as before.
   const id = gitIdentity(cwd);
-  if (!id) throw new Error('Not inside a git repository.');
+  if (!id) throw codedError('NOT_A_GIT_REPO', 'Not inside a git repository.');
   return { root: id.toplevel, gitDir: id.gitDir, branch: id.branch };
 }
 

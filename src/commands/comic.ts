@@ -234,6 +234,12 @@ function noArtist(root: string, run: Run): UserError {
   return new UserError(
     `No approved image route to draw the comic. Options:\n${options.map((o) => `  - ${o}`).join('\n')}`,
     NO_ARTIST_EXIT,
+    {
+      code: 'NO_IMAGE_ROUTE',
+      fix: 'Offer the options above, or skip the comic',
+      retryable: false,
+      humanRequired: true,
+    },
   );
 }
 
@@ -250,6 +256,12 @@ export async function comicArtCmd(cwd: string, opts: ArtOpts): Promise<void> {
         throw new UserError(
           `Making the comic art with ${info.label} sends the comic's scenes, text and character descriptions (never code or log text) to ${info.sendsTo}. Ask the user once, then re-run with --consent.`,
           4,
+          {
+            code: 'CONSENT_REQUIRED',
+            fix: `Ask the user; after they agree: tracetoon comic art --provider ${provider} --consent`,
+            retryable: false,
+            humanRequired: true,
+          },
         );
       }
       config = setUserConfig(

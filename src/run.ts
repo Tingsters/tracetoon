@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { count } from './util/profile.ts';
+import { codedError } from './commands/output.ts';
 
 export interface Run {
   id: string;
@@ -106,9 +107,13 @@ export function findRun(gitDir: string, id?: string): Run {
     }
   }
   if (!name || !existsSync(join(base, name))) {
-    throw new Error('No Tracetoon run found. Run `tracetoon digest` first.');
+    throw codedError(
+      'RUN_NOT_FOUND',
+      'No Tracetoon run found. Run `tracetoon digest` first.',
+    );
   }
-  if (!/^\d{8}-\d{6}(-\d+)?$/.test(name)) throw new Error('Invalid Tracetoon run id.');
+  if (!/^\d{8}-\d{6}(-\d+)?$/.test(name))
+    throw codedError('RUN_NOT_FOUND', 'Invalid Tracetoon run id.');
   return { id: name, dir: join(base, name) };
 }
 
