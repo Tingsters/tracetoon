@@ -92,6 +92,7 @@
   .chips li { border:1.5px solid var(--line); border-radius:999px; padding:.1rem .6rem; color:var(--muted); }
   .chips li.yes { border-color:var(--good); color:var(--fg); }
   .chips li.yes::before { content:"✓ "; color:var(--good); font-weight:700; }
+  .chips-more { margin:.45rem 0 0; font-size:.8rem; color:var(--muted); }
 
   /* proof strip */
   .proof { display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; margin:1.1rem 0 .3rem; }
@@ -209,8 +210,9 @@
           </div>
           <p class="then"><span class="num">2</span>Restart your agent. Then, on any branch, ask: <span class="ask">“Open a PR for this branch with Tracetoon.”</span></p>
           <ul class="chips" aria-label="Supported agents">
-            <li class="yes">Claude Code</li><li class="yes">Codex</li><li class="yes">Antigravity</li><li>Cursor (planned)</li><li>Windsurf (planned)</li><li>Copilot CLI (planned)</li>
+            <li class="yes">Claude Code</li><li class="yes">Codex</li><li class="yes">Copilot</li><li class="yes">Cursor</li><li class="yes">Antigravity</li><li class="yes">Factory Droid</li><li class="yes">OpenCode</li><li class="yes">Kilo Code</li><li class="yes">Kiro</li><li class="yes">Cline</li><li class="yes">Junie</li><li class="yes">Devin</li><li class="yes">Goose</li><li class="yes">Qwen Code</li><li class="yes">Crush</li><li>Amp (partial)</li><li>Windsurf (planned)</li>
           </ul>
+          <p class="chips-more"><a href="https://github.com/Tracetoon/tracetoon/blob/main/docs/agents/support.md">What each agent supports →</a></p>
         </div>
 
         <div class="proof">
@@ -238,7 +240,7 @@
       <div class="copytext">
         <span class="kicker">Better PRs</span>
         <h2 class="big display">Judged blind. Picked almost every time.</h2>
-        <p>AI-written PRs are usually vague and padded, and they sound sure about tests nobody saw pass. Tracetoon writes from the session logs that Claude Code, Codex and Antigravity already keep. The PR says <strong>why</strong> the change was made, <strong>what</strong> changed, and <strong>what actually ran</strong>.</p>
+        <p>AI-written PRs are usually vague and padded, and they sound sure about tests nobody saw pass. Tracetoon writes from the session logs that Claude Code, Codex, Copilot, Cursor and 11 other agents already keep. The PR says <strong>why</strong> the change was made, <strong>what</strong> changed, and <strong>what actually ran</strong>.</p>
         <p>Here is one real PR, written three ways and scored 0–100 by the same judges:</p>
         <ul class="score" aria-label="Composite quality score, 0 to 100">
           <li>Agent writes it alone <span class="bar"><i style="width:47.3%"></i></span><b>47</b></li>
