@@ -104,8 +104,13 @@ export function parseClineMessages(
             ts,
             cwd,
           });
-        } else if (name === 'run_commands' && Array.isArray(input.commands)) {
-          const records = input.commands
+        } else if (
+          name === 'run_commands' &&
+          (Array.isArray(input.commands) || typeof input.commands === 'string')
+        ) {
+          // Cline 3.x writes a list; 4.x (the VS Code extension) one string.
+          const records = [input.commands]
+            .flat()
             .filter((c: unknown): c is string => typeof c === 'string' && c.length > 0)
             .map((cmd: string): CommandRecord => ({
               kind: 'command',

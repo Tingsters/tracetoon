@@ -1096,6 +1096,50 @@ describe('Cline adapter', () => {
     expect(s.unknownTypes).toEqual({ image: 1 });
   });
 
+  test('reads run_commands given as one string, as Cline 4.x writes it', () => {
+    // Shape recorded from the Cline 4.1.26 VS Code extension.
+    const s = session('x');
+    parseClineMessages(
+      JSON.stringify({
+        messages: [
+          {
+            role: 'assistant',
+            ts: 1,
+            content: [
+              {
+                type: 'tool_use',
+                id: 'r1',
+                name: 'run_commands',
+                input: { commands: 'git status; gh pr create --fill' },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            ts: 2,
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'r1',
+                name: 'run_commands',
+                content: [{ query: 'git status; gh pr create --fill', result: 'done' }],
+              },
+            ],
+          },
+        ],
+      }),
+      s,
+      '/repo',
+    );
+    expect(s.records).toEqual([
+      expect.objectContaining({
+        kind: 'command',
+        cmd: 'git status; gh pr create --fill',
+        output: 'done',
+      }),
+    ]);
+  });
+
   test('reads the single-command execute_command tool and its plain-text result', () => {
     const s = session('x');
     parseClineMessages(
