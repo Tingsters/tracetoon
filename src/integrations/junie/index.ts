@@ -43,6 +43,7 @@ export const integration: Integration = {
   id: 'junie',
   label: 'Junie',
   status: 'supported',
+  variants: 'JetBrains CLI',
   traces: [junieAdapter],
   hook: {
     file: (h, env) => join(home(h, env), 'config.json'),

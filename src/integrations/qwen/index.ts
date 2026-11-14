@@ -23,6 +23,7 @@ export const integration: Integration = {
   id: 'qwen',
   label: 'Qwen Code',
   status: 'supported',
+  variants: 'CLI',
   traces: [qwenAdapter],
   hook: {
     file: (h, env) => join(home(h, env), 'settings.json'),

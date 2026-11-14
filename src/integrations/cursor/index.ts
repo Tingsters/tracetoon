@@ -84,6 +84,10 @@ export const integration: Integration = {
   id: 'cursor',
   label: 'Cursor',
   status: 'supported',
+  variants: 'IDE and CLI',
+  limits: [
+    "Cursor's logs don't record exit codes, so the PR can't confirm that tests or builds passed.",
+  ],
   traces: [cursorAdapter],
   hook: {
     file: (h, env) => join(home(h, env), 'hooks.json'),

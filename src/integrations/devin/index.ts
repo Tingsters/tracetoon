@@ -14,6 +14,8 @@ export const integration: Integration = {
   id: 'devin',
   label: 'Devin',
   status: 'supported',
+  variants: 'CLI',
+  hookVia: 'claude',
   traces: [devinAdapter],
   skill: (h, env) => ({
     present: existsSync(devinDataDir(env)) || !!onPath('devin', env),

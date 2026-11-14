@@ -93,27 +93,29 @@ Left out: 1 session that may not belong to this PR.
 Comics: tracetoon config set comic off|allowed|always (now: allowed)
 ```
 
-| Agent                     | Status                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| Claude Code               | ✅ supported                                                                 |
-| Codex (CLI and app)       | ✅ supported                                                                 |
-| Antigravity (CLI and IDE) | ✅ supported                                                                 |
-| Factory Droid             | ✅ supported                                                                 |
-| Copilot (CLI and VS Code) | ✅ supported                                                                 |
-| Cursor (IDE and CLI)      | ✅ supported                                                                 |
-| OpenCode                  | ✅ supported (hook is a plugin in `~/.config/opencode/plugins`)              |
-| Kilo CLI                  | ✅ supported (hook is a plugin in `~/.config/kilo/plugins`)                  |
-| Kilo Code (VS Code)       | ✅ supported through Kilo CLI, which the extension runs                      |
-| Kiro (IDE and CLI)        | ✅ supported (hook file in `~/.kiro/hooks`)                                  |
-| Cline CLI                 | ✅ supported (hook scripts in `~/.cline/hooks`)                              |
-| Junie (JetBrains CLI)     | ✅ supported (hooks in `~/.junie/config.json`)                               |
-| Devin CLI                 | ✅ supported (routes PRs through the Claude Code hook Devin imports)         |
-| Goose                     | ✅ supported (plugin in `~/.agents/plugins`; needs `sh` on Windows)          |
-| Qwen Code                 | ✅ supported (hooks in `~/.qwen/settings.json`)                              |
-| Crush                     | ✅ supported (hooks in `~/.config/crush/crush.json`)                         |
-| Amp                       | 🟡 PR routing and skill (plugin); threads live on Amp's servers              |
-| Gemini CLI                | 🟡 legacy: runs the skill (replaced by Antigravity CLI for individual users) |
-| Windsurf                  | 🗓️ planned                                                                   |
+<!-- hosts:start (generated from the integration registry) -->
+| Agent                                                    | Status                                                                  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Claude Code (CLI, IDE extensions and desktop app)        | ✅ supported                                                             |
+| Codex (CLI and app)                                      | ✅ supported                                                             |
+| Antigravity (CLI and IDE)                                | ✅ supported                                                             |
+| Factory Droid (Droid CLI)                                | ✅ supported                                                             |
+| Copilot (CLI and VS Code agent mode)                     | ✅ supported                                                             |
+| Cursor (IDE and CLI)                                     | ✅ supported ([see notes](docs/agents/support.md#notes))                 |
+| OpenCode (CLI)                                           | ✅ supported                                                             |
+| Kilo CLI (CLI, and Kilo Code for VS Code, which runs it) | ✅ supported                                                             |
+| Kiro (IDE and CLI)                                       | ✅ supported                                                             |
+| Cline (CLI)                                              | ✅ supported ([see notes](docs/agents/support.md#notes))                 |
+| Junie (JetBrains CLI)                                    | ✅ supported                                                             |
+| Devin (CLI)                                              | ✅ supported (uses Claude Code's hook)                                   |
+| Goose (CLI and desktop app)                              | ✅ supported                                                             |
+| Qwen Code (CLI)                                          | ✅ supported                                                             |
+| Crush (CLI)                                              | ✅ supported                                                             |
+| Amp (CLI)                                                | 🟡 partial (no session logs; [see notes](docs/agents/support.md#notes)) |
+| Windsurf                                                 | 🗓️ planned                                                             |
+
+Hook files, skill folders and the notes: [supported agents](docs/agents/support.md).
+<!-- hosts:end -->
 
 > [!TIP]
 > Already installed? Ask your agent: _"Update Tracetoon."_ It works for the
@@ -127,7 +129,7 @@ Comics: tracetoon config set comic off|allowed|always (now: allowed)
 <p align="center"><a href="https://tracetoon.ai/#why"><img src="docs/img/comic-quality.webp" alt="Two-panel comic. The old way: three bored robot judges hold up question-mark scorecards at a sad pull request that says 'Improves stuff.' With Tracetoon: the judges leap up holding scores of 10, 10 and 10 while a confident pull request with a comic pinned to it takes a bow and the developer cheers." width="640"></a></p>
 
 AI-written PRs are usually vague and padded, and they sound sure about tests
-nobody saw pass. Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code and Crush already keep session logs on
+nobody saw pass. <!-- host-names:start -->Claude Code, Codex, Copilot, Cursor, Antigravity and [10 other agents](docs/agents/support.md)<!-- host-names:end --> already keep session logs on
 your machine. Tracetoon finds the sessions that produced this branch and turns
 them into a redacted evidence brief your agent writes from.
 
@@ -378,12 +380,12 @@ the hook points it to Tracetoon instead.
 | GraphQL `createPullRequest`, and the GitHub connector tools agents use                     | Calls made inside a script, or a GraphQL mutation read from a file (can't be seen) |
 
 The hook only touches its own entries in each agent's config, backs up each file
-before the first change, and lists every file it changed. If a PR command was
-redirected, the agent's stop hook keeps it from finishing until that PR is
-published, so a redirected PR isn't left behind. Codex asks you to trust a new
-hook once (`/hooks`), and again whenever the hook entry changes;
+before the first change, and lists every file it changed. Codex asks you to
+trust a new hook once (`/hooks`), and again whenever the hook entry changes;
 `tracetoon doctor` says when Codex would skip it. The Antigravity IDE picks it
-up after a restart. Skip
+up after a restart. Goose runs hooks with `sh`, so on Windows it needs Git for
+Windows' `usr\bin` on `PATH`. Where each agent keeps its hook is listed in
+[supported agents](docs/agents/support.md). Skip
 installing it with `TRACETOON_NO_HOOK=1`, or manage it with
 `tracetoon hook install` and `tracetoon hook uninstall`.
 
@@ -612,22 +614,18 @@ trust the new hook entries in `/hooks`.
   [release](https://github.com/Tracetoon/tracetoon/releases) into your agent's
   skills folder:
 
-  | Agent          | Folder                                                               |
-  | -------------- | -------------------------------------------------------------------- |
-  | Claude Code    | `~/.claude/skills/tracetoon`                                         |
-  | Codex          | `~/.agents/skills/tracetoon` (or `.agents/skills/` in a repo)        |
-  | Antigravity    | `~/.gemini/config/skills/tracetoon` (or `.agents/skills/` in a repo) |
-  | Factory Droid  | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Copilot        | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Cursor         | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | OpenCode, Kilo | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Cline, Devin   | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Goose, Crush   | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Amp            | `~/.agents/skills/tracetoon` (shared with Codex)                     |
-  | Kiro           | `~/.kiro/skills/tracetoon`                                           |
-  | Qwen Code      | `~/.qwen/skills/tracetoon`                                           |
-  | Junie          | `~/.junie/skills/tracetoon`                                          |
-  | Gemini CLI     | `~/.gemini/skills/tracetoon`                                         |
+  <!-- skill-folders:start (generated from the integration registry) -->
+  | Agent                                                                                      | Folder                              |
+  | ------------------------------------------------------------------------------------------ | ----------------------------------- |
+  | Claude Code                                                                                | `~/.claude/skills/tracetoon`        |
+  | Codex, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Cline, Devin, Goose, Crush, Amp | `~/.agents/skills/tracetoon`        |
+  | Antigravity                                                                                | `~/.gemini/config/skills/tracetoon` |
+  | Kiro                                                                                       | `~/.kiro/skills/tracetoon`          |
+  | Junie                                                                                      | `~/.junie/skills/tracetoon`         |
+  | Qwen Code                                                                                  | `~/.qwen/skills/tracetoon`          |
+  <!-- skill-folders:end -->
+
+  Codex and Antigravity also read `.agents/skills/` inside a repo.
 
 - **From source:** see [Contributing](#-contributing-ai-welcome-comics-wanted).
   A source checkout updates with `git pull`.

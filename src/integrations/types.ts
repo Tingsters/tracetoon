@@ -104,10 +104,18 @@ export interface Integration {
   id: string;
   label: string;
   /**
-   * supported: logs, hook and skill. skill-only: runs the skill; logs aren't read.
-   * legacy: kept for existing users of a retired host.
+   * supported: logs, hook and skill. partial: the skill plus some of logs and
+   * hook (`limits` says what's missing). skill-only: runs the skill; logs
+   * aren't read. legacy: kept for existing users of a retired host, and left
+   * out of every published list.
    */
-  status: 'supported' | 'skill-only' | 'legacy';
+  status: 'supported' | 'partial' | 'skill-only' | 'legacy';
+  /** The forms of the host this covers, for the support table ("CLI and VS Code"). */
+  variants?: string;
+  /** User-facing gaps, one short sentence each; shown in the support table and `integrations`. */
+  limits?: string[];
+  /** The id of another host whose hook this one runs, when it has none of its own. */
+  hookVia?: string;
   /** One adapter per log store this host writes. */
   traces: TraceAdapter[];
   hook?: HookIntegration;

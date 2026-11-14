@@ -55,6 +55,10 @@ export const integration: Integration = {
   id: 'cline',
   label: 'Cline',
   status: 'supported',
+  variants: 'CLI',
+  limits: [
+    'PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are.',
+  ],
   traces: [clineAdapter],
   hook: {
     file: (h) => join(home(h), 'hooks', 'PreToolUse.mjs'),

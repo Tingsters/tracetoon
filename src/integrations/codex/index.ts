@@ -18,6 +18,7 @@ export const integration: Integration = {
   id: 'codex',
   label: 'Codex',
   status: 'supported',
+  variants: 'CLI and app',
   traces: [codexAdapter],
   hook: {
     file: (h, env) => join(home(h, env), 'hooks.json'),

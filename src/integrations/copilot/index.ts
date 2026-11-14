@@ -90,6 +90,7 @@ export const integration: Integration = {
   id: 'copilot',
   label: 'Copilot',
   status: 'supported',
+  variants: 'CLI and VS Code agent mode',
   traces: [copilotCliAdapter, copilotVscodeAdapter],
   hook: {
     file: (h, env) => join(home(h, env), 'hooks', 'tracetoon.json'),
