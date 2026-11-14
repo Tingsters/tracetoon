@@ -31,6 +31,12 @@ and caveats.</sub>
 
 </div>
 
+> [!NOTE]
+> **For AI agents:** start with [AGENTS.md](AGENTS.md) (how to run Tracetoon,
+> exit codes, which commands publish) and
+> [docs/agents/install.md](docs/agents/install.md) (install routes an agent can
+> run, per host). [llms.txt](llms.txt) indexes both.
+
 **Contents:** [Quick start](#-quick-start) ·
 [Better PRs](#-better-prs-judged-blind-picked-almost-every-time) ·
 [Evidence graph](#%EF%B8%8F-evidence-graph-every-sentence-has-a-receipt) ·
@@ -60,6 +66,18 @@ curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh
 # Windows PowerShell
 irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 ```
+
+Or let your agent install it. Agent sandboxes often block piping a download
+into a shell, so these routes work better from inside an agent:
+
+```sh
+# Claude Code plugin
+claude plugin marketplace add Tracetoon/tracetoon
+claude plugin install tracetoon@tracetoon
+```
+
+Any other host: ask your agent to follow
+[docs/agents/install.md](docs/agents/install.md).
 
 **2. Restart your agent.** Then, on any branch with your work, ask:
 
