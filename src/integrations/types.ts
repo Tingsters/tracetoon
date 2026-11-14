@@ -85,6 +85,8 @@ export interface HookIntegration {
      * `command`, so a file of that name Tracetoon didn't write is never replaced.
      */
     siblings?: Record<string, (commands: HookCommands) => string>;
+    /** Sibling names written as executables (mode 755): the host runs the file itself. */
+    executable?: string[];
   };
   /** Something to tell the user after installing (a trust or restart step). */
   installNote?(file: string, data: Json): string | undefined;

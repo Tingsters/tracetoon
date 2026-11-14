@@ -19,7 +19,7 @@ that; the notes below say what.
 | OpenCode      | CLI                                           | ✅ supported             | `~/.config/opencode/plugins/tracetoon.js`      | `~/.agents/skills/tracetoon`        |
 | Kilo CLI      | CLI, and Kilo Code for VS Code, which runs it | ✅ supported             | `~/.config/kilo/plugins/tracetoon.js`          | `~/.agents/skills/tracetoon`        |
 | Kiro          | IDE and CLI                                   | ✅ supported             | `~/.kiro/hooks/tracetoon.json`                 | `~/.kiro/skills/tracetoon`          |
-| Cline         | CLI                                           | ✅ supported (see notes) | `~/.cline/hooks/PreToolUse.mjs`                | `~/.agents/skills/tracetoon`        |
+| Cline         | CLI and VS Code extension                     | ✅ supported (see notes) | `~/.cline/hooks/PreToolUse.mjs`                | `~/.agents/skills/tracetoon`        |
 | Junie         | JetBrains CLI                                 | ✅ supported             | `~/.junie/config.json`                         | `~/.junie/skills/tracetoon`         |
 | Devin         | CLI                                           | ✅ supported             | Claude Code's hook, which Devin imports        | `~/.agents/skills/tracetoon`        |
 | Goose         | CLI and desktop app                           | ✅ supported             | `~/.agents/plugins/tracetoon/hooks/hooks.json` | `~/.agents/skills/tracetoon`        |
@@ -31,7 +31,7 @@ that; the notes below say what.
 ## Notes
 
 - **Cursor:** Cursor's logs don't record exit codes, so the PR can't confirm that tests or builds passed.
-- **Cline:** PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are.
+- **Cline:** PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are. In the VS Code extension, a blocked PR command stops the task, since its hooks cannot skip a single command.
 - **Amp:** Amp keeps its threads on Amp's servers, so the PR is written from the diff and git history, not session logs. Only PR commands run in the shell are redirected to Tracetoon.
 
 `tracetoon integrations` prints the same list for your machine, with the

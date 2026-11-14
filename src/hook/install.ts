@@ -8,7 +8,7 @@
  * file that isn't valid JSON is left alone, and each file is backed up once
  * (<file>.tracetoon.bak) before the first change.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { INTEGRATIONS, integration } from '../integrations/registry.ts';
@@ -108,6 +108,7 @@ export function installHooks(
       for (const f of files) {
         mkdirSync(dirname(f.path), { recursive: true });
         writeFileSync(f.path, f.text, 'utf8');
+        if (f.executable) chmodSync(f.path, 0o755);
       }
       return { ...base, result: 'installed', note: hookOf(t).installNote?.(t.file, {}) };
     }
@@ -170,10 +171,11 @@ const siblingPaths = (file: string, owned: OwnedText) =>
 /** The main file and its siblings, each with the text Tracetoon writes there. */
 function ownedFiles(file: string, owned: OwnedText, commands: HookCommands) {
   return [
-    { path: file, text: owned.render(commands) },
+    { path: file, text: owned.render(commands), executable: false },
     ...Object.entries(owned.siblings ?? {}).map(([name, render]) => ({
       path: join(dirname(file), name),
       text: render(commands),
+      executable: owned.executable?.includes(name) ?? false,
     })),
   ];
 }
