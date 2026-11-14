@@ -111,6 +111,20 @@ export interface TraceSession {
   sessionCostUsd?: number;
   /** Record types this adapter did not recognize, with counts. */
   unknownTypes: Record<string, number>;
+  /**
+   * Tool calls this adapter walked past, recognized or not. Compared against the
+   * evidence it produced, this says whether the tool mapping still holds: a host
+   * that renames a tool keeps emitting calls while the adapter stops turning them
+   * into edits and commands. See `probe` in src/commands/doctor.ts.
+   */
+  toolCalls?: number;
+  /**
+   * Tool calls the dispatch did not convert, by name, with counts. Covers a name
+   * the adapter does not know and a known name whose arguments it could not read.
+   * Diagnostic only: a host adding a tool lands here too, so this never raises an
+   * alarm by itself. It names the suspects once the check above reports drift.
+   */
+  unknownTools?: Record<string, number>;
   warnings: string[];
   /** Set on a subagent's own log: the session that spawned it. */
   parentSessionId?: string;

@@ -27,6 +27,7 @@ import type {
   TraceRecord,
   TraceSession,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type Obj = Record<string, any>;
 const isObj = (v: unknown): v is Obj =>
@@ -119,6 +120,7 @@ export function parseCopilotCliLines(content: string, into: TraceSession): void 
         const call = starts.get(d.toolCallId);
         if (!call) break;
         starts.delete(d.toolCallId);
+        sawToolCall(into);
         const at = { ts: call.ts, cwd, branch, model: call.model };
         const output = str(d.result?.content) ?? '';
         if (SHELL_TOOLS.has(call.name) && isObj(call.args) && str(call.args.command)) {
@@ -132,7 +134,11 @@ export function parseCopilotCliLines(content: string, into: TraceSession): void 
             ...at,
           });
         } else if (EDIT_TOOLS.has(call.name) && d.success !== false) {
+          const had = into.records.length;
           into.records.push(...editsFrom(call.name, call.args, at));
+          if (into.records.length === had) sawUnknownTool(into, call.name);
+        } else if (d.success !== false) {
+          sawUnknownTool(into, call.name);
         }
         break;
       }

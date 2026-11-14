@@ -18,6 +18,7 @@ import type {
   TraceSession,
   Usage,
 } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const COMMAND_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -250,6 +251,7 @@ export function parseClaudeLines(
           branch: call.branch ?? base.branch,
           model: call.model,
         };
+        sawToolCall(into);
         if (EDIT_TOOLS.has(call.name)) {
           if (isError) continue;
           const result = o.toolUseResult;
@@ -314,6 +316,8 @@ export function parseClaudeLines(
             questions: decisionQuestions(qs, o.toolUseResult),
             ...where,
           });
+        } else {
+          sawUnknownTool(into, call.name);
         }
       }
       continue;

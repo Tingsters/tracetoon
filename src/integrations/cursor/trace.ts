@@ -17,6 +17,7 @@ import { isSyntheticPrompt } from '@showtail/agent-traces/prompts/synthetic';
 import { splitLines } from '../../trace/diffLines.ts';
 import { discoveryIndex } from '../../trace/discovery.ts';
 import type { SessionRef, TraceAdapter, TraceSession } from '../../trace/types.ts';
+import { sawToolCall, sawUnknownTool } from '../../trace/toolCalls.ts';
 
 type Obj = Record<string, any>;
 const isObj = (v: unknown): v is Obj =>
@@ -99,6 +100,7 @@ export function parseCursorLines(
       const input = p.input;
       const file = str(input.path) ?? str(input.file_path) ?? str(input.target_file);
       const at = (f: string) => resolve(cwd ?? '.', f);
+      sawToolCall(into);
       switch (p.name) {
         case 'Shell':
         case 'run_terminal_cmd':
@@ -147,6 +149,8 @@ export function parseCursorLines(
                 cwd,
               });
           break;
+        default:
+          sawUnknownTool(into, str(p.name));
       }
     }
   }

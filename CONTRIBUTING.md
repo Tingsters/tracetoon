@@ -98,6 +98,14 @@ core modules (`src/trace`, `src/hook`, `src/util`), never another host's folder;
    to the expect list, gated on the secret it needs. The weekly run then fails
    if the reader stops finding its sessions (`scripts/canary-check.ts`) or meets
    record types it doesn't know (`doctor --probe`).
+7. Call `sawToolCall` from `src/trace/toolCalls.ts` wherever the adapter reads a
+   tool call, and `sawUnknownTool` in the branch that handles none. `doctor
+   --probe` then reports drift when a host's tool use stops becoming edits and
+   commands, which is what a renamed tool looks like. That covers hosts the
+   canary cannot reach: Antigravity signs in through a browser only, so it has
+   no headless step and nothing else would notice. Don't add a list of known
+   tool names — hosts add tools constantly and the list would go stale, which is
+   the failure this check exists to avoid.
 
 ## Before sending a change
 

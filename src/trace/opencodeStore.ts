@@ -17,6 +17,7 @@ import { openReadOnly, type ReadOnlyDb } from '../util/sqlite.ts';
 import { headTail, parseApplyPatch, splitLines } from './diffLines.ts';
 import { mentionsAnyRoot } from './pathMatch.ts';
 import type { SessionRef, TraceAdapter, TraceRecord, TraceSession } from './types.ts';
+import { sawToolCall, sawUnknownTool } from './toolCalls.ts';
 
 type Obj = Record<string, any>;
 const isObj = (v: unknown): v is Obj =>
@@ -110,6 +111,7 @@ export function opencodeRecords(
     const base = { ts: at(state.time?.start), cwd, model };
     const done = state.status === 'completed';
     const tool = str(part.tool) ?? '';
+    sawToolCall(into);
     if (tool === 'bash' && str(input.command)) {
       const exit = state.metadata?.exit;
       into.records.push({
@@ -170,6 +172,7 @@ export function opencodeRecords(
     )
       for (const f of parseApplyPatch(str(input.patchText) ?? str(input.input)!))
         into.records.push(edit(f.moveTo ?? f.path, f.added, f.removed, f.op === 'Add'));
+    else sawUnknownTool(into, tool);
   }
 }
 
