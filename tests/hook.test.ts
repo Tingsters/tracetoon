@@ -446,6 +446,7 @@ describe('installing the hook', () => {
     mkdirSync(gooseDataDir({}, h), { recursive: true });
     mkdirSync(join(h, '.qwen'), { recursive: true });
     mkdirSync(join(h, '.config', 'crush'), { recursive: true });
+    mkdirSync(join(h, '.config', 'amp'), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -488,9 +489,11 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -593,6 +596,10 @@ describe('installing the hook', () => {
       command: '/opt/tracetoon/bin hook pre-pr --agent crush',
     });
     expect(crush.hooks.SessionStart[0].matcher).toBeUndefined();
+    // Amp gets a plugin that asks Tracetoon about shell commands.
+    expect(
+      readFileSync(join(h, '.config', 'amp', 'plugins', 'tracetoon.ts'), 'utf8'),
+    ).toContain("'reject-and-continue'");
     // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
     const kiro = JSON.parse(
       readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
@@ -628,9 +635,11 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -677,7 +686,8 @@ describe('installing the hook', () => {
         !t.file.endsWith('.mjs') &&
         t.agent !== 'kiro' &&
         t.agent !== 'goose' &&
-        t.agent !== 'crush',
+        t.agent !== 'crush' &&
+        !t.file.endsWith('.ts'),
     );
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
@@ -740,6 +750,7 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
       'not installed',
       'not installed',
       'not installed',

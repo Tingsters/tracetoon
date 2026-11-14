@@ -151,6 +151,15 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     tool_name: 'bash',
     tool_input: { command, working_dir: cwd },
   }),
+  // What Tracetoon's Amp plugin sends (the OpenCode plugin shape, host amp).
+  amp: (command, cwd) => ({
+    source: 'tracetoon-plugin',
+    host: 'amp',
+    sessionID: 'T-01a1d813',
+    tool: 'Bash',
+    args: { command },
+    directory: cwd,
+  }),
   // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
   kiro: (command, cwd) => ({
     session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',
