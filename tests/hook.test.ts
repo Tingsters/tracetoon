@@ -901,16 +901,20 @@ describe('Cline hook files', () => {
 
   test('a PR command is replaced by an echo of the reason, which every shell runs', () => {
     const answer = JSON.parse(
-      decide('cline', {
-        hookName: 'tool_call',
-        taskId: 't',
-        sessionContext: { rootSessionId: 's' },
-        workspaceRoots: [tempDir()],
-        tool_call: {
-          name: 'run_commands',
-          input: { commands: ['git push', 'gh pr create --fill'] },
+      decide(
+        'cline',
+        {
+          hookName: 'tool_call',
+          taskId: 't',
+          sessionContext: { rootSessionId: 's' },
+          workspaceRoots: [tempDir()],
+          tool_call: {
+            name: 'run_commands',
+            input: { commands: ['git push', 'gh pr create --fill'] },
+          },
         },
-      })!,
+        env(), // CI turns Tracetoon off unless the test clears it
+      )!,
     );
     expect(answer.errorMessage).toBe(DENY_REASON);
     expect(answer.cancel).toBeUndefined(); // cancel would stop the whole run
