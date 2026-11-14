@@ -1004,4 +1004,24 @@ describe('Cline hook files', () => {
     const [echo] = answer.overrideInput.commands;
     expect(echo).toMatch(/^echo 'Blocked by Tracetoon\. [^'‘’‚‛]*'$/);
   });
+
+  test('a PR command sent as one string (Cline 4.x) is blocked too', () => {
+    const answer = JSON.parse(
+      decide(
+        'cline',
+        {
+          hookName: 'tool_call',
+          taskId: 't',
+          sessionContext: { rootSessionId: 's' },
+          workspaceRoots: [tempDir()],
+          tool_call: {
+            name: 'run_commands',
+            input: { commands: 'git push; gh pr create --fill' },
+          },
+        },
+        env(),
+      )!,
+    );
+    expect(answer.errorMessage).toBe(DENY_REASON);
+  });
 });

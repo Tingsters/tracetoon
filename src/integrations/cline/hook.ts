@@ -63,12 +63,17 @@ function ask(argv) {
 
 let out = {};
 try {
-  const tool = JSON.parse(input || '{}')?.tool_call?.name;
+  const call = JSON.parse(input || '{}')?.tool_call;
+  const tool = call?.name;
   if (SHELL.has(tool)) {
     out = ask(ARGV.prePr) || ask(ARGV.pre) || {};
-    // execute_command takes one command, run_commands a list.
-    if (tool === 'execute_command' && out.overrideInput?.commands)
-      out.overrideInput = { command: out.overrideInput.commands.join('\\n') };
+    // execute_command takes one command; run_commands a list (Cline 3.x) or
+    // one string (4.x), so answer in the shape the call used.
+    const replacement = out.overrideInput?.commands;
+    if (tool === 'execute_command' && replacement)
+      out.overrideInput = { command: replacement.join('\\n') };
+    else if (typeof call?.input?.commands === 'string' && replacement)
+      out.overrideInput = { commands: replacement.join('\\n') };
   } else tell(ARGV.pre);
 } catch {}
 process.stdout.write(JSON.stringify(out));

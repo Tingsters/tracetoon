@@ -31,9 +31,12 @@ function parse(raw: unknown): HookPayload | undefined {
     return undefined;
   const call: Json = p.tool_call ?? p.tool_result ?? {};
   const toolInput: Json = call.input && typeof call.input === 'object' ? call.input : {};
-  const commands = Array.isArray(toolInput.commands)
+  // Cline 3.x sends a list; 4.x (the VS Code extension) sends one string.
+  const commands: string[] = Array.isArray(toolInput.commands)
     ? toolInput.commands.filter((c: unknown) => typeof c === 'string')
-    : [];
+    : typeof toolInput.commands === 'string'
+      ? [toolInput.commands]
+      : [];
   const roots: string[] = Array.isArray(p.workspaceRoots)
     ? p.workspaceRoots.filter((r: unknown) => typeof r === 'string' && r.length)
     : [];
