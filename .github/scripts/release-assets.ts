@@ -21,6 +21,22 @@ export const SUPPORTED_TARGETS = [
   'darwin-arm64',
   'windows-x64',
 ];
+/** checksums.txt (`<sha256>  <name>` per line) as name → lowercase SHA-256. */
+export function readChecksums(text: string): Map<string, string> {
+  const sums = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const m = /^([a-fA-F0-9]{64}) [ *]?([a-zA-Z0-9._-]+)$/.exec(line.trim());
+    if (!m || sums.has(m[2]!)) throw Error(`Invalid checksums line: ${line}`);
+    sums.set(m[2]!, m[1]!.toLowerCase());
+  }
+  return sums;
+}
+/** A release tag (`v1.2.3` or `v1.2.3-rc.4`) and its version. */
+export function releaseVersion(tag: string): string {
+  if (!/^v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(tag)) throw Error(`Not a release tag: ${tag}`);
+  return tag.slice(1);
+}
 export interface AssetManifest {
   schema: 'tracetoon.candidate-artifacts/v1';
   version: string;

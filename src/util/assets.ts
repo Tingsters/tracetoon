@@ -4,7 +4,7 @@
  * WebAssembly modules (resvg, Relate) and fonts ship there, so no runtime
  * needs native modules.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,6 +24,16 @@ export function assetsDir(marker = 'resvg.wasm'): string | undefined {
     join(dirname(process.execPath), '..', 'plugin', 'skills', 'tracetoon', 'assets'), // repo dist/ binary
     join(here, '..', '..', 'plugin', 'skills', 'tracetoon', 'assets'), // src/<dir> → repo
     join(process.argv[1] ? dirname(resolve(process.argv[1])) : here, '..', 'assets'),
+    // Started through a link (Homebrew, winget's command alias): the real binary's bin/.
+    join(dirname(realExecPath()), '..', 'assets'),
   ].filter((p): p is string => !!p);
   return candidates.find((p) => existsSync(join(p, marker)));
+}
+
+function realExecPath(): string {
+  try {
+    return realpathSync(process.execPath);
+  } catch {
+    return process.execPath;
+  }
 }

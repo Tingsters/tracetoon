@@ -8,13 +8,13 @@
     "url": "https://github.com/Tracetoon/tracetoon",
     "source": "github"
   },
-  "version": "1.0.0-rc.27",
+  "version": "1.0.0-rc.28",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "tracetoon",
-      "version": "1.0.0-rc.27",
+      "version": "1.0.0-rc.28",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
