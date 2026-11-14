@@ -42,6 +42,8 @@ beforeEach(() => {
     FAKE_GH_LOG: ghLog,
   };
   delete env.CLAUDE_PROJECT_DIR;
+  delete env.CI; // CI=true turns Tracetoon off, and these tests expect it on
+  delete env.TRACETOON;
   // Leave the shipped SKILL.md's review plan out, so a plain render can publish.
   const skill = join(scratch, 'SKILL.md');
   writeFileSync(skill, '---\nname: tracetoon\n---\n');
