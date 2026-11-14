@@ -953,4 +953,49 @@ describe('Cline adapter', () => {
     expect(s.records[5]).toMatchObject({ cmd: 'npm test', isError: true });
     expect(s.unknownTypes).toEqual({ image: 1 });
   });
+
+  test('reads the single-command execute_command tool and its plain-text result', () => {
+    const s = session('x');
+    parseClineMessages(
+      JSON.stringify({
+        messages: [
+          {
+            role: 'assistant',
+            ts: 1,
+            content: [
+              {
+                type: 'tool_use',
+                id: 'e1',
+                name: 'execute_command',
+                input: { command: 'npm test' },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            ts: 2,
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'e1',
+                content: '2 failing',
+                is_error: true,
+              },
+            ],
+          },
+        ],
+      }),
+      s,
+      '/repo',
+    );
+    expect(s.records).toEqual([
+      expect.objectContaining({
+        kind: 'command',
+        cmd: 'npm test',
+        isError: true,
+        output: '2 failing',
+      }),
+    ]);
+    expect(s.records[0]).not.toHaveProperty('pending');
+  });
 });

@@ -113,6 +113,17 @@ export function parseClineMessages(
             }));
           into.records.push(...records);
           if (str(b.id)) pending.set(b.id, records);
+        } else if (name === 'execute_command' && str(input.command)) {
+          // The single-command shell tool: its result is plain text.
+          const record: CommandRecord = {
+            kind: 'command',
+            cmd: input.command,
+            ts,
+            cwd,
+            pending: true,
+          };
+          into.records.push(record);
+          if (str(b.id)) pending.set(b.id, [record]);
         } else if (!QUIET.has(name)) {
           into.unknownTypes[`tool:${name}`] =
             (into.unknownTypes[`tool:${name}`] ?? 0) + 1;
@@ -121,7 +132,11 @@ export function parseClineMessages(
         const records = str(b.tool_use_id) ? pending.get(b.tool_use_id) : undefined;
         if (!records) continue;
         pending.delete(b.tool_use_id);
-        const results: Obj[] = Array.isArray(b.content) ? b.content.filter(isObj) : [];
+        const results: Obj[] = Array.isArray(b.content)
+          ? b.content.filter(isObj)
+          : str(b.content)
+            ? [{ result: b.content, success: b.is_error === true ? false : undefined }]
+            : [];
         records.forEach((r, i) => {
           delete r.pending;
           const result = results.find((x) => x.query === r.cmd) ?? results[i];
