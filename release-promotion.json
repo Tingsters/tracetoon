@@ -1,28 +1,36 @@
 {
   "schema": "tracetoon.release-promotion/v3",
-  "version": "1.0.0-rc.27",
-  "buildId": "347388fc5a55fad98181ac186ecb243b5ced5e56139c4b300ad4eb1283da405c",
+  "version": "1.0.0-rc.28",
+  "buildId": "2adcb86d8a97cc436ecc61b30a488009a24ad73e035643a44b8845c0f32be6b0",
   "artifact": {
-    "runId": 43522840960,
-    "id": 14084177729,
-    "name": "tracetoon-candidate-bb3ae414b7d3ec6af04ac293ca8bb305f7c30347-attempt-1",
-    "digest": "sha256:e22cfd96329b695747274b83aeb08b33b8214b455e3c9eb69a9e30379fa34fcc"
+    "runId": 43563362377,
+    "id": 14101841660,
+    "name": "tracetoon-candidate-b18b460c1630a9564958d3ffd4950d9f1ab7daeb-attempt-1",
+    "digest": "sha256:45a565daa04dcad3d97586be2c081da5c6a3cd55e731a692f8c48611a9e3dee9"
   },
   "expected": {
-    "manifestSha256": "988d03a09d1a0aa90bac28892fe0c2dec5abd7d8036ed85815e116e862665a44",
-    "checksumsSha256": "d3abae3e177f32b201ce42b34a6b2801a3b00f9ed9cdfd9b0e6042eb0d2548f0",
-    "windowsSha256": "84111a821be19f72cd29fc0a1c74e98976dca301bf396cb6e7f73c7cc54ff582",
-    "bundleSha256": "d1809835bfc01f5635791d9505ba8881e55c6ffe41c1b1ee6082175dda4d5d8d"
+    "manifestSha256": "ce9b8b31aac9eaf74443d27a6de74cf45e68642489562878327f845af80585a3",
+    "checksumsSha256": "e6c20ce18d6cb3efa3a891f7047c13e94486063b432f0c979b6e739f88b16a3a",
+    "windowsSha256": "c22c55e0301bc8d328323c1916a7ffaf94d1fc8d3f56e98be4d1d36a9d9dfa4f",
+    "bundleSha256": "e3dd7a2a2022d171157e9c48f98b1b799b9ef37232fc6610b5f0c956f7c38feb"
   },
   "decision": {
     "kind": "explicit-user-request",
-    "recordedAt": "2026-11-13T23:09:14.000Z",
-    "reason": "The user explicitly requested the rc.27 release with the Windows update fix and merged its PRs. The retained prbench inputs needed for calibration and admission are not available on the release machine, so the CI-tested candidate is released without a benchmark round. No evaluation result or performance gain is claimed."
+    "recordedAt": "2026-11-14T06:08:40.000Z",
+    "reason": "The user explicitly requested a new release after merging the Junie, Devin CLI, Goose, Qwen Code, Crush and Amp integrations. The retained prbench inputs needed for calibration and admission are not available on the release machine, so the CI-tested candidate is released without a benchmark round. No evaluation result or performance gain is claimed."
   },
   "evaluations": {
-    "calibration": { "status": "not-run" },
-    "admission": { "status": "not-run" },
-    "development": { "status": "not-run" },
-    "heldout": { "status": "not-run" }
+    "calibration": {
+      "status": "not-run"
+    },
+    "admission": {
+      "status": "not-run"
+    },
+    "development": {
+      "status": "not-run"
+    },
+    "heldout": {
+      "status": "not-run"
+    }
   }
 }
