@@ -1,7 +1,9 @@
 /**
- * Cline: the Cline CLI (3.x) and the SDK it shares, in ~/.cline. Skills are read
- * from ~/.agents/skills (shared with Codex). Hooks are event-named scripts in
- * ~/.cline/hooks (see ./hook.ts).
+ * Cline: the Cline CLI (3.x) and the VS Code extension (4.x), which share
+ * ~/.cline. Skills are read from ~/.agents/skills (shared with Codex). The CLI's
+ * hooks are event-named scripts in ~/.cline/hooks (see ./hook.ts); the
+ * extension on Windows runs PreToolUse.ps1 from ~/Documents/Cline/Hooks
+ * instead, with the older payload (`preToolUse: { toolName, parameters }`).
  *
  * Payloads: `{ hookName, taskId, sessionContext: { rootSessionId },
  * workspaceRoots, tool_call: { id, name, input } }` before a tool and
@@ -17,11 +19,14 @@ import {
   clineHookCommand,
   denyCline,
   renderClineObserver,
+  renderClinePowerShell,
   renderClinePre,
 } from './hook.ts';
 import { clineAdapter } from './trace.ts';
 
 const home = (h: string) => join(h, '.cline');
+/** From ~/.cline/hooks to the extension's ~/Documents/Cline/Hooks. */
+export const EXTENSION_HOOK = '../../Documents/Cline/Hooks/PreToolUse.ps1';
 const str = (v: unknown) => (typeof v === 'string' && v.length ? v : undefined);
 
 function parse(raw: unknown): HookPayload | undefined {
@@ -29,7 +34,12 @@ function parse(raw: unknown): HookPayload | undefined {
   const p = raw as Json;
   if (typeof p.hookName !== 'string' || !('taskId' in p || 'sessionContext' in p))
     return undefined;
-  const call: Json = p.tool_call ?? p.tool_result ?? {};
+  // The VS Code extension's PowerShell hooks get the older shape instead.
+  const legacy: Json | undefined = p.preToolUse ?? p.postToolUse;
+  const call: Json =
+    p.tool_call ??
+    p.tool_result ??
+    (legacy ? { name: legacy.toolName, input: legacy.parameters } : {});
   const toolInput: Json = call.input && typeof call.input === 'object' ? call.input : {};
   // Cline 3.x sends a list; 4.x (the VS Code extension) sends one string.
   const commands: string[] = Array.isArray(toolInput.commands)
@@ -58,9 +68,10 @@ export const integration: Integration = {
   id: 'cline',
   label: 'Cline',
   status: 'supported',
-  variants: 'CLI',
+  variants: 'CLI and VS Code extension',
   limits: [
     'PRs opened through GitHub connector or MCP tools are not redirected; `gh` and other shell commands are.',
+    'In the VS Code extension, PR commands are redirected on Windows only, and a blocked one stops the task, since the extension cannot skip a single command.',
   ],
   traces: [clineAdapter],
   hook: {
@@ -74,6 +85,11 @@ export const integration: Integration = {
       siblings: {
         'PostToolUse.mjs': (c) => renderClineObserver(c, 'PostToolUse'),
         'TaskStart.mjs': (c) => renderClineObserver(c, 'SessionStart'),
+        // The VS Code extension on Windows reads only .ps1 hooks, from
+        // ~/Documents/Cline/Hooks.
+        ...(process.platform === 'win32'
+          ? { [EXTENSION_HOOK]: renderClinePowerShell }
+          : {}),
       },
     },
     parse,

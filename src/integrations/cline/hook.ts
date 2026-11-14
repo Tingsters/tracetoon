@@ -88,12 +88,56 @@ process.stdout.write('{}');
 `;
 }
 
+/** PowerShell's marker line: the same tag behind `#` instead of `//`. */
+export const CLINE_PS_MARKER = '# tracetoon:cline-hook';
+
+const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
+const psArray = (argv: string[]) => `@(${argv.map(psQuote).join(', ')})`;
+
+/**
+ * The Cline 4.x VS Code extension on Windows runs only `<Event>.ps1` files,
+ * from ~/Documents/Cline/Hooks (not ~/.cline/hooks), and sends the older
+ * payload: `{ hookName: "PreToolUse", taskId, workspaceRoots, preToolUse: {
+ * toolName, parameters } }`. Its answer can't skip or replace one call: only
+ * `cancel` blocks, and it stops the task with `errorMessage` shown. So a PR
+ * command stops the task with Tracetoon's reason; anything else runs.
+ */
+export function renderClinePowerShell(commands: HookCommands): string {
+  const a = commands.argv!;
+  return `${CLINE_PS_MARKER} ${commands.prePr}
+# Routes PR creation in the Cline VS Code extension through Tracetoon. Written by
+# \`tracetoon hook install\`; \`tracetoon hook uninstall\` removes it. Edits are overwritten.
+$ErrorActionPreference = 'SilentlyContinue'
+$OutputEncoding = New-Object System.Text.UTF8Encoding $false
+try { [Console]::InputEncoding = $OutputEncoding } catch {}
+$payload = [Console]::In.ReadToEnd()
+$out = '{}'
+try {
+  $tool = ($payload | ConvertFrom-Json).preToolUse.toolName
+  if ($tool -eq 'run_commands' -or $tool -eq 'execute_command') {
+    foreach ($argv in @(${psArray(a.prePr)}, ${psArray(a.lifecycle('PreToolUse'))})) {
+      $exe = $argv[0]
+      $rest = @($argv | Select-Object -Skip 1)
+      $answer = ($payload | & $exe @rest 2>$null | Out-String).Trim()
+      if (-not $answer) { continue }
+      $reason = ($answer | ConvertFrom-Json).errorMessage
+      if ($reason) {
+        $out = @{ cancel = $true; errorMessage = [string]$reason } | ConvertTo-Json -Compress
+        break
+      }
+    }
+  }
+} catch {} # never get in the way when Tracetoon can't run
+$out
+`;
+}
+
 /** The pre-pr command line a written hook runs, from its first line. */
 export function clineHookCommand(text: string): string | undefined {
   const first = text.split(/\r?\n/, 1)[0] ?? '';
-  return first.startsWith(CLINE_MARKER)
-    ? first.slice(CLINE_MARKER.length).trim()
-    : undefined;
+  for (const marker of [CLINE_MARKER, CLINE_PS_MARKER])
+    if (first.startsWith(marker)) return first.slice(marker.length).trim();
+  return undefined;
 }
 
 /**

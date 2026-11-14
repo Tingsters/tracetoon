@@ -558,6 +558,11 @@ describe('installing the hook', () => {
     expect(readFileSync(join(h, '.cline', 'hooks', 'TaskStart.mjs'), 'utf8')).toContain(
       '"--event","SessionStart"',
     );
+    // On Windows the Cline VS Code extension reads PowerShell hooks from Documents.
+    const extensionHook = join(h, 'Documents', 'Cline', 'Hooks', 'PreToolUse.ps1');
+    if (process.platform === 'win32')
+      expect(readFileSync(extensionHook, 'utf8')).toContain('cancel = $true');
+    else expect(existsSync(extensionHook)).toBe(false);
     // Junie's config.json takes Claude-style groups; its shell tool is Bash or powershell.
     const junie = JSON.parse(readFileSync(join(h, '.junie', 'config.json'), 'utf8'));
     expect(junie.hooks.PreToolUse[0]).toMatchObject({
@@ -669,6 +674,9 @@ describe('installing the hook', () => {
     );
     for (const name of ['PreToolUse.mjs', 'PostToolUse.mjs', 'TaskStart.mjs'])
       expect(existsSync(join(h, '.cline', 'hooks', name))).toBe(false);
+    expect(existsSync(join(h, 'Documents', 'Cline', 'Hooks', 'PreToolUse.ps1'))).toBe(
+      false,
+    );
     expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
       false,
     );
@@ -1003,6 +1011,28 @@ describe('Cline hook files', () => {
     expect(answer.cancel).toBeUndefined(); // cancel would stop the whole run
     const [echo] = answer.overrideInput.commands;
     expect(echo).toMatch(/^echo 'Blocked by Tracetoon\. [^'‘’‚‛]*'$/);
+  });
+
+  test('a PR command in the older payload of the VS Code extension is blocked too', () => {
+    // Recorded from the Cline 4.1.26 VS Code extension's PreToolUse.ps1 hook.
+    const answer = JSON.parse(
+      decide(
+        'cline',
+        {
+          clineVersion: '4.1.26',
+          hookName: 'PreToolUse',
+          timestamp: '1794646999494',
+          taskId: 'conv_1794646985049_9g5nvg7',
+          workspaceRoots: [tempDir()],
+          preToolUse: {
+            toolName: 'run_commands',
+            parameters: { commands: 'git status; gh pr create --fill' },
+          },
+        },
+        env(),
+      )!,
+    );
+    expect(answer.errorMessage).toBe(DENY_REASON);
   });
 
   test('a PR command sent as one string (Cline 4.x) is blocked too', () => {
