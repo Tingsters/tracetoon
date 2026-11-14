@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.sh | sh
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Gemini CLI), caches the matching prebuilt binary so nothing
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush, Gemini CLI), caches the matching prebuilt binary so nothing
 # else (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -82,6 +82,9 @@ targets() {
   if command -v devin >/dev/null 2>&1; then
     printf 'Devin|%s\n' "$HOME/.agents/skills/tracetoon"
   fi
+  if command -v crush >/dev/null 2>&1 || [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/crush" ]; then
+    printf 'Crush|%s\n' "$HOME/.agents/skills/tracetoon"
+  fi
   qwen_home="${QWEN_DATA_DIR:-$HOME/.qwen}"
   if [ -d "$qwen_home" ] || command -v qwen >/dev/null 2>&1; then
     printf 'Qwen Code|%s\n' "$qwen_home/skills/tracetoon"
@@ -147,7 +150,7 @@ if [ "${TRACETOON_UNINSTALL:-}" = 1 ]; then
   exit 0
 fi
 
-[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Gemini CLI)"
+[ -n "$(targets)" ] || die "no supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Qwen Code, Crush, Gemini CLI)"
 
 tag="${TRACETOON_VERSION:-}"
 tmp=$(mktemp -d)

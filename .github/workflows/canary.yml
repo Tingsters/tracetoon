@@ -15,6 +15,7 @@ name: drift canary
 #   Cline CLI     ANTHROPIC_API_KEY
 #   Goose         OPENAI_API_KEY
 #   Qwen Code     OPENAI_API_KEY
+#   Crush         OPENAI_API_KEY
 #   Junie         JUNIE_AUTH (a token from https://junie.jetbrains.com/cli)
 on:
   schedule:
@@ -133,6 +134,13 @@ jobs:
           npm install -g @qwen-code/qwen-code
           OPENAI_BASE_URL=https://api.openai.com/v1 qwen --auth-type openai-responses -m gpt-6-luna --yolo -p "Create qwen.py that prints qwen."
           echo "qwen:qwen.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Crush session
+        if: ${{ !cancelled() && env.OPENAI_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g @charmland/crush
+          crush --yolo run -m openai/gpt-6-luna "Create crush.py that prints crush."
+          echo "crush:crush.py" >> "$RUNNER_TEMP/expect.txt"
       - name: Kiro CLI session
         if: ${{ !cancelled() && env.KIRO_API_KEY != '' }}
         working-directory: ${{ runner.temp }}/toy
