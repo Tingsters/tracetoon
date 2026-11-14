@@ -104,6 +104,20 @@ const PAYLOADS: Record<string, (command: string, cwd: string) => unknown> = {
     args: { command },
     directory: cwd,
   }),
+  // Recorded from Cline CLI 3.0.74 (the shell tool takes a list of commands).
+  cline: (command, cwd) => ({
+    clineVersion: '',
+    timestamp: '2026-11-14T01:20:39.174Z',
+    taskId: 'conv_1794619235211_eapht52',
+    sessionContext: { rootSessionId: '1794619234824_5dvqy' },
+    workspaceRoots: [cwd],
+    userId: 'unknown',
+    agent_id: 'agent_1',
+    parent_agent_id: null,
+    hookName: 'tool_call',
+    iteration: 1,
+    tool_call: { id: 'call_1', name: 'run_commands', input: { commands: [command] } },
+  }),
   // Recorded from Kiro CLI 3.3.0 (shell tool on Windows: execute_pwsh).
   kiro: (command, cwd) => ({
     session_id: 'sess_fde7771a-8268-4561-85e5-f7ea61eba941',
@@ -193,11 +207,13 @@ describe('hook contract', () => {
     const hook = i.hook!;
     test(`${i.label}: install is idempotent and uninstall restores the config`, () => {
       if (hook.text) {
-        // A file Tracetoon owns: rendering is stable and names the pre-pr command.
+        // Files Tracetoon owns: rendering is stable and names the pre-pr command.
         const text = hook.text.render(commands);
         expect(hook.text.render(commands)).toBe(text);
         expect(hook.text.command(text)).toBe(commands.prePr);
         expect(hook.text.command('// another plugin')).toBeUndefined();
+        for (const render of Object.values(hook.text.siblings ?? {}))
+          expect(hook.text.command(render(commands))).toBe(commands.prePr);
         return;
       }
       const once = hook.apply(foreign, commands);
