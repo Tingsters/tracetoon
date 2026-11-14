@@ -102,6 +102,9 @@ const MCP_ADD = 'claude mcp add tracetoon -- tracetoon mcp';
 
 const INSTALL_HUMAN = `curl -fsSL ${RAW}/install.sh | sh`;
 const INSTALL_HUMAN_WIN = `irm ${RAW}/install.ps1 | iex`;
+/** The skill as released: main and release tags carry source only, `release` the bundle. */
+export const SKILLS_CLI = `npx skills add ${REPO}#release --skill tracetoon -g -y`;
+export const GH_SKILL = `gh skill install ${REPO} plugin/skills/tracetoon --pin release --scope user`;
 
 /** Where llms.txt points for each page: raw GitHub here, tracetoon.ai in the site kit. */
 export interface LlmsLinks {
@@ -133,9 +136,12 @@ For agents: when the user asks you to open, create or describe a pull request, a
 
 ## Install
 
-- [Install for agents](${links.install}): commands an agent can run, per host
-- Installer (asks the user; downloads and verifies a release): \`${INSTALL_HUMAN}\` or, on Windows, \`${INSTALL_HUMAN_WIN}\`
+- [Install for agents](${links.install}): commands an agent can run, per host, in this order
+- npm (after the first npm release): \`npx tracetoon@latest setup\` installs the skill into every agent found and adds the PR hook
 - Claude Code plugin: \`claude plugin marketplace add ${REPO}\` then \`claude plugin install tracetoon@tracetoon\`
+- Skills CLI or GitHub CLI, from the \`release\` branch: \`${SKILLS_CLI}\` or \`${GH_SKILL}\`
+- Skill from the GitHub release: \`gh release download --repo ${REPO} --pattern tracetoon-skill.zip\`, then unzip it into the agent's skills folder
+- Installer (asks the user; downloads and verifies a release): \`${INSTALL_HUMAN}\` or, on Windows, \`${INSTALL_HUMAN_WIN}\`
 - MCP server (any MCP host, with the runtime installed): \`tracetoon mcp\` on stdio, for example \`${MCP_ADD}\`
 
 ## Use
@@ -168,7 +174,23 @@ Tracetoon is a skill (\`SKILL.md\` plus a launcher) and a \`tracetoon\` binary.
 It needs \`git\` and the GitHub CLI (\`gh\`), signed in. Pick the first route
 your host allows.
 
-## 1. Claude Code plugin
+## 1. npm (after the first npm release)
+
+Needs Node.js 18+ (or Bun). Downloads the prebuilt binary for this machine
+from npm, installs its skill into every agent found, and adds the PR hook:
+
+\`\`\`sh
+npx tracetoon@latest setup --json
+npx tracetoon@latest doctor --json
+\`\`\`
+
+\`setup --agent <id>\` limits it to one host; \`--no-hook\` skips the hook.
+The hook runs the binary from where npm put it, and \`npx\` keeps that in its
+cache, so for a lasting \`tracetoon\` command and hook prefer
+\`npm install -g tracetoon\`, then \`tracetoon setup --json\`. Before Tracetoon
+is on npm, \`npx\` fails with a 404; use the next route.
+
+## 2. Claude Code plugin
 
 \`\`\`sh
 claude plugin marketplace add ${REPO}
@@ -177,10 +199,29 @@ claude plugin install tracetoon@tracetoon
 
 Inside a session the same commands are \`/plugin marketplace add ${REPO}\` and
 \`/plugin install tracetoon@tracetoon\`. The plugin carries the skill and runs
-its bundled copy under Bun or Node 22+. The installer (route 3) adds the
+its bundled copy under Bun or Node 22+. The installer (route 5) adds the
 prebuilt binary and the PR hook.
 
-## 2. Skill from the release, with \`gh\`
+## 3. Skills CLI or GitHub CLI (\`gh skill\`)
+
+Both read the skill from the \`release\` branch, which carries the built bundle.
+\`main\` and the release tags hold source only, so a plain \`${REPO}\`
+installs a copy that can't run (the launcher exits 3 and says so).
+
+\`\`\`sh
+${SKILLS_CLI}
+${GH_SKILL}
+\`\`\`
+
+With \`-y\` the skills CLI installs for every agent it detects; \`-a <agent>\`
+picks one. \`gh skill\` takes \`--agent <agent>\` (default GitHub Copilot), for
+example \`claude-code\` or \`codex\`.
+The skill runs its bundled copy under Bun or Node 22+. \`gh skill\` writes
+files without the executable bit: on macOS and Linux run
+\`chmod +x <skill folder>/bin/tracetoon\` once. Neither adds the PR hook;
+\`<skill folder>/bin/tracetoon hook install\` does.
+
+## 4. Skill from the release, with \`gh\`
 
 Uses only \`gh\`, which Tracetoon needs anyway:
 
@@ -200,7 +241,7 @@ launcher exits with code 3 when it finds no runtime; with the user's
 agreement, rerun with \`TRACETOON_ALLOW_DOWNLOAD=1\` and it downloads the
 release binary through \`gh\` and checks its SHA-256.
 
-## 3. Installer (installs the binary, every skill copy and the PR hook)
+## 5. Installer (installs the binary, every skill copy and the PR hook)
 
 Agent sandboxes usually block piping a download into a shell, so ask the user
 to run it, or to approve it:
@@ -215,11 +256,14 @@ ${INSTALL_HUMAN_WIN}
 
 \`TRACETOON_NO_HOOK=1\` skips the PR hook; \`TRACETOON_VERSION=<tag>\` pins a release.
 
-## 4. MCP server (hosts without skills or a shell)
+## 6. MCP server (hosts without skills or a shell)
 
-With the runtime installed (route 3, or the plugin), \`tracetoon mcp\` serves
-Tracetoon over MCP on stdio. The Claude Code plugin registers it already. For
-another Claude Code setup:
+With the runtime installed (\`npm install -g tracetoon\` from route 1, the
+installer from route 5, or the plugin), \`tracetoon mcp\` serves Tracetoon
+over MCP on stdio; after the first npm release \`npx -y tracetoon@latest mcp\`
+works without an install. The Claude Code plugin registers it already, and the
+Cursor plugin and Gemini extension start it through \`npx\`. For another
+Claude Code setup:
 
 \`\`\`sh
 ${MCP_ADD}

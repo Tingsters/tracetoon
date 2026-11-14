@@ -1,64 +1,21 @@
 import { expect, test } from 'bun:test';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   sha,
-  SUPPORTED_TARGETS,
   verifyArtifactMetadata,
   verifyAssets,
   verifyCandidateInputs,
   verifyPromotion,
-  writeInventory,
   promotionNotes,
   validatePromotion,
   type Promotion,
   type RequestedPromotion,
   type UnevaluatedPromotion,
 } from '../.github/scripts/release-assets.ts';
-import { tempDir } from './helpers.ts';
+import { releaseFixture } from './release-fixture.ts';
 function fixture() {
-  const root = tempDir(),
-    skill = join(root, 'tracetoon'),
-    out = join(root, 'release');
-  mkdirSync(join(skill, 'dist'), { recursive: true });
-  mkdirSync(out);
-  const manifest = {
-    version: '1.0.0-rc.24',
-    buildId: 'a'.repeat(64),
-    protocol: 2,
-    compiler: { name: 'bun', version: Bun.version },
-    recipe: { native: { targets: SUPPORTED_TARGETS } },
-  };
-  writeFileSync(join(skill, 'build.json'), JSON.stringify(manifest));
-  writeFileSync(join(skill, 'VERSION'), manifest.version);
-  writeFileSync(join(skill, 'SKILL.md'), '# Synthetic skill');
-  writeFileSync(join(skill, 'dist/tracetoon.mjs'), 'console.log("synthetic");');
-  const receipt = (file: string, target: string) => ({
-    schema: 'tracetoon.build-output/v1',
-    target,
-    buildId: manifest.buildId,
-    inputManifestSha256: sha(join(skill, 'build.json')),
-    sha256: sha(file),
-    compiler: { version: Bun.version, sha256: 'b'.repeat(64) },
-  });
-  writeFileSync(
-    join(skill, 'dist/tracetoon.mjs.build.json'),
-    JSON.stringify(receipt(join(skill, 'dist/tracetoon.mjs'), 'node-esm')),
-  );
-  for (const target of SUPPORTED_TARGETS) {
-    const file = join(
-      out,
-      `tracetoon-${target}${target.startsWith('windows-') ? '.exe' : ''}`,
-    );
-    writeFileSync(file, 'synthetic binary ' + target);
-    writeFileSync(file + '.build.json', JSON.stringify(receipt(file, target)));
-    writeFileSync(
-      join(out, `tracetoon-skill-${target}.zip`),
-      'synthetic archive ' + target,
-    );
-  }
-  writeFileSync(join(out, 'tracetoon-skill.zip'), 'synthetic slim archive');
-  const inventory = writeInventory(out, skill, 'c'.repeat(40));
+  const { out, skill, manifest, inventory } = releaseFixture();
   const promotion: Promotion = {
     schema: 'tracetoon.release-promotion/v1',
     version: manifest.version,
