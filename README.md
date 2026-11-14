@@ -174,7 +174,7 @@ tracetoon query outline          # changed units, their requests and checks
 tracetoon query why src/foo.ts   # which request and which runs are behind this file (or a hunk: H3)
 tracetoon query unverified       # changes no run saw after their last edit
 tracetoon query stale R2         # what changed after run R2
-tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.path LIMIT 5'   # read-only Cypher
+tracetoon query --cypher 'MATCH (h:Hunk) RETURN h.file LIMIT 5'   # read-only Cypher
 ```
 
 Named queries also include `verified`, `unexplained`, `turn <S#>`, `dead-ends`,
