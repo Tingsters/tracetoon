@@ -19,6 +19,7 @@ import {
   uninstallHooks,
 } from '../src/hook/install.ts';
 import { switchState } from '../src/hook/switches.ts';
+import { gooseDataDir } from '../src/integrations/goose/trace.ts';
 import { codexHookHash } from '../src/integrations/codex/trust.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
@@ -441,6 +442,8 @@ describe('installing the hook', () => {
     mkdirSync(join(h, '.config', 'kilo'), { recursive: true });
     mkdirSync(join(h, '.kiro'), { recursive: true });
     mkdirSync(join(h, '.cline'), { recursive: true });
+    mkdirSync(join(h, '.junie'), { recursive: true });
+    mkdirSync(gooseDataDir({}, h), { recursive: true });
     return h;
   }
   const existingClaude = {
@@ -479,9 +482,13 @@ describe('installing the hook', () => {
       'installed',
       'installed',
       'installed',
+      'installed',
+      'installed',
     ]);
     expect(first[1]!.note).toContain('/hooks');
     expect(installHooks('/opt/tracetoon/bin', targets).map((c) => c.result)).toEqual([
+      'unchanged',
+      'unchanged',
       'unchanged',
       'unchanged',
       'unchanged',
@@ -542,6 +549,28 @@ describe('installing the hook', () => {
     expect(readFileSync(join(h, '.cline', 'hooks', 'TaskStart.mjs'), 'utf8')).toContain(
       '"--event","SessionStart"',
     );
+    // Junie's config.json takes Claude-style groups; its shell tool is Bash or powershell.
+    const junie = JSON.parse(readFileSync(join(h, '.junie', 'config.json'), 'utf8'));
+    expect(junie.hooks.PreToolUse[0]).toMatchObject({
+      matcher: 'Bash|powershell',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent junie' }],
+    });
+    // Goose gets a plugin folder of its own: a manifest and Claude-style hooks.
+    const goose = JSON.parse(
+      readFileSync(
+        join(h, '.agents', 'plugins', 'tracetoon', 'hooks', 'hooks.json'),
+        'utf8',
+      ),
+    );
+    expect(goose.hooks.PreToolUse[0]).toMatchObject({
+      matcher: '^shell$',
+      hooks: [{ command: '/opt/tracetoon/bin hook pre-pr --agent goose' }],
+    });
+    expect(
+      JSON.parse(
+        readFileSync(join(h, '.agents', 'plugins', 'tracetoon', 'plugin.json'), 'utf8'),
+      ).name,
+    ).toBe('tracetoon');
     // Kiro gets its own file in ~/.kiro/hooks, PR route on the shell matcher.
     const kiro = JSON.parse(
       readFileSync(join(h, '.kiro', 'hooks', 'tracetoon.json'), 'utf8'),
@@ -573,9 +602,13 @@ describe('installing the hook', () => {
       true,
       true,
       true,
+      true,
+      true,
     ]);
 
     expect(uninstallHooks(targets).map((c) => c.result)).toEqual([
+      'removed',
+      'removed',
       'removed',
       'removed',
       'removed',
@@ -595,6 +628,10 @@ describe('installing the hook', () => {
     expect(existsSync(join(h, '.copilot', 'hooks', 'tracetoon.json'))).toBe(false);
     expect(existsSync(join(h, '.cursor', 'hooks.json'))).toBe(false);
     expect(existsSync(join(h, '.kiro', 'hooks', 'tracetoon.json'))).toBe(false);
+    expect(existsSync(join(h, '.junie', 'config.json'))).toBe(false);
+    expect(existsSync(join(h, '.agents', 'plugins', 'tracetoon', 'plugin.json'))).toBe(
+      false,
+    );
     for (const name of ['PreToolUse.mjs', 'PostToolUse.mjs', 'TaskStart.mjs'])
       expect(existsSync(join(h, '.cline', 'hooks', name))).toBe(false);
     expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
@@ -609,7 +646,11 @@ describe('installing the hook', () => {
     // Plugin files (OpenCode, Kilo) are Tracetoon's own and hold no JSON settings;
     // Kiro's file is new, so no release ever wrote a Stop hook there.
     const targets = hookTargets(home(), {}).filter(
-      (t) => !t.file.endsWith('.js') && !t.file.endsWith('.mjs') && t.agent !== 'kiro',
+      (t) =>
+        !t.file.endsWith('.js') &&
+        !t.file.endsWith('.mjs') &&
+        t.agent !== 'kiro' &&
+        t.agent !== 'goose',
     );
     const other = { hooks: [{ type: 'command', command: 'other-tool stop' }] };
     for (const target of targets) {
@@ -672,6 +713,8 @@ describe('installing the hook', () => {
     expect(changes[0]!.note).toContain('left untouched');
     expect(readFileSync(join(h, '.claude', 'settings.json'), 'utf8')).toBe('{ not json');
     expect(changes.slice(1).map((c) => c.note)).toEqual([
+      'not installed',
+      'not installed',
       'not installed',
       'not installed',
       'not installed',

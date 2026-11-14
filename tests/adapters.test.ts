@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
 import { commandText, parseCodexLines } from '../src/integrations/codex/trace.ts';
+import { parseDevinChain } from '../src/integrations/devin/trace.ts';
+import { parseGooseMessages } from '../src/integrations/goose/trace.ts';
 import {
   cleanUserContent,
   parseAntigravityLines,
@@ -10,6 +13,11 @@ import { parseFactoryLines } from '../src/integrations/factory/trace.ts';
 import { cursorTimestamp, parseCursorLines } from '../src/integrations/cursor/trace.ts';
 import { parseKiroLines } from '../src/integrations/kiro/trace.ts';
 import { parseClineMessages } from '../src/integrations/cline/trace.ts';
+import {
+  changedLines,
+  juniePrompts,
+  parseJunieEvents,
+} from '../src/integrations/junie/trace.ts';
 import {
   parseCopilotCliLines,
   parseVscodeChat,
@@ -1065,5 +1073,356 @@ describe('Cline adapter', () => {
       }),
     ]);
     expect(s.records[0]).not.toHaveProperty('pending');
+  });
+});
+
+describe('Junie adapter', () => {
+  // Shapes recorded from Junie 26.11.1 (paths scrubbed).
+  const ev = (ms: number, agentEvent: Record<string, unknown>) => ({
+    kind: 'SessionA2uxEvent',
+    event: {
+      state: 'IN_PROGRESS',
+      agentEvent: { agent: { kind: 'MainAgent' }, ...agentEvent },
+    },
+    timestampMs: ms,
+  });
+  test('keeps the last completed version of each step: edits, commands and the result', () => {
+    const s = session('session-1');
+    const created = {
+      afterContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n',
+      },
+      afterAbsolutePath: '/repo/calc.py',
+    };
+    const edited = {
+      beforeContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n',
+      },
+      afterContent: {
+        kind: 'TextFileContent',
+        text: 'def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n',
+      },
+      afterAbsolutePath: '/repo/calc.py',
+    };
+    parseJunieEvents(
+      jsonl([
+        { kind: 'TaskStartedEvent', taskId: 't', timestampMs: 1794620500888 },
+        ev(1794620501588, { kind: 'LlmResponseMetadataEvent', modelUsage: [] }),
+        ev(1794620505457, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'IN_PROGRESS',
+          changes: [created],
+        }),
+        ev(1794620505500, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'COMPLETED',
+          changes: [created],
+        }),
+        ev(1794620506000, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'b',
+          status: 'COMPLETED',
+          changes: [edited],
+        }),
+        ev(1794620514854, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'c',
+          status: 'IN_PROGRESS',
+          command: 'git commit -m calc',
+        }),
+        ev(1794620515000, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'c',
+          status: 'COMPLETED',
+          command: 'git commit -m calc',
+          output: '[feature 6e3ec0c] calc',
+          exitCode: 0,
+        }),
+        ev(1794620516000, {
+          kind: 'TerminalBlockUpdatedEvent',
+          stepId: 'd',
+          status: 'COMPLETED',
+          command: 'npm test',
+          exitCode: 1,
+        }),
+        ev(1794620525389, {
+          kind: 'ResultBlockUpdatedEvent',
+          stepId: 'r',
+          cancelled: false,
+          result: 'Created calc.py.',
+        }),
+        // Junie repeats finished blocks at the end of the log.
+        ev(1794620526000, {
+          kind: 'FileChangesBlockUpdatedEvent',
+          stepId: 'a',
+          status: 'COMPLETED',
+          changes: [created],
+        }),
+        ev(1794620526100, { kind: 'BrandNewEvent' }),
+        { kind: 'TaskState', state: 'COMPLETED', timestampMs: 1794620525453 },
+      ]),
+      s,
+      '/repo',
+      ['Create calc.py with add and sub.'],
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py with add and sub.',
+      ts: '2026-11-14T01:41:40.888Z',
+    });
+    expect(s.records[1]).toMatchObject({
+      created: true,
+      added: ['def add(a, b):', '    return a + b'],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: [],
+      added: ['', 'def sub(a, b):', '    return a - b'],
+    });
+    expect(s.records[3]).toMatchObject({
+      cmd: 'git commit -m calc',
+      output: '[feature 6e3ec0c] calc',
+    });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ BrandNewEvent: 1 });
+  });
+
+  test('reads the prompts from the state blob, oldest first', () => {
+    const blob = JSON.stringify({
+      previousPromptDescriptions: ['First ask.'],
+      lastAgentState: { issue: { name: 'Issue Task', description: 'Second ask.' } },
+    });
+    expect(juniePrompts(JSON.stringify({ event: { agentEvent: { blob } } }))).toEqual([
+      'First ask.',
+      'Second ask.',
+    ]);
+    expect(juniePrompts('not json')).toEqual([]);
+  });
+
+  test('changedLines keeps only the lines between the shared start and end', () => {
+    expect(changedLines('a\nb\nc\n', 'a\nB\nc\n')).toEqual({
+      removed: ['b'],
+      added: ['B'],
+    });
+    expect(changedLines('', 'x\n')).toEqual({ removed: [], added: ['x'] });
+  });
+});
+
+describe('Devin adapter', () => {
+  // Shapes recorded from Devin CLI 3000.12.57 (paths scrubbed).
+  test('walks the main chain: the prompt, write/edit calls and exec results', () => {
+    const s = session('picayune-door');
+    const meta = (created_at: string, extra: Record<string, unknown> = {}) => ({
+      created_at,
+      ...extra,
+    });
+    parseDevinChain(
+      [
+        {
+          role: 'system',
+          content: 'You are Devin.',
+          metadata: meta('2026-11-14T02:24:55Z'),
+        },
+        {
+          role: 'user',
+          content: 'Create calc.py',
+          metadata: meta('2026-11-14T02:24:56Z', { is_user_input: true }),
+        },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'w',
+              name: 'write',
+              arguments: {
+                file_path: '/repo/calc.py',
+                content: 'def add(a, b):\n    return a + b\n',
+              },
+            },
+            { id: 'r', name: 'read', arguments: { file_path: '/repo/calc.py' } },
+          ],
+          metadata: meta('2026-11-14T02:24:58Z'),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'w',
+          content: 'File created successfully',
+          metadata: meta('2026-11-14T02:24:59Z'),
+        },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'e',
+              name: 'edit',
+              arguments: {
+                file_path: '/repo/calc.py',
+                old_string: '    return a + b\n',
+                new_string: '    return int(a) + int(b)\n',
+              },
+            },
+            {
+              id: 'x',
+              name: 'exec',
+              arguments: { command: 'git commit -m calc', workdir: '/repo' },
+            },
+            {
+              id: 'y',
+              name: 'exec',
+              arguments: { command: 'npm test', workdir: '/repo' },
+            },
+            { id: 'z', name: 'teleport', arguments: {} },
+          ],
+          metadata: meta('2026-11-14T02:25:01Z'),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'x',
+          content: 'Output from command:\n[feature 170f343] calc\n\n\nExit code: 0',
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'y',
+          content: 'Output from command:\n1 failing\n\n\nExit code: 1',
+        },
+        {
+          role: 'assistant',
+          content: 'Done.',
+          tool_calls: [],
+          metadata: meta('2026-11-14T02:25:14Z'),
+        },
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T02:24:56Z',
+    });
+    expect(s.records[1]).toMatchObject({ file: resolve('/repo/calc.py'), removed: [] });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({ cmd: 'git commit -m calc', cwd: '/repo' });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ 'tool:teleport': 1 });
+  });
+});
+
+describe('Goose adapter', () => {
+  // Shapes recorded from Goose 1.58.1 (paths scrubbed).
+  const row = (role: string, s: number, blocks: unknown[]) => ({
+    role,
+    created_timestamp: s,
+    content_json: JSON.stringify(blocks),
+  });
+  const request = (id: string, name: string, args: Record<string, unknown>) => ({
+    type: 'toolRequest',
+    id,
+    toolCall: { status: 'success', value: { name, arguments: args } },
+  });
+  const response = (id: string, text: string, extra: Record<string, unknown> = {}) => ({
+    type: 'toolResponse',
+    id,
+    toolResult: {
+      status: 'success',
+      value: { content: [{ type: 'text', text }], isError: false, ...extra },
+    },
+  });
+  test('reads the prompt, write and edit calls, and shell results with their exit codes', () => {
+    const s = session('20261114_2');
+    parseGooseMessages(
+      [
+        row('user', 1794624069, [{ type: 'text', text: 'Create calc.py' }]),
+        row('user', 1794624071, [
+          {
+            type: 'text',
+            text: '<turn-context>\n<current-time>now</current-time>\n</turn-context>',
+          },
+        ]),
+        row('assistant', 1794624073, [request('k', 'load_skill', { name: 'tracetoon' })]),
+        row('assistant', 1794624079, [
+          request('w', 'write', {
+            path: 'calc.py',
+            content: 'def add(a, b):\n    return a + b\n',
+          }),
+        ]),
+        row('assistant', 1794624081, [
+          request('e', 'edit', {
+            path: 'calc.py',
+            before: '    return a + b\n',
+            after: '    return int(a) + int(b)\n',
+          }),
+        ]),
+        row('assistant', 1794624083, [
+          request('c', 'shell', { command: 'git commit -m "calc"' }),
+        ]),
+        row('user', 1794624084, [
+          response('c', '[feature fe2df56] calc', {
+            structuredContent: { exit_code: 0 },
+          }),
+        ]),
+        row('assistant', 1794624085, [request('t', 'shell', { command: 'npm test' })]),
+        row('user', 1794624086, [
+          response('t', '1 failing', { structuredContent: { exit_code: 1 } }),
+        ]),
+        row('assistant', 1794624090, [
+          { type: 'text', text: 'Done.' },
+          { type: 'image', data: '' },
+        ]),
+      ],
+      s,
+      '/repo',
+    );
+    expect(s.records.map((r) => r.kind)).toEqual([
+      'prompt',
+      'edit',
+      'edit',
+      'command',
+      'command',
+      'assistant',
+    ]);
+    expect(s.records[0]).toMatchObject({
+      text: 'Create calc.py',
+      ts: '2026-11-14T02:41:09.000Z',
+    });
+    expect(s.records[1]).toMatchObject({
+      file: resolve('/repo', 'calc.py'),
+      removed: [],
+    });
+    expect(s.records[2]).toMatchObject({
+      removed: ['    return a + b'],
+      added: ['    return int(a) + int(b)'],
+    });
+    expect(s.records[3]).toMatchObject({
+      cmd: 'git commit -m "calc"',
+      output: '[feature fe2df56] calc',
+    });
+    expect(s.records[3]).not.toHaveProperty('isError');
+    expect(s.records[4]).toMatchObject({ cmd: 'npm test', isError: true });
+    expect(s.unknownTypes).toEqual({ image: 1 });
   });
 });

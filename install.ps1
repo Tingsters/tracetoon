@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/Tracetoon/tracetoon/main/install.ps1 | iex
 #
 # Installs the Tracetoon skill for every agent found on this machine (Claude Code,
-# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Gemini CLI), caches the prebuilt binary so nothing else
+# Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Gemini CLI), caches the prebuilt binary so nothing else
 # (Bun, Node) is needed, and adds a small hook to each agent that routes
 # `gh pr create` through Tracetoon. Re-run to update.
 #
@@ -38,6 +38,10 @@ function Get-Targets {
     if ((Test-Path (Join-Path $xdg $oc[1])) -or (Has $oc[1])) { $t += [pscustomobject]@{ Name = $oc[0]; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
   }
   if ((Test-Path (Join-Path $HOME '.cline')) -or (Has 'cline')) { $t += [pscustomobject]@{ Name = 'Cline'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  if ((Has 'goose') -or (Test-Path (Join-Path $env:APPDATA 'Block\goose'))) { $t += [pscustomobject]@{ Name = 'Goose'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  if (Has 'devin') { $t += [pscustomobject]@{ Name = 'Devin'; Dir = Join-Path $HOME '.agents\skills\tracetoon' } }
+  $junie = if ($env:JUNIE_HOME) { $env:JUNIE_HOME } else { Join-Path $HOME '.junie' }
+  if ((Test-Path $junie) -or (Has 'junie')) { $t += [pscustomobject]@{ Name = 'Junie'; Dir = Join-Path $junie 'skills\tracetoon' } }
   $kiro = if ($env:KIRO_HOME) { $env:KIRO_HOME } else { Join-Path $HOME '.kiro' }
   if ((Test-Path $kiro) -or (Has 'kiro-cli') -or (Has 'kiro')) { $t += [pscustomobject]@{ Name = 'Kiro'; Dir = Join-Path $kiro 'skills\tracetoon' } }
   if (Has 'gemini') { $t += [pscustomobject]@{ Name = 'Gemini CLI'; Dir = Join-Path $gemini 'skills\tracetoon' } }
@@ -82,7 +86,7 @@ if ($env:TRACETOON_UNINSTALL -eq '1') {
   return
 }
 
-if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Gemini CLI).' }
+if ($targets.Count -eq 0) { throw 'No supported agent found (Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo, Kiro, Cline, Junie, Devin, Goose, Gemini CLI).' }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 $bin = "tracetoon-windows-$arch.exe"

@@ -13,6 +13,8 @@ name: drift canary
 #   Kilo CLI      ANTHROPIC_API_KEY (optional variable KILO_MODEL, as provider/model)
 #   Kiro CLI      KIRO_API_KEY (an API key from Kiro, for headless mode)
 #   Cline CLI     ANTHROPIC_API_KEY
+#   Goose         OPENAI_API_KEY
+#   Junie         JUNIE_AUTH (a token from https://junie.jetbrains.com/cli)
 on:
   schedule:
     - cron: '17 6 * * 1'
@@ -28,6 +30,7 @@ jobs:
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
       KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
+      JUNIE_AUTH: ${{ secrets.JUNIE_AUTH }}
       OPENCODE_MODEL: ${{ vars.OPENCODE_MODEL }}
       KILO_MODEL: ${{ vars.KILO_MODEL }}
     steps:
@@ -106,6 +109,22 @@ jobs:
           npm install -g cline
           cline -y -P anthropic -k "$ANTHROPIC_API_KEY" "Create cline.py that prints cline."
           echo "cline:cline.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Junie session
+        if: ${{ !cancelled() && env.JUNIE_AUTH != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          npm install -g @jetbrains/junie --allow-scripts=@jetbrains/junie
+          export PATH="$HOME/.local/bin:$PATH"
+          junie --auth "$JUNIE_AUTH" "Create junie.py that prints junie." < /dev/null
+          echo "junie:junie.py" >> "$RUNNER_TEMP/expect.txt"
+      - name: Goose session
+        if: ${{ !cancelled() && env.OPENAI_API_KEY != '' }}
+        working-directory: ${{ runner.temp }}/toy
+        run: |
+          curl -fsSL https://github.com/aaif-goose/goose/releases/latest/download/download_cli.sh | CONFIGURE=false bash
+          export PATH="$HOME/.local/bin:$PATH"
+          GOOSE_PROVIDER=openai GOOSE_MODEL=gpt-6-luna goose run --no-session -t "Create goose.py that prints goose."
+          echo "goose:goose.py" >> "$RUNNER_TEMP/expect.txt"
       - name: Kiro CLI session
         if: ${{ !cancelled() && env.KIRO_API_KEY != '' }}
         working-directory: ${{ runner.temp }}/toy

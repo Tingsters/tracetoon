@@ -13,7 +13,7 @@
         "path": "plugin",
         "ref": "release"
       },
-      "description": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro and Cline, and an optional one-off comic.",
+      "description": "Creates your PR with a description written from the session logs of Claude Code, Codex, Antigravity, Factory Droid, Copilot, Cursor, OpenCode, Kilo CLI, Kiro, Cline, Junie, Devin and Goose, and an optional one-off comic.",
       "category": "productivity",
       "tags": [
         "pull-requests",

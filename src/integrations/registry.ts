@@ -16,6 +16,9 @@ import { integration as opencode } from './opencode/index.ts';
 import { integration as kilo } from './kilo/index.ts';
 import { integration as kiro } from './kiro/index.ts';
 import { integration as cline } from './cline/index.ts';
+import { integration as junie } from './junie/index.ts';
+import { integration as devin } from './devin/index.ts';
+import { integration as goose } from './goose/index.ts';
 
 /** In display order. Hook targets, skill installs and doctor follow it. */
 export const INTEGRATIONS: readonly Integration[] = [
@@ -29,6 +32,9 @@ export const INTEGRATIONS: readonly Integration[] = [
   kilo,
   kiro,
   cline,
+  junie,
+  devin,
+  goose,
   geminiCli,
 ];
 
