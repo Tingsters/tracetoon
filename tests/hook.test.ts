@@ -7,7 +7,14 @@ import {
   test,
 } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { decide, DENY_REASON, writesPr } from '../src/hook/prHook.ts';
 import { parseAliases } from '../src/hook/prCommands.ts';
@@ -20,6 +27,7 @@ import {
 } from '../src/hook/install.ts';
 import { switchState } from '../src/hook/switches.ts';
 import { gooseDataDir } from '../src/integrations/goose/trace.ts';
+import { renderClineShell } from '../src/integrations/cline/hook.ts';
 import { codexHookHash } from '../src/integrations/codex/trust.ts';
 import { git } from '../src/util/exec.ts';
 import { makeRepo, tempDir } from './helpers.ts';
@@ -558,6 +566,18 @@ describe('installing the hook', () => {
     expect(readFileSync(join(h, '.cline', 'hooks', 'TaskStart.mjs'), 'utf8')).toContain(
       '"--event","SessionStart"',
     );
+    // On Windows the Cline VS Code extension reads PowerShell hooks from Documents.
+    const extensionHooks = join(h, 'Documents', 'Cline', 'Hooks');
+    if (process.platform === 'win32')
+      expect(readFileSync(join(extensionHooks, 'PreToolUse.ps1'), 'utf8')).toContain(
+        'cancel = $true',
+      );
+    else {
+      // Elsewhere it runs an executable file named after the event.
+      const sh = join(extensionHooks, 'PreToolUse');
+      expect(readFileSync(sh, 'utf8')).toStartWith('#!/bin/sh\n# tracetoon:cline-hook');
+      expect(statSync(sh).mode & 0o111).not.toBe(0);
+    }
     // Junie's config.json takes Claude-style groups; its shell tool is Bash or powershell.
     const junie = JSON.parse(readFileSync(join(h, '.junie', 'config.json'), 'utf8'));
     expect(junie.hooks.PreToolUse[0]).toMatchObject({
@@ -669,6 +689,8 @@ describe('installing the hook', () => {
     );
     for (const name of ['PreToolUse.mjs', 'PostToolUse.mjs', 'TaskStart.mjs'])
       expect(existsSync(join(h, '.cline', 'hooks', name))).toBe(false);
+    for (const name of ['PreToolUse.ps1', 'PreToolUse'])
+      expect(existsSync(join(h, 'Documents', 'Cline', 'Hooks', name))).toBe(false);
     expect(existsSync(join(h, '.config', 'opencode', 'plugins', 'tracetoon.js'))).toBe(
       false,
     );
@@ -969,6 +991,49 @@ describe('hooks that fire together', () => {
 });
 
 describe('Cline hook files', () => {
+  const shell = spawnSync('sh', ['-c', 'exit 0']).status === 0;
+  test.skipIf(!shell)(
+    'the VS Code extension shell hook stops the task on a deny and passes the rest',
+    () => {
+      const dir = tempDir();
+      const fake = (name: string, answer: string) => {
+        const path = join(dir, name);
+        writeFileSync(
+          path,
+          `cat >/dev/null
+printf '%s' '${answer}'
+`,
+        );
+        return ['sh', path];
+      };
+      const run = (argv: string[], tool: string) => {
+        const hook = join(dir, 'PreToolUse');
+        writeFileSync(
+          hook,
+          renderClineShell({
+            prePr: 'x hook pre-pr --agent cline',
+            argv: { prePr: argv, lifecycle: () => fake('allow', '{}') },
+          } as never),
+        );
+        const payload = JSON.stringify({
+          hookName: 'PreToolUse',
+          preToolUse: { toolName: tool, parameters: { commands: 'gh pr create' } },
+        });
+        return spawnSync('sh', [hook], {
+          input: payload,
+          encoding: 'utf8',
+        }).stdout.trim();
+      };
+      const deny = fake('deny', '{"errorMessage":"Use Tracetoon"}');
+      expect(JSON.parse(run(deny, 'run_commands'))).toEqual({
+        cancel: true,
+        errorMessage: 'Use Tracetoon',
+      });
+      expect(run(fake('allow2', '{}'), 'run_commands')).toBe('{}');
+      expect(run(deny, 'read_file')).toBe('{}');
+    },
+  );
+
   test("a script of the same name that isn't Tracetoon's is left alone, and uninstall keeps it", () => {
     const h = tempDir('tracetoon-home-');
     mkdirSync(join(h, '.cline', 'hooks'), { recursive: true });
@@ -1003,5 +1068,47 @@ describe('Cline hook files', () => {
     expect(answer.cancel).toBeUndefined(); // cancel would stop the whole run
     const [echo] = answer.overrideInput.commands;
     expect(echo).toMatch(/^echo 'Blocked by Tracetoon\. [^'‘’‚‛]*'$/);
+  });
+
+  test('a PR command in the older payload of the VS Code extension is blocked too', () => {
+    // Recorded from the Cline 4.1.26 VS Code extension's PreToolUse.ps1 hook.
+    const answer = JSON.parse(
+      decide(
+        'cline',
+        {
+          clineVersion: '4.1.26',
+          hookName: 'PreToolUse',
+          timestamp: '1794646999494',
+          taskId: 'conv_1794646985049_9g5nvg7',
+          workspaceRoots: [tempDir()],
+          preToolUse: {
+            toolName: 'run_commands',
+            parameters: { commands: 'git status; gh pr create --fill' },
+          },
+        },
+        env(),
+      )!,
+    );
+    expect(answer.errorMessage).toBe(DENY_REASON);
+  });
+
+  test('a PR command sent as one string (Cline 4.x) is blocked too', () => {
+    const answer = JSON.parse(
+      decide(
+        'cline',
+        {
+          hookName: 'tool_call',
+          taskId: 't',
+          sessionContext: { rootSessionId: 's' },
+          workspaceRoots: [tempDir()],
+          tool_call: {
+            name: 'run_commands',
+            input: { commands: 'git push; gh pr create --fill' },
+          },
+        },
+        env(),
+      )!,
+    );
+    expect(answer.errorMessage).toBe(DENY_REASON);
   });
 });

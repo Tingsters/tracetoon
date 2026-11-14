@@ -63,12 +63,17 @@ function ask(argv) {
 
 let out = {};
 try {
-  const tool = JSON.parse(input || '{}')?.tool_call?.name;
+  const call = JSON.parse(input || '{}')?.tool_call;
+  const tool = call?.name;
   if (SHELL.has(tool)) {
     out = ask(ARGV.prePr) || ask(ARGV.pre) || {};
-    // execute_command takes one command, run_commands a list.
-    if (tool === 'execute_command' && out.overrideInput?.commands)
-      out.overrideInput = { command: out.overrideInput.commands.join('\\n') };
+    // execute_command takes one command; run_commands a list (Cline 3.x) or
+    // one string (4.x), so answer in the shape the call used.
+    const replacement = out.overrideInput?.commands;
+    if (tool === 'execute_command' && replacement)
+      out.overrideInput = { command: replacement.join('\\n') };
+    else if (typeof call?.input?.commands === 'string' && replacement)
+      out.overrideInput = { commands: replacement.join('\\n') };
   } else tell(ARGV.pre);
 } catch {}
 process.stdout.write(JSON.stringify(out));
@@ -83,12 +88,87 @@ process.stdout.write('{}');
 `;
 }
 
-/** The pre-pr command line a written hook runs, from its first line. */
+/** PowerShell's marker line: the same tag behind `#` instead of `//`. */
+export const CLINE_PS_MARKER = '# tracetoon:cline-hook';
+
+const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
+const psArray = (argv: string[]) => `@(${argv.map(psQuote).join(', ')})`;
+
+/**
+ * The Cline 4.x VS Code extension on Windows runs only `<Event>.ps1` files,
+ * from ~/Documents/Cline/Hooks (not ~/.cline/hooks), and sends the older
+ * payload: `{ hookName: "PreToolUse", taskId, workspaceRoots, preToolUse: {
+ * toolName, parameters } }`. Its answer can't skip or replace one call: only
+ * `cancel` blocks, and it stops the task with `errorMessage` shown. So a PR
+ * command stops the task with Tracetoon's reason; anything else runs.
+ */
+export function renderClinePowerShell(commands: HookCommands): string {
+  const a = commands.argv!;
+  return `${CLINE_PS_MARKER} ${commands.prePr}
+# Routes PR creation in the Cline VS Code extension through Tracetoon. Written by
+# \`tracetoon hook install\`; \`tracetoon hook uninstall\` removes it. Edits are overwritten.
+$ErrorActionPreference = 'SilentlyContinue'
+$OutputEncoding = New-Object System.Text.UTF8Encoding $false
+try { [Console]::InputEncoding = $OutputEncoding } catch {}
+$payload = [Console]::In.ReadToEnd()
+$out = '{}'
+try {
+  $tool = ($payload | ConvertFrom-Json).preToolUse.toolName
+  if ($tool -eq 'run_commands' -or $tool -eq 'execute_command') {
+    foreach ($argv in @(${psArray(a.prePr)}, ${psArray(a.lifecycle('PreToolUse'))})) {
+      $exe = $argv[0]
+      $rest = @($argv | Select-Object -Skip 1)
+      $answer = ($payload | & $exe @rest 2>$null | Out-String).Trim()
+      if (-not $answer) { continue }
+      $reason = ($answer | ConvertFrom-Json).errorMessage
+      if ($reason) {
+        $out = @{ cancel = $true; errorMessage = [string]$reason } | ConvertTo-Json -Compress
+        break
+      }
+    }
+  }
+} catch {} # never get in the way when Tracetoon can't run
+$out
+`;
+}
+
+const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * The same hook for the VS Code extension on macOS and Linux, which runs an
+ * executable file named after the event (no extension) from
+ * ~/Documents/Cline/Hooks through the shell. A deny from Tracetoon gets
+ * `"cancel":true` added in front, so the extension stops the task and shows
+ * `errorMessage`; any other answer lets the call run.
+ */
+export function renderClineShell(commands: HookCommands): string {
+  const a = commands.argv!;
+  const ask = (
+    argv: string[],
+  ) => `answer=$(printf '%s' "$payload" | ${argv.map(shQuote).join(' ')} 2>/dev/null)
+case "$answer" in *'"errorMessage"'*) printf '{"cancel":true,%s\\n' "\${answer#\\{}"; exit 0 ;; esac`;
+  return `#!/bin/sh
+${CLINE_PS_MARKER} ${commands.prePr}
+# Routes PR creation in the Cline VS Code extension through Tracetoon. Written by
+# \`tracetoon hook install\`; \`tracetoon hook uninstall\` removes it. Edits are overwritten.
+payload=$(cat)
+case "$payload" in
+  *'"toolName":"run_commands"'* | *'"toolName":"execute_command"'*) ;;
+  *) echo '{}'; exit 0 ;;
+esac
+${ask(a.prePr)}
+${ask(a.lifecycle('PreToolUse'))}
+echo '{}'
+`;
+}
+
+/** The pre-pr command line a written hook runs, from its first line (after any #!). */
 export function clineHookCommand(text: string): string | undefined {
-  const first = text.split(/\r?\n/, 1)[0] ?? '';
-  return first.startsWith(CLINE_MARKER)
-    ? first.slice(CLINE_MARKER.length).trim()
-    : undefined;
+  const [first = '', second = ''] = text.split(/\r?\n/, 2);
+  const line = first.startsWith('#!') ? second : first;
+  for (const marker of [CLINE_MARKER, CLINE_PS_MARKER])
+    if (line.startsWith(marker)) return line.slice(marker.length).trim();
+  return undefined;
 }
 
 /**
