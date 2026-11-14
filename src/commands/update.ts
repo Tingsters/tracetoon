@@ -12,7 +12,7 @@ import {
 } from '../update/release.ts';
 import { readState, takeLock, writeState } from '../update/state.ts';
 import { compareVersions, parseVersion } from '../update/version.ts';
-import { emit, UserError, type OutOpts } from './output.ts';
+import { codedError, emit, UserError, type OutOpts } from './output.ts';
 
 export interface UpdateOpts extends OutOpts {
   check?: boolean;
@@ -34,7 +34,10 @@ export async function updateCmd(
   home = homedir(),
 ): Promise<void> {
   if (env.TRACETOON_DISABLE_UPDATES === '1')
-    throw new UserError('Updates are disabled here (TRACETOON_DISABLE_UPDATES=1).');
+    throw codedError(
+      'UPDATES_DISABLED',
+      'Updates are disabled here (TRACETOON_DISABLE_UPDATES=1).',
+    );
   const config = loadConfig();
   if (opts.auto && (config.autoUpdate !== 'install' || opts.check || opts.to)) return;
   const channel = (opts.channel ?? config.updateChannel) as Channel;
@@ -65,7 +68,10 @@ async function update(
   try {
     releases = await listReleases(env);
   } catch (e) {
-    throw new UserError(`Could not look up releases: ${(e as Error).message}`);
+    throw codedError(
+      'UPDATE_LOOKUP_FAILED',
+      `Could not look up releases: ${(e as Error).message}`,
+    );
   }
 
   // Remember what the channel's newest release is, for the next session's notice.

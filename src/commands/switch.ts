@@ -13,7 +13,7 @@ import { INTEGRATIONS } from '../integrations/registry.ts';
 import { git } from '../util/exec.ts';
 import { selfProgram, userCommand } from '../util/userCommand.ts';
 export { userCommand } from '../util/userCommand.ts';
-import { emit, UserError, type OutOpts } from './output.ts';
+import { codedError, emit, UserError, type OutOpts } from './output.ts';
 import { taskSummary } from '../workflow/state.ts';
 import { BUILD_INFO } from '../version.ts';
 
@@ -40,7 +40,7 @@ export function setEnabledCmd(cwd: string, enabled: boolean, opts: ScopeOpts): v
   let where: string;
   if (opts.repo || opts.local) {
     const root = repoRoot(cwd);
-    if (!root) throw new UserError('Not inside a git repository.');
+    if (!root) throw codedError('NOT_A_GIT_REPO', 'Not inside a git repository.');
     if (opts.repo) {
       where = `${setRepoEnabled(root, enabled)} (commit it to apply for everyone)`;
     } else {

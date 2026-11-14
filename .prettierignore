@@ -1,2 +1,3 @@
 src/graph/vendor/
+src/commands/guideText.ts
 evals/aeo/results/
